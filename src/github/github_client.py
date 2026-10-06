@@ -89,7 +89,14 @@ class GitHubClient:
         return self._client
 
     def is_configured(self) -> bool:
-        """Return ``True`` when a token and a valid ``owner/repo`` are present."""
+        """Return ``True`` when a token and a *real* ``owner/repo`` are present.
+
+        The ``owner/repo`` placeholder from ``.env.example`` counts as
+        unconfigured, so the sync engine reports "not configured" instead of
+        issuing doomed requests against a repository that does not exist.
+        """
+        if str(self.settings.GITHUB_REPO).strip().lower() == "owner/repo":
+            return False
         return bool(self.token and self.owner and self.repo_name)
 
     async def close(self) -> None:

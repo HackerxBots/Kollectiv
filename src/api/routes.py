@@ -256,6 +256,30 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         return RunResponse(**summary)
 
+    @router.post("/projects/{project_id}/replan", tags=["projects"])
+    async def replan_project(
+        project_id: str,
+        dispatch: bool = Query(default=False, description="Run the corrective tasks immediately"),
+        max_new_tasks: int = Query(default=3, ge=1, le=10),
+        orchestrator: Orchestrator = Depends(get_orchestrator),
+    ) -> Dict[str, Any]:
+        """Replace failed tasks with corrective ones (optionally run them).
+
+        Returns the new plan revision, the corrective tasks and, when
+        ``dispatch=true``, their results.
+        """
+        try:
+            return await orchestrator.replan_project(
+                project_id, dispatch=dispatch, max_new_tasks=max_new_tasks
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ConfigurationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except KollektivError as exc:
+            LOGGER.error("Replan failed for %s: %s", project_id, exc)
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
     @router.get("/projects/{project_id}/status", tags=["projects"])
     async def project_status(
         project_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)

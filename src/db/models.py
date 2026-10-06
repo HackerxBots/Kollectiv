@@ -96,12 +96,17 @@ class Project(SQLModel, table=True):
 
 
 class Task(SQLModel, table=True):
-    """A single subtask assigned to one worker agent."""
+    """A single subtask assigned to one worker agent.
+
+    Plan task ids (``t1``, ``t2``, ...) are only unique *within* a project, so
+    the primary key is the ``(project_id, id)`` pair. Every other task id in the
+    system (``tsk_...``) is globally unique.
+    """
 
     __tablename__ = "tasks"
 
     id: str = Field(default_factory=lambda: new_id("tsk_"), primary_key=True, max_length=64)
-    project_id: str = Field(index=True, max_length=64)
+    project_id: str = Field(primary_key=True, max_length=64)
     title: str = Field(default="", max_length=300)
     description: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     priority: int = Field(default=3)
@@ -238,6 +243,48 @@ JSONColumn = SAJSON
 _engine = None
 
 
+def sqlite_path(url: str) -> Optional[str]:
+    """Return the filesystem path behind a SQLite URL, or ``None``.
+
+    In-memory URLs (``sqlite://`` and ``sqlite:///:memory:``) have no path.
+    """
+    if not url.startswith("sqlite") or "memory" in url:
+        return None
+    _, _, tail = url.partition("///")
+    if not tail or tail.startswith(":"):
+        return None
+    return tail
+
+
+def is_memory_url(url: str) -> bool:
+    """Return ``True`` for SQLite in-memory URLs (including bare ``sqlite://``)."""
+    if not url.startswith("sqlite"):
+        return False
+    if "memory" in url:
+        return True
+    tail = url.split("///", 1)[1] if "///" in url else url.split("//", 1)[-1]
+    return tail.strip("/") == ""
+
+
+def same_database(url_a: str, url_b: str) -> bool:
+    """Return ``True`` when two database URLs address the same database."""
+    if is_memory_url(url_a) and is_memory_url(url_b):
+        return True
+    path_a, path_b = sqlite_path(url_a), sqlite_path(url_b)
+    if path_a and path_b:
+        return Path(path_a).resolve() == Path(path_b).resolve()
+    return url_a.strip() == url_b.strip()
+
+
+def build_engine(url: str, echo: bool = False):
+    """Create an engine for ``url``, creating the SQLite parent directory."""
+    path = sqlite_path(url)
+    if path:
+        Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    return create_engine(url, echo=echo, connect_args=connect_args)
+
+
 def get_engine(database_url: Optional[str] = None, echo: bool = False):
     """Return a process-wide SQLAlchemy engine, creating it on first use.
 
@@ -252,19 +299,19 @@ def get_engine(database_url: Optional[str] = None, echo: bool = False):
     if _engine is None:
         from config.settings import get_settings
 
-        settings = get_settings()
-        url = database_url or settings.DATABASE_URL
-        if url.startswith("sqlite:///"):
-            path = settings.sqlite_path or url.replace("sqlite:///", "")
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        _engine = create_engine(url, echo=echo, connect_args=connect_args)
+        url = database_url or get_settings().DATABASE_URL
+        _engine = build_engine(url, echo=echo)
         LOGGER.debug("Created database engine for %s", url)
     return _engine
 
 
+def current_engine():
+    """Return the already-installed engine, or ``None`` (never creates one)."""
+    return _engine
+
+
 def set_engine(engine: Any) -> None:
-    """Override the global engine (used by tests with an in-memory database)."""
+    """Override the global engine (tests, embedders, custom settings)."""
     global _engine
     _engine = engine
 

@@ -563,3 +563,74 @@ async def test_orchestrator_upload_and_sync(settings: Any, tmp_path: Path) -> No
     summary = await orchestrator.trigger_sync()
     assert "started_at" in summary
     assert orchestrator.sync_engine.status()["runs"] == 1
+
+
+async def test_plans_are_scoped_per_project(settings: Any) -> None:
+    """Plan task ids (t1, t2, ...) are project-local and must not collide.
+
+    Two projects planned in the same database both use ids like ``t1``; the
+    ``tasks`` table is keyed by ``(id, project_id)`` so both persist.
+    """
+    from sqlmodel import select
+
+    from src.db.models import Task, session_scope
+
+    orchestrator = build_fake_orchestrator(settings)
+    first = await orchestrator.create_project("one", "Build a URL shortener with tests", 2)
+    second = await orchestrator.create_project("two", "Build a pastebin clone with tests", 2)
+
+    assert [task["id"] for task in first["plan"]["tasks"]] == ["t1", "t2"]
+    assert [task["id"] for task in second["plan"]["tasks"]] == ["t1", "t2"]
+
+    with session_scope() as session:
+        rows = list(session.exec(select(Task)).all())
+        assert len(rows) == 4
+        assert {row.project_id for row in rows} == {first["project_id"], second["project_id"]}
+        assert session.get(Task, ("t1", first["project_id"])) is not None
+
+    status = await orchestrator.get_project_status(first["project_id"])
+    assert [task["id"] for task in status["tasks"]] == ["t1", "t2"]
+
+
+async def test_completed_tasks_are_persisted_to_sqlite(settings: Any) -> None:
+    """Dispatcher outcomes reach SQLite, not just the state document."""
+    from sqlmodel import select
+
+    from src.db.models import Task, session_scope
+
+    orchestrator = build_fake_orchestrator(settings)
+    record = await orchestrator.create_project("demo", "Build a tiny service with tests", 2)
+    await orchestrator.run_project(record["project_id"])
+
+    with session_scope() as session:
+        rows = list(
+            session.exec(select(Task).where(Task.project_id == record["project_id"])).all()
+        )
+    assert rows and all(row.status == "completed" for row in rows)
+    assert all(row.attempts >= 1 for row in rows)
+    assert all(row.assigned_agent for row in rows)
+
+
+async def test_replan_project_adds_corrective_tasks(settings: Any) -> None:
+    """Failed tasks can be replanned into corrective subtasks."""
+    orchestrator = build_fake_orchestrator(settings)
+    record = await orchestrator.create_project("demo", "Build a tiny service with tests", 2)
+
+    # Force a failure, then replan it.
+    orchestrator.agent_pool.agents[0].outputs = ["broken output"]
+    await orchestrator.run_project(record["project_id"])
+    status = await orchestrator.get_project_status(record["project_id"])
+    failed = [task for task in status["tasks"] if task["status"] == "failed"]
+    assert failed, "expected at least one failed task"
+
+    outcome = await orchestrator.replan_project(record["project_id"])
+    assert outcome["project_id"] == record["project_id"]
+    assert outcome["revision"] >= 2
+    new_ids = {str(task["id"]) for task in outcome["new_tasks"]}
+    assert new_ids, "replanning must produce corrective tasks"
+    assert not (new_ids & {"t1", "t2"}), "corrective tasks must use fresh ids"
+
+    # Replanning a healthy project is a no-op.
+    healthy = await orchestrator.create_project("ok", "Build a tiny service with tests", 2)
+    noop = await orchestrator.replan_project(healthy["project_id"])
+    assert noop["new_tasks"] == []

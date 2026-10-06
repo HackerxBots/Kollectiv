@@ -99,6 +99,32 @@ class StubOrchestrator:
         )
         return state
 
+    async def replan_project(
+        self, project_id: str, dispatch: bool = False, max_new_tasks: int = 3
+    ) -> Dict[str, Any]:
+        """Return a stub corrective plan."""
+        if project_id not in self.projects:
+            raise KeyError(project_id)
+        record = self.projects[project_id]
+        plan = dict(record["plan"])
+        plan["revision"] = int(plan.get("revision", 1)) + 1
+        corrective = {
+            "id": f"r{plan['revision']}",
+            "title": "Fix the failed task",
+            "description": "Repair what failed",
+            "dependencies": [],
+            "priority": 1,
+        }
+        plan["tasks"] = list(plan.get("tasks", [])) + [corrective]
+        record["plan"] = plan
+        return {
+            "project_id": project_id,
+            "revision": plan["revision"],
+            "new_tasks": [corrective],
+            "plan": plan,
+            "results": [],
+        }
+
     async def get_project_files(self, project_id: str) -> List[Dict[str, Any]]:
         """Return the fake storage listing."""
         return await self.pool.list_project_files(project_id)
@@ -307,3 +333,23 @@ async def test_mcp_tools_return_json(settings: Any) -> None:
 
     unknown = tool_payload(await server.call_tool("get_project_status", {"project_id": "nope"}))
     assert "error" in unknown
+
+
+async def test_replan_endpoint(api_client: Any) -> None:
+    """POST /projects/{id}/replan returns the corrective plan."""
+    created = await api_client.post(
+        "/projects",
+        json={"name": "demo", "description": "Build a demo service with tests", "n_agents": 2},
+    )
+    project_id = created.json()["project_id"]
+
+    response = await api_client.post(f"/projects/{project_id}/replan", params={"dispatch": False})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["project_id"] == project_id
+    assert body["revision"] >= 2
+    assert body["new_tasks"] and body["new_tasks"][0]["id"].startswith("r")
+    assert body["results"] == []
+
+    missing = await api_client.post("/projects/prj_missing/replan")
+    assert missing.status_code == 404

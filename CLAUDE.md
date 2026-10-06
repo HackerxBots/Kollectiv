@@ -18,7 +18,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 109 hermetic tests, ~4 s
+pytest -q                      # 113 hermetic tests, ~4 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config                # types (clean)
@@ -67,6 +67,12 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 - `data/` holds the dev SQLite DB **and** `data/workspace`. Tests must not read
   it: build `Settings(_env_file=None, ...)` copies and pass an in-memory
   `db_url`.
+- Task ids are project-local: the `tasks` table is keyed by `(id, project_id)`
+  and `session.get(Task, ...)` takes a tuple **in that order**. The
+  dispatcher's task persistence warns (never silently drops) on failure.
+- An `Orchestrator(settings=...)` rebinds the global database engine when its
+  `DATABASE_URL` differs from the installed one (`_bind_database()`); tests keep
+  their pre-seeded in-memory engine because matching engines are reused.
 - `mcp` has two API generations. `src/api/mcp_server.py` adapts to both
   (`FastMCP` in v1, `MCPServer` in v2). SDK v2's `server.call_tool(...)`
   returns a `CallToolResult` (read `.content[0].text`), not a JSON string.

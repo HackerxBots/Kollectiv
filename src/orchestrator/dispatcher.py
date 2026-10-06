@@ -384,8 +384,9 @@ class Dispatcher:
         task_id = str(task.get("id"))
         try:
             with session_scope() as session:
-                row = session.get(Task, task_id)
-                if row is None or row.project_id != project_id:
+                # Composite primary key: (task id, project id) -- see db.models.Task.
+                row = session.get(Task, (task_id, project_id))
+                if row is None:
                     row = Task(
                         id=task_id,
                         project_id=project_id,
@@ -411,7 +412,9 @@ class Dispatcher:
                 row.updated_at = utcnow()
                 session.add(row)
         except Exception as exc:  # noqa: BLE001 - persistence must not break dispatch
-            LOGGER.debug("Could not persist task %s: %s", task_id, exc)
+            # Local SQLite writes should not fail; warn so a schema/engine
+            # mismatch is visible instead of silently losing task history.
+            LOGGER.warning("Could not persist task %s: %s", task_id, exc)
 
         update = {
             "status": status,

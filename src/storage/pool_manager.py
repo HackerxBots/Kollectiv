@@ -292,6 +292,7 @@ class TeraBoxPoolManager:
         """
         if not os.path.isfile(local_path):
             raise FileNotFoundError(f"Local file not found: {local_path}")
+        await self.ensure_initialized()
         size = os.path.getsize(local_path)
 
         if account_id:
@@ -323,6 +324,11 @@ class TeraBoxPoolManager:
                 errors.append(f"{state.client.label}: {exc}")
                 LOGGER.warning("Upload of %s failed on %s: %s", remote_path, state.client.label, exc)
 
+        if not self._states:
+            raise ConfigurationError(
+                "No TeraBox accounts are configured; set TERABOX_ACCOUNTS in .env "
+                "to enable shared storage (the local workspace is used meanwhile)."
+            )
         raise TeraBoxError(f"Upload of {remote_path} failed on every account", errors=errors)
 
     async def _ordered_candidates(self, size: int) -> List[PoolAccountState]:

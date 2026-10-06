@@ -30,10 +30,14 @@ from src.db.models import (
     Project,
     ProjectFile,
     Task,
+    build_engine,
+    current_engine,
     get_engine,
     init_db,
     new_id,
+    same_database,
     session_scope,
+    set_engine,
     utcnow,
 )
 from src.github.github_client import GitHubClient
@@ -87,6 +91,21 @@ class Orchestrator:
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
+    def _bind_database(self) -> None:
+        """Point the process-wide engine at this instance's ``DATABASE_URL``.
+
+        ``Settings`` may be passed explicitly (tests, embedders, a second
+        configuration in one process), so an engine created from the ambient
+        environment is replaced whenever it addresses a different database.
+        An engine that already matches is kept, which keeps test fixtures and
+        pre-seeded in-memory databases working.
+        """
+        existing = current_engine()
+        if existing is not None and same_database(str(existing.url), self.settings.DATABASE_URL):
+            return
+        set_engine(build_engine(self.settings.DATABASE_URL))
+        LOGGER.debug("Bound the database engine to %s", self.settings.DATABASE_URL)
+
     async def start(self) -> Dict[str, Any]:
         """Initialise storage, agents and (optionally) the cron scheduler.
 
@@ -99,6 +118,7 @@ class Orchestrator:
         if self.started:
             return {"started": True, "already_running": True}
 
+        self._bind_database()
         if self.settings.AUTO_INIT_DB:
             init_db(get_engine())
         LOGGER.info("Starting Kollektiv (%s)", self.settings.ENVIRONMENT)
@@ -428,6 +448,82 @@ class Orchestrator:
         state["pool"] = self.agent_pool.snapshot()
         return state
 
+    async def replan_project(
+        self, project_id: str, dispatch: bool = False, max_new_tasks: int = 3
+    ) -> Dict[str, Any]:
+        """Build a corrective plan for a project's failed tasks.
+
+        Uses :meth:`Planner.replan` so the brain (or the deterministic fallback)
+        can propose repair subtasks. With ``dispatch=True`` the corrective
+        tasks are executed immediately afterwards.
+
+        Args:
+            project_id: The project identifier.
+            dispatch: Run the corrective tasks after persisting the plan.
+            max_new_tasks: Cap on corrective tasks generated.
+
+        Returns:
+            ``{project_id, revision, new_tasks, plan, results}``.
+
+        Raises:
+            KeyError: When the project is unknown.
+            ConfigurationError: When ``dispatch`` is true and no agents exist.
+        """
+        record = await self.get_project(project_id)
+        if record is None:
+            raise KeyError(f"Unknown project: {project_id}")
+
+        status = await self.get_project_status(project_id)
+        state = dict(status)
+        state.setdefault("description", record.get("description", ""))
+        tasks = list(state.get("tasks") or record.get("plan", {}).get("tasks") or [])
+        state["tasks"] = tasks
+        failed = [task for task in tasks if str(task.get("status")) == "failed"]
+        if not failed:
+            LOGGER.info("Project %s has no failed tasks; nothing to replan", project_id)
+            return {
+                "project_id": project_id,
+                "revision": (record.get("plan") or {}).get("revision", 1),
+                "new_tasks": [],
+                "plan": record.get("plan") or {},
+                "results": [],
+            }
+
+        plan = await self.planner.replan(state, failed, max_new_tasks=max_new_tasks)
+        record["plan"] = plan
+        await self._persist_plan(project_id, plan)
+        await self.record_event(
+            project_id,
+            {
+                "agent_id": "planner",
+                "action": "replan",
+                "result": f"{len(plan.get('tasks', []))} task(s) after replanning {len(failed)} failure(s)",
+            },
+        )
+
+        new_ids = {str(task.get("id")) for task in plan.get("tasks", [])} - {
+            str(task.get("id")) for task in tasks
+        }
+        new_tasks = [task for task in plan.get("tasks", []) if str(task.get("id")) in new_ids]
+        LOGGER.info("Replanned %s: %s corrective task(s)", project_id, len(new_tasks))
+
+        results: List[Dict[str, Any]] = []
+        if dispatch:
+            if not self.agent_pool.is_configured():
+                raise ConfigurationError(
+                    "No worker agents are configured; set ARENA_ACCOUNTS before dispatching."
+                )
+            corrective_plan = dict(plan, tasks=new_tasks)
+            results = await self.get_dispatcher().dispatch(corrective_plan, project_id=project_id)
+
+        return {
+            "project_id": project_id,
+            "revision": plan.get("revision", 1),
+            "new_tasks": new_tasks,
+            "plan": plan,
+            "results": results,
+        }
+
     async def get_project_files(self, project_id: str) -> List[Dict[str, Any]]:
         """Return every file stored for a project (TeraBox + local index).
 
@@ -564,7 +660,8 @@ class Orchestrator:
                 )
             )
             for task in plan.get("tasks", []):
-                existing = session.get(Task, str(task.get("id")))
+                # SQLModel orders composite keys by column declaration: (id, project_id).
+                existing = session.get(Task, (str(task.get("id")), project_id))
                 if existing is not None and existing.project_id == project_id:
                     existing.title = task.get("title", existing.title)
                     existing.description = task.get("description", existing.description)

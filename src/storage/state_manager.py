@@ -179,6 +179,16 @@ class StateManager:
         self._remote_path_cache = remote
         return state
 
+    def _pool_configured(self) -> bool:
+        """Return ``True`` when the storage pool has at least one account."""
+        checker = getattr(self.pool, "is_configured", None)
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception:  # noqa: BLE001 - treat a broken check as unconfigured
+                return False
+        return bool(getattr(self.pool, "accounts", None) or getattr(self.pool, "files", None))
+
     def _blank_state(self, project_id: Optional[str] = None) -> Dict[str, Any]:
         """Return a fresh state document."""
         state = json.loads(json.dumps(STATE_DEFAULTS))
@@ -230,7 +240,14 @@ class StateManager:
                 LOGGER.debug("Wrote state document to %s (%s chars)", remote, len(markdown))
                 return True
             except Exception as exc:  # noqa: BLE001 - degraded mode is expected
-                LOGGER.error("Could not upload the state document to %s: %s", remote, exc)
+                if not self._pool_configured():
+                    # No storage configured at all: the local cache is the
+                    # state document by design, so this is not an error.
+                    LOGGER.info(
+                        "Shared storage is disabled; keeping %s in the local workspace", local
+                    )
+                else:
+                    LOGGER.error("Could not upload the state document to %s: %s", remote, exc)
                 return False
 
     async def append_event(

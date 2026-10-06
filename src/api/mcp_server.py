@@ -187,6 +187,24 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
         )
 
     @server.tool()
+    async def replan_project(project_id: str, dispatch: bool = False) -> str:
+        """Replace failed tasks with corrective ones.
+
+        Args:
+            project_id: Identifier returned by ``create_project``.
+            dispatch: Also run the corrective tasks immediately.
+        """
+        instance = await get_orchestrator()
+        try:
+            outcome = await instance.replan_project(project_id, dispatch=dispatch)
+        except KeyError:
+            return _json({"error": f"unknown project: {project_id}"})
+        except Exception as exc:  # noqa: BLE001 - tools report, never raise
+            LOGGER.error("replan_project failed: %s", exc)
+            return _json({"error": str(exc)})
+        return _json({key: value for key, value in outcome.items() if key != "plan"})
+
+    @server.tool()
     async def list_files(project_id: str) -> str:
         """List the files stored for a project (TeraBox + local index).
 
