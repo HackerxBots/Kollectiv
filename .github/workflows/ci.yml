@@ -33,11 +33,38 @@ jobs:
         run: mypy src config examples
 
       - name: Tests
-        run: pytest -q
+        run: pytest -q --junitxml=pytest-report.xml -rf
         env:
           # Tests are hermetic; these keep any accidental retry fast.
           KOLLEKTIV_RETRY_BASE_DELAY: "0.01"
           KOLLEKTIV_RETRY_MAX_DELAY: "0.05"
+
+      - name: Summarise failures on the runner
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import pathlib, xml.etree.ElementTree as ET
+          path = pathlib.Path("pytest-report.xml")
+          if not path.exists():
+              print("no pytest report was produced")
+              raise SystemExit(0)
+          root = ET.parse(path).getroot()
+          failures = [case for case in root.iter("testcase")
+                      if case.find("failure") is not None or case.find("error") is not None]
+          print(f"### {len(failures)} failing test(s)")
+          for case in failures[:25]:
+              node = case.find("failure") if case.find("failure") is not None else case.find("error")
+              message = (node.get("message") or "").strip().splitlines()[:1]
+              print(f"- `{case.get('classname')}.{case.get('name')}` — {message}")
+          PY
+
+      - name: Upload the pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-${{ matrix.python-version }}
+          path: pytest-report.xml
+          if-no-files-found: ignore
 
       - name: Verify the dashboard is self-contained
         run: |
