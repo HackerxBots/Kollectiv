@@ -302,7 +302,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
     configure_logging(args.log_level)
     server = create_server()
-    LOGGER.info("Starting the Kollektiv MCP server on %s:%s (%s)", args.host, args.port, args.transport)
+    if args.transport == "stdio":
+        LOGGER.info("Starting the Kollektiv MCP server (%s transport)", args.transport)
+    else:
+        LOGGER.info(
+            "Starting the Kollektiv MCP server on %s:%s (%s transport)",
+            args.host,
+            args.port,
+            args.transport,
+        )
     try:
         if args.transport == "stdio":
             server.run("stdio")

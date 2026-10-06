@@ -634,3 +634,19 @@ async def test_replan_project_adds_corrective_tasks(settings: Any) -> None:
     healthy = await orchestrator.create_project("ok", "Build a tiny service with tests", 2)
     noop = await orchestrator.replan_project(healthy["project_id"])
     assert noop["new_tasks"] == []
+
+
+async def test_start_reports_degraded_subsystems_without_probing(settings: Any) -> None:
+    """An unconfigured GitHub must not be probed (no retries, no 404s)."""
+    degraded = settings.model_copy(
+        update={"GITHUB_TOKEN": "", "GITHUB_REPO": "owner/repo", "CRON_ENABLED": False}
+    )
+    orchestrator = build_fake_orchestrator(degraded)
+    report = await orchestrator.start()
+    assert report["github"]["configured"] is False
+    assert report["github"]["ok"] is False
+    assert "not configured" in report["github"]["error"]
+    assert report["warnings"], "degraded configuration must be surfaced"
+    health = await orchestrator.health()
+    assert health["status"] == "ok"
+    assert health["subsystems"]["github"]["configured"] is False

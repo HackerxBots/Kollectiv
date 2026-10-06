@@ -136,7 +136,16 @@ class Orchestrator:
 
         report["storage"] = await guarded("storage", self.pool.initialize())
         report["agents"] = await guarded("agents", self.agent_pool.initialize())
-        report["github"] = await guarded("github", self.github.check_connection())
+        if self.github.is_configured():
+            report["github"] = await guarded("github", self.github.check_connection())
+        else:
+            # Nothing to probe: report the gap instead of retrying 404s.
+            report["github"] = {
+                "ok": False,
+                "configured": False,
+                "repo": self.github.repo,
+                "error": "GitHub is not configured; set GITHUB_TOKEN and GITHUB_REPO.",
+            }
         try:
             report["brain"] = self.brain.stats()
         except Exception as exc:  # noqa: BLE001 - stats must never fail startup

@@ -18,7 +18,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 113 hermetic tests, ~4 s
+pytest -q                      # 114 hermetic tests, ~4 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config                # types (clean)

@@ -584,7 +584,7 @@ src/orchestrator/app.py        the Orchestrator that wires everything together
 src/api/routes.py              FastAPI application + webhook router
 src/api/mcp_server.py          MCP tool server (SDK v1 and v2)
 src/api/cli.py                 the `kollektiv` command line interface
-tests/                         113 hermetic tests (no network, no credentials)
+tests/                         114 hermetic tests (no network, no credentials)
 ```
 
 ---
@@ -594,7 +594,7 @@ tests/                         113 hermetic tests (no network, no credentials)
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 113 tests, ~4 s, fully mocked
+pytest -q                 # 114 tests, ~4 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
 mypy src config           # types (clean)
