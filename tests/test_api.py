@@ -1,0 +1,309 @@
+"""Tests for the HTTP API and the MCP tool surface.
+
+The API is exercised through ``httpx.ASGITransport`` (no sockets), with a stub
+orchestrator so the tests stay hermetic. The MCP tests build the real server
+and call the registered tools directly.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+import httpx
+import pytest
+
+from src.api.mcp_server import create_server
+from src.api.routes import create_app
+from src.orchestrator.brain import OrchestratorBrain
+from src.orchestrator.collector import Collector
+from src.orchestrator.planner import Planner
+from src.storage.state_manager import StateManager
+from src.utils.errors import ConfigurationError
+from tests.conftest import FakeAgent, FakeAgentPool, FakeTeraBoxPool
+
+
+class StubOrchestrator:
+    """A stand-in with the same surface the routes depend on."""
+
+    def __init__(self, settings: Any) -> None:
+        self.settings = settings
+        self.pool = FakeTeraBoxPool()
+        self.state = StateManager(self.pool, settings=settings, project_id="prj_api")
+        self.brain = OrchestratorBrain(settings)
+        self.planner = Planner(self.brain, settings=settings)
+        self.agent_pool = FakeAgentPool(
+            [FakeAgent("agent-1", ['```python path=src/app.py\nprint("ok")\n```'])]
+        )
+        self.collector = Collector(settings=settings, project_id="prj_api", write_files=True)
+        self.projects: Dict[str, Dict[str, Any]] = {}
+        self.sync_runs = 0
+        self._counter = 0
+
+    # -- projects ------------------------------------------------------
+    async def create_project(self, name: str, description: str, n_agents: int = 3) -> Dict[str, Any]:
+        """Plan a project and remember it."""
+        if not description.strip():
+            raise ValueError("description must not be empty")
+        self._counter += 1
+        project_id = f"prj_stub{self._counter}"
+        plan = await self.planner.create_plan(description, n_agents)
+        record = {
+            "project_id": project_id,
+            "name": name or plan["project_name"],
+            "description": description,
+            "n_agents": n_agents,
+            "plan": plan,
+            "status": "planned",
+        }
+        self.projects[project_id] = record
+        return record
+
+    async def get_project(self, project_id: str) -> Dict[str, Any] | None:
+        """Look up a project."""
+        return self.projects.get(project_id)
+
+    async def list_projects(self) -> List[Dict[str, Any]]:
+        """List the stub projects."""
+        return [
+            {"project_id": record["project_id"], "name": record["name"], "status": record["status"]}
+            for record in self.projects.values()
+        ]
+
+    async def run_project(self, project_id: str, max_concurrency: int | None = None) -> Dict[str, Any]:
+        """Pretend to run the project."""
+        if project_id not in self.projects:
+            raise KeyError(project_id)
+        record = self.projects[project_id]
+        if not self.agent_pool.is_configured():
+            raise ConfigurationError("no agents")
+        tasks = record["plan"]["tasks"]
+        record["status"] = "completed"
+        return {
+            "project_id": project_id,
+            "status": "completed",
+            "tasks_dispatched": len(tasks),
+            "completed": len(tasks),
+            "failed": 0,
+            "results": [],
+            "artifact": {"file_count": 1, "total_bytes": 10, "conflicts": [], "missing_dependencies": []},
+        }
+
+    async def get_project_status(self, project_id: str) -> Dict[str, Any]:
+        """Return the state document for a project."""
+        if project_id not in self.projects:
+            raise KeyError(project_id)
+        state = await self.state.read_state(project_id)
+        state["project_name"] = self.projects[project_id]["name"]
+        state["queued_tasks"] = len(
+            [task for task in state.get("tasks", []) if task.get("status") == "pending"]
+        )
+        return state
+
+    async def get_project_files(self, project_id: str) -> List[Dict[str, Any]]:
+        """Return the fake storage listing."""
+        return await self.pool.list_project_files(project_id)
+
+    async def upload_project_file(self, project_id: str, local_path: str) -> Dict[str, Any]:
+        """Archive a file through the fake pool."""
+        import os
+
+        if not os.path.isfile(local_path):
+            raise FileNotFoundError(local_path)
+        return await self.pool.upload_file(local_path, f"/Kollektiv/{project_id}/uploads/x")
+
+    # -- status --------------------------------------------------------
+    async def get_agents_status(self, probe: bool = False) -> List[Dict[str, Any]]:
+        """Return agent statuses."""
+        return await self.agent_pool.get_pool_status(probe=probe)
+
+    async def get_storage_status(self) -> Dict[str, Any]:
+        """Return the fake quota."""
+        return await self.pool.get_total_quota()
+
+    async def trigger_sync(self) -> Dict[str, Any]:
+        """Count sync runs."""
+        self.sync_runs += 1
+        return {"started_at": "now", "commits": 0, "errors": []}
+
+    async def on_pr_merged(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Accept a merge notification."""
+        return {"handled": "pr_merged"}
+
+    async def health(self) -> Dict[str, Any]:
+        """Report health."""
+        return {
+            "status": "ok",
+            "app": "Kollektiv",
+            "subsystems": {"agents": {"agents": 1}, "brain": self.brain.stats()},
+            "warnings": [],
+        }
+
+
+@pytest.fixture()
+def api_app(settings: Any) -> Any:
+    """A FastAPI app wired to the stub orchestrator."""
+    settings = settings.model_copy(update={"AUTO_INIT_DB": True}, deep=True)
+    return create_app(settings=settings, orchestrator=StubOrchestrator(settings))
+
+
+@pytest.fixture()
+async def api_client(api_app: Any) -> Any:
+    """An httpx client bound to the ASGI app, with lifespan started."""
+    transport = httpx.ASGITransport(app=api_app)
+    async with api_app.router.lifespan_context(api_app), httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        yield client
+
+
+# ----------------------------------------------------------------------
+# Routes
+# ----------------------------------------------------------------------
+async def test_health(api_client: Any) -> None:
+    """``GET /health`` reports subsystem status."""
+    response = await api_client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["subsystems"]["agents"]["agents"] == 1
+
+
+async def test_project_lifecycle(api_client: Any) -> None:
+    """Create, list, run and inspect a project."""
+    created = await api_client.post(
+        "/projects",
+        json={"name": "shortener", "description": "Build a URL shortener with FastAPI and tests", "n_agents": 3},
+    )
+    assert created.status_code == 201
+    project = created.json()
+    assert project["project_id"].startswith("prj_stub")
+    assert len(project["plan"]["tasks"]) == 3
+
+    listed = await api_client.get("/projects")
+    assert listed.status_code == 200
+    assert listed.json()["count"] == 1
+
+    run = await api_client.post(f"/projects/{project['project_id']}/run")
+    assert run.status_code == 200
+    assert run.json()["tasks_dispatched"] == 3
+
+    status = await api_client.get(f"/projects/{project['project_id']}/status")
+    assert status.status_code == 200
+    assert "queued_tasks" in status.json()
+
+    files = await api_client.get(f"/projects/{project['project_id']}/files")
+    assert files.status_code == 200
+    assert files.json()["count"] == 0
+
+
+async def test_project_validation_errors(api_client: Any) -> None:
+    """Empty descriptions and unknown projects produce clean 4xx answers."""
+    bad = await api_client.post("/projects", json={"name": "x", "description": "   ", "n_agents": 1})
+    assert bad.status_code == 400
+
+    missing = await api_client.get("/projects/prj_missing/status")
+    assert missing.status_code == 404
+
+    missing_run = await api_client.post("/projects/prj_missing/run")
+    assert missing_run.status_code == 404
+
+
+async def test_agents_storage_and_sync_endpoints(api_client: Any) -> None:
+    """Operational endpoints expose pool, quota and sync data."""
+    agents = await api_client.get("/agents/status")
+    assert agents.status_code == 200
+    assert agents.json()["count"] == 1
+
+    storage = await api_client.get("/storage/status")
+    assert storage.status_code == 200
+    assert storage.json()["total_gb"] == 10.0
+
+    sync = await api_client.post("/sync")
+    assert sync.status_code == 200
+    assert sync.json()["started_at"] == "now"
+
+
+async def test_upload_endpoint(api_client: Any, tmp_path: Any) -> None:
+    """A local file can be archived into a project."""
+    local = tmp_path / "artifact.txt"
+    local.write_text("payload", encoding="utf-8")
+    response = await api_client.post("/projects/prj_stub1/upload", json={"file_path": str(local)})
+    assert response.status_code == 201
+    assert response.json()["upload"]["size"] == 7
+
+    missing = await api_client.post("/projects/prj_stub1/upload", json={"file_path": str(tmp_path / "nope.txt")})
+    assert missing.status_code == 404
+
+
+async def test_openapi_schema_documents_routes(api_app: Any) -> None:
+    """The OpenAPI schema includes the documented endpoints."""
+    schema = api_app.openapi()
+    paths = set(schema["paths"])
+    assert {"/health", "/projects", "/sync", "/agents/status", "/storage/status"} <= paths
+    assert "/webhooks/github" in paths
+
+
+# ----------------------------------------------------------------------
+# MCP
+# ----------------------------------------------------------------------
+async def test_mcp_tools_are_registered(settings: Any) -> None:
+    """Every documented tool is exposed by the MCP server."""
+    server = create_server(settings=settings)
+    tools = await server.list_tools()
+    names = {tool.name for tool in tools}
+    assert {
+        "list_projects",
+        "get_project_status",
+        "create_project",
+        "run_project",
+        "list_files",
+        "upload_file",
+        "get_agent_pool_status",
+        "get_storage_status",
+        "trigger_sync",
+    } <= names
+
+
+def tool_payload(result: Any) -> Dict[str, Any]:
+    """Extract the JSON body from an MCP tool result (SDK v1 and v2 shapes)."""
+    import json
+
+    content = getattr(result, "content", None)
+    if content:
+        for item in content:
+            text = getattr(item, "text", None)
+            if text:
+                return json.loads(text)
+    if isinstance(result, str):
+        return json.loads(result)
+    raise AssertionError(f"unexpected tool result: {result!r}")
+
+
+async def test_mcp_tools_return_json(settings: Any) -> None:
+    """Tool calls return JSON the calling model can parse."""
+    stub = StubOrchestrator(settings)
+    server = create_server(orchestrator=stub, settings=settings)  # type: ignore[arg-type]
+
+    created = tool_payload(
+        await server.call_tool("create_project", {"name": "demo", "description": "Build a demo", "n_agents": 2})
+    )
+    assert created["task_count"] == 2
+    project_id = created["project_id"]
+
+    status = tool_payload(await server.call_tool("get_project_status", {"project_id": project_id}))
+    assert status["project_name"] in {"demo", "Build A Demo"}
+
+    run = tool_payload(await server.call_tool("run_project", {"project_id": project_id}))
+    assert run["status"] == "completed"
+
+    agents = tool_payload(await server.call_tool("get_agent_pool_status", {}))
+    assert agents["count"] == 1
+
+    storage = tool_payload(await server.call_tool("get_storage_status", {}))
+    assert storage["total_gb"] == 10.0
+
+    projects = tool_payload(await server.call_tool("list_projects", {}))
+    assert projects["count"] == 1
+
+    unknown = tool_payload(await server.call_tool("get_project_status", {"project_id": "nope"}))
+    assert "error" in unknown
