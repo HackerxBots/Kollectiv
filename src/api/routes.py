@@ -32,6 +32,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -141,7 +142,8 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
         lifespan=lifespan,
     )
     dashboard = Path(__file__).resolve().parents[2] / "web"
-    if (dashboard / "index.html").is_file():
+    dashboard_available = (dashboard / "index.html").is_file()
+    if dashboard_available:
         # The same static page that Cloudflare Pages/github Pages publish, so a
         # single-origin deployment needs no CORS configuration at all.
         application.mount("/ui", StaticFiles(directory=str(dashboard), html=True), name="dashboard")
@@ -154,7 +156,7 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
         allow_headers=["*"],
     )
     application.include_router(webhook_router)
-    application.include_router(build_router(resolved))
+    application.include_router(build_router(resolved, serve_dashboard=dashboard_available))
     # Clerk: attaches identity to every request and, when AUTH_REQUIRED=true,
     # rejects anonymous calls (webhooks and /health stay public).
     application.state.clerk_verifier_handle = install_auth(application, resolved)
@@ -182,16 +184,30 @@ def get_orchestrator(request: Request) -> Orchestrator:
 # ----------------------------------------------------------------------
 # Routes
 # ----------------------------------------------------------------------
-def build_router(settings: Optional[Settings] = None) -> APIRouter:
+def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = False) -> APIRouter:
     """Build the main API router (kept separate so tests can mount it alone).
 
     Args:
         settings: The settings the app was built with. Passing them explicitly
             keeps routes independent of the ambient ``.env`` (important when a
             process hosts more than one configuration, e.g. in tests).
+        serve_dashboard: True when ``/ui`` is mounted, so ``/`` can point at it.
     """
     router = APIRouter()
     resolved = settings or get_settings()
+
+    @router.get("/", include_in_schema=False)
+    async def root() -> Any:
+        """Send browsers to the dashboard, machines to the API description."""
+        if serve_dashboard:
+            return RedirectResponse(url="/ui/")
+        return {
+            "name": "Kollektiv",
+            "version": __version__,
+            "docs": "/docs",
+            "health": "/health",
+            "projects": "/projects",
+        }
 
     def request_auth_required() -> bool:
         """Return ``AUTH_REQUIRED`` for this app instance."""

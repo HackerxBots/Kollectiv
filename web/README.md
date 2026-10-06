@@ -42,10 +42,17 @@ answers `401` and the page says so.
 
 ## Local preview
 
+The API serves this folder itself — no second server, no CORS:
+
 ```bash
-kollektiv serve-api                      # terminal 1
-python -m http.server 8088 --directory web   # terminal 2
-# open http://localhost:8088
+kollektiv serve-api
+# dashboard: http://localhost:8000/ui   (the API's "/" redirects there too)
+```
+
+Or serve the folder standalone (useful while editing the page):
+
+```bash
+python -m http.server 8088 --directory web   # http://localhost:8088
 ```
 
 ## GitHub Pages instead?

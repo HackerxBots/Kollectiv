@@ -182,7 +182,7 @@ pip install -e ".[dev]"
 cp .env.example .env        # fill in your keys (see Configuration)
 kollektiv secret            # paste the output into SECRET_KEY
 kollektiv check             # shows exactly what is missing or degraded
-kollektiv serve-api         # http://localhost:8000/docs
+kollektiv serve-api         # dashboard at http://localhost:8000/ui, docs at /docs
 ```
 
 Your first project:
@@ -191,6 +191,12 @@ Your first project:
 kollektiv run "Build a URL shortener: FastAPI service, SQLite storage, CLI and pytest tests" \
     --name shortener --agents 3
 kollektiv status --project-id prj_…      # the shared state document
+```
+
+The dashboard (projects, tasks, agents, storage quota, health):
+
+```bash
+open http://localhost:8000/ui        # or point Cloudflare Pages at web/
 ```
 
 Or over HTTP:
@@ -592,7 +598,7 @@ The whole thing runs on free tiers with no VM:
 | Shared drive | Cloudflare R2 (or pooled TeraBox) | `STORAGE_BACKEND=auto` picks R2 as soon as the keys are present |
 | Auth | Clerk | `AUTH_REQUIRED=true` protects every route except `/health`, `/docs` and `/webhooks/*` |
 | Email | Resend | run summaries/alerts; `NOTIFY_ON_FAILURE_ONLY=true` keeps the quota for failures |
-| Dashboard | Cloudflare Pages | static `web/` — see [web/README.md](web/README.md) |
+| Dashboard | Cloudflare Pages | static `web/` (see [web/README.md](web/README.md)); the API also serves it at `/ui`, and `/` redirects there |
 
 Bootstrap a fresh box end to end:
 

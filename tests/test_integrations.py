@@ -757,3 +757,25 @@ def test_api_documents_the_new_routes(settings: Settings) -> None:
     assert "/projects/{project_id}/files/{file_path}/url" in paths
     storage = paths["/storage/status"]["get"]
     assert storage.get("tags") == ["storage"]
+
+
+def test_root_points_browsers_at_the_dashboard(settings: Settings) -> None:
+    """`/` redirects to the bundled dashboard (and to JSON when absent)."""
+    app = create_app(settings)
+    transport = httpx.ASGITransport(app=app)
+
+    async def fetch() -> httpx.Response:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", follow_redirects=False
+        ) as client:
+            return await client.get("/")
+
+    response = asyncio.run(fetch())
+    assert response.status_code in (307, 302)
+    assert response.headers["location"] == "/ui/"
+
+    # Without the bundled page the route stays machine-readable.
+    from src.api.routes import build_router
+
+    machine = build_router(settings, serve_dashboard=False)
+    assert any(getattr(route, "path", None) == "/" for route in machine.routes)
