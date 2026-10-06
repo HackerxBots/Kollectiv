@@ -1,0 +1,89 @@
+# CLAUDE.md
+
+Guidance for AI coding agents working in this repository.
+
+## What this project is
+
+Kollektiv is a **multi-agent collaborative dev team orchestrator**. One cheap
+LLM (the *brain*) plans and reviews work; a pool of worker agents executes
+subtasks in parallel; TeraBox holds the shared `PROJECT_STATE.md`; GitHub is
+the real-time source of truth for what actually landed.
+
+Pipeline: `brieF → planner → dispatcher (waves) → agents → collector → review →
+state/GitHub sync`.
+
+## Commands
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+pytest -q                      # 109 hermetic tests, ~4 s
+pytest tests/test_api.py -q    # one module
+ruff check .                   # lint (clean)
+mypy src config                # types (clean)
+
+kollektiv check                # what is configured / degraded
+kollektiv serve-api            # uvicorn src.api.routes:app --port 8000
+python -m src.api.mcp_server   # MCP tools, port 8001
+```
+
+Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
+`tests/conftest.py`. Never add a test that needs a real credential.
+
+## Architecture map
+
+| Path | Responsibility |
+| --- | --- |
+| `config/settings.py` | The single `Settings` object (pydantic-settings). Every module takes it as an optional argument and falls back to `get_settings()`. |
+| `src/utils/errors.py` | Error hierarchy. **Permanent** errors (`ConfigurationError`, `AuthenticationError`, `GitHubError`, …) vs **transient** (`*TransientError`, subclasses of `RetryableError`). Only transient ones are retried. |
+| `src/utils/retry.py` | `async_retry` / `sync_retry` with exponential backoff, `retry_on=` / `exclude=` filters and `KOLLEKTIV_RETRY_BASE_DELAY` / `_MAX_DELAY` overrides. |
+| `src/utils/token_store.py` | Fernet-encrypted tokens in SQLite. All credentials go through it; nothing else touches tokens. |
+| `src/db/models.py` | SQLModel tables + `session_scope()` / `init_db()`. Pass `db_url` (or `sqlite:///:memory:`) in tests. |
+| `src/storage/` | `TeraBoxClient` (one account) → `TeraBoxPoolManager` (routing by free space) → `StateManager` (`PROJECT_STATE.md`). |
+| `src/agents/` | `ArenaClient` (one worker over HTTP), `AgentPool` (scheduling/failover), `SessionManager` (APScheduler maintenance). |
+| `src/github/` | `GitHubClient` (REST) + `webhook_handler` (HMAC-verified, background work). |
+| `src/orchestrator/` | `brain` → `planner` → `dispatcher` → `collector` → `sync_engine`, wired by `app.Orchestrator`. |
+| `src/api/` | `routes.py` (FastAPI), `mcp_server.py` (MCP tools), `cli.py` (`kollektiv`). |
+
+## Conventions
+
+- **Everything async.** All I/O is `await`ed; use `httpx.AsyncClient` only.
+- **Never crash silently.** Catch, log with context, and either degrade or raise
+  a typed error. `Orchestrator.start()` collects `config_warnings()` instead of
+  refusing to boot.
+- **Module docstring + type hints on every function.** No placeholders.
+- **Retry external calls** (3 attempts, exponential backoff). Pass
+  `exclude=(RateLimitError,)` for clients that must fail over instead of
+  sleeping on a 429 — the pool/brain own that decision.
+- **Degrade, don't die.** Missing brain key → heuristic planner/reviewer.
+  Missing TeraBox → local file fallback. Missing GitHub → sync reports the
+  error. `/health` and `kollektiv check` must always describe what is degraded.
+- **Secrets never reach logs.** Use `mask_email` / `redact_token` /
+  `Settings.redacted()`.
+
+## Gotchas
+
+- `data/` holds the dev SQLite DB **and** `data/workspace`. Tests must not read
+  it: build `Settings(_env_file=None, ...)` copies and pass an in-memory
+  `db_url`.
+- `mcp` has two API generations. `src/api/mcp_server.py` adapts to both
+  (`FastMCP` in v1, `MCPServer` in v2). SDK v2's `server.call_tool(...)`
+  returns a `CallToolResult` (read `.content[0].text`), not a JSON string.
+- The agent-pool `account_id` is `sha256(email)[:16]`; logs mask emails, so
+  assertions must use `account_id`.
+- Worker output contract: fenced blocks tagged with a path
+  (` ```python path=src/app.py `). Untagged fences are snippets and are never
+  written to disk — `src/orchestrator/collector.py` enforces path safety.
+- FastAPI wraps included routers (0.142+); enumerate routes via
+  `app.router.routes` + `getattr(route, "path", None)` or `app.openapi()`.
+- TeraBox upload-shard details differ between API revisions; the uncertain
+  spots are marked with `TODO` in `src/storage/terabox_client.py` (rule: keep
+  the TODO until verified against a live account).
+
+## Definition of done for a change
+
+1. `pytest -q` green (add tests alongside behavior changes).
+2. `ruff check .` and `mypy src config` clean.
+3. `README.md` / this file updated if interfaces, config keys or commands moved.
+4. Commit with a `feat:` / `fix:` / `test:` / `docs:` prefix.

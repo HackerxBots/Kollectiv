@@ -538,7 +538,12 @@ class ArenaClient:
             ``{alive, token_valid, authenticated, rate_limited, cooldown_seconds,
             busy, tasks_done, tasks_failed, last_error, probed, http_status}``.
         """
-        token_valid = self.is_authenticated()
+        # Key-based endpoints (OpenAI-compatible base URLs) have no session
+        # token, but they are still "authenticated" once the client is usable.
+        token_valid = self.is_authenticated() or (self.authenticated and not self.session_token)
+
+        # ``probe`` additionally asks the endpoint whether the credential is
+        # accepted (see ``probe_endpoint``); the local snapshot is instant.
         status: Dict[str, Any] = {
             "account_id": self.account_id,
             "label": self.label,
