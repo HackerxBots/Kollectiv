@@ -58,6 +58,29 @@ jobs:
               print(f"- `{case.get('classname')}.{case.get('name')}` — {message}")
           PY
 
+      - name: Comment the failures on the pull request
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          path = pathlib.Path("pytest-report.xml")
+          lines = ["### CI test failures", ""]
+          if path.exists():
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  node = case.find("failure") if case.find("failure") is not None else case.find("error")
+                  if node is None:
+                      continue
+                  detail = "\n".join((node.text or "").strip().splitlines()[-12:])
+                  lines += [f"<details><summary><code>{case.get('classname')}.{case.get('name')}</code></summary>",
+                            "", "```", detail, "```", "</details>", ""]
+          else:
+              lines.append("No pytest report was produced (collection error or install failure).")
+          pathlib.Path("/tmp/ci-report.md").write_text("\n".join(lines)[:60000])
+          PY
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file /tmp/ci-report.md
+
       - name: Upload the pytest report
         if: always()
         uses: actions/upload-artifact@v4
