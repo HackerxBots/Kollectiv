@@ -183,6 +183,73 @@ class Settings(BaseSettings):
     TERABOX_UPLOAD_TIMEOUT: float = 600.0
 
     # ------------------------------------------------------------------
+    # Storage backend
+    # ------------------------------------------------------------------
+    #: ``auto`` picks R2 when it is configured, then TeraBox; ``r2``/``terabox``
+    #: force a backend and ``none`` keeps everything on the local filesystem.
+    STORAGE_BACKEND: str = "auto"
+
+    # ------------------------------------------------------------------
+    # Cloudflare R2 (recommended: free tier, S3 compatible, no egress fees)
+    # ------------------------------------------------------------------
+    #: JSON list to pool several buckets into one drive (9Drive style):
+    #: ``[{"name": "primary", "bucket": "kollektiv", "access_key_id": "…",
+    #:    "secret_access_key": "…", "endpoint": "https://<acct>.r2.cloudflarestorage.com"}]``
+    R2_ACCOUNTS: str = "[]"
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = "kollektiv"
+    R2_ENDPOINT: str = ""
+    R2_REGION: str = "auto"
+    #: Key namespace for everything Kollektiv writes.
+    R2_PREFIX: str = "kollektiv"
+    #: Optional public/custom-domain base (``https://files.example.com``) used
+    #: instead of presigned URLs in API responses.
+    R2_PUBLIC_BASE_URL: str = ""
+    R2_PRESIGN_EXPIRES: int = 3600
+    R2_REQUEST_TIMEOUT: float = 120.0
+    #: Free storage per bucket, used for routing and quota reporting.
+    R2_FREE_TIER_GB: float = 10.0
+
+    # ------------------------------------------------------------------
+    # Database (Neon Postgres in production, SQLite locally)
+    # ------------------------------------------------------------------
+    #: ``require``/``prefer``/``disable``; applied to Postgres URLs only.
+    DATABASE_SSL_MODE: str = "require"
+    #: Recycling/pooling knobs for serverless Postgres (ignored by SQLite).
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
+    DATABASE_POOL_RECYCLE: int = 300
+
+    # ------------------------------------------------------------------
+    # Authentication (Clerk)
+    # ------------------------------------------------------------------
+    CLERK_SECRET_KEY: str = ""
+    CLERK_PUBLISHABLE_KEY: str = ""
+    #: Optional overrides; derived from the publishable key when empty.
+    CLERK_ISSUER: str = ""
+    CLERK_JWKS_URL: str = ""
+    #: Comma separated origins allowed to present Clerk tokens (``azp`` claim).
+    CLERK_AUTHORIZED_PARTIES: str = ""
+    #: ``false`` keeps the API open (handy for local development and tests).
+    AUTH_REQUIRED: bool = False
+    #: Svix signing secret for Clerk webhooks (``whsec_…``).
+    CLERK_WEBHOOK_SECRET: str = ""
+
+    # ------------------------------------------------------------------
+    # Email notifications (Resend)
+    # ------------------------------------------------------------------
+    RESEND_API_KEY: str = ""
+    RESEND_FROM: str = "Kollektiv <onboarding@resend.dev>"
+    RESEND_BASE_URL: str = "https://api.resend.com"
+    #: Comma separated recipients for run summaries and alerts.
+    NOTIFY_EMAILS: str = ""
+    NOTIFY_ON_RUN_COMPLETION: bool = True
+    NOTIFY_ON_FAILURE_ONLY: bool = False
+    #: Public URL of the dashboard, used in email links.
+    APP_BASE_URL: str = "http://localhost:8000"
+
+    # ------------------------------------------------------------------
     # Worker agents
     # ------------------------------------------------------------------
     ARENA_ACCOUNTS: str = "[]"
@@ -387,6 +454,123 @@ class Settings(BaseSettings):
         return self.GITHUB_REPO.strip().lower() != "owner/repo"
 
     @property
+    def database_url(self) -> str:
+        """Return ``DATABASE_URL`` normalised for SQLAlchemy + the current driver.
+
+        Neon (and Heroku) hand out ``postgres://`` URLs; SQLAlchemy 2 wants
+        ``postgresql://`` and an explicit driver. ``sslmode`` is added when the
+        URL does not already carry one, because Neon requires TLS.
+        """
+        url = (self.DATABASE_URL or "").strip()
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg://" + url[len("postgresql://") :]
+        if url.startswith("postgres") and "sslmode=" not in url:
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}sslmode={self.DATABASE_SSL_MODE}"
+        return url
+
+    @property
+    def is_postgres(self) -> bool:
+        """True when the configured database is PostgreSQL (Neon, Supabase, RDS)."""
+        return self.database_url.startswith(("postgresql", "postgres"))
+
+    @property
+    def r2_account_list(self) -> List[Dict[str, str]]:
+        """Parsed ``R2_ACCOUNTS`` entries (empty when misconfigured)."""
+        from src.storage.r2_client import r2_accounts_from_settings
+
+        return r2_accounts_from_settings(self)
+
+    @property
+    def is_r2_configured(self) -> bool:
+        """True when R2 credentials (single bucket or pooled) are present."""
+        if self.R2_ACCESS_KEY_ID and self.R2_SECRET_ACCESS_KEY and self.R2_ENDPOINT:
+            return True
+        raw = (self.R2_ACCOUNTS or "").strip()
+        if raw and raw not in ("[]", "{}"):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                return False
+            if isinstance(parsed, dict):
+                parsed = [parsed]
+            if isinstance(parsed, list):
+                return any(
+                    str(item.get("bucket") or self.R2_BUCKET)
+                    and str(item.get("endpoint") or self.R2_ENDPOINT)
+                    and (item.get("access_key_id") or item.get("access_key"))
+                    and (item.get("secret_access_key") or item.get("secret_key"))
+                    for item in parsed
+                    if isinstance(item, dict)
+                )
+        return False
+
+    @property
+    def storage_backend(self) -> str:
+        """Resolve ``STORAGE_BACKEND`` (``auto``) to a concrete backend name."""
+        choice = (self.STORAGE_BACKEND or "auto").strip().lower()
+        if choice in ("", "auto"):
+            if self.is_r2_configured:
+                return "r2"
+            if self.is_terabox_configured:
+                return "terabox"
+            return "none"
+        return choice
+
+    @property
+    def clerk_issuer(self) -> str:
+        """Clerk issuer URL, derived from the publishable key when needed.
+
+        The publishable key (``pk_test_<base64(domain)$>``) embeds the frontend
+        API domain, which is exactly the token issuer.
+        """
+        if self.CLERK_ISSUER:
+            return self.CLERK_ISSUER.rstrip("/")
+        key = self.CLERK_PUBLISHABLE_KEY or ""
+        for prefix in ("pk_test_", "pk_live_"):
+            if key.startswith(prefix):
+                try:
+                    import base64
+
+                    raw = key[len(prefix) :]
+                    padded = raw + "=" * (-len(raw) % 4)
+                    host = base64.urlsafe_b64decode(padded.encode()).decode().rstrip("$")
+                    return f"https://{host}"
+                except Exception:  # noqa: BLE001 - fall back to the secret key path
+                    break
+        return ""
+
+    @property
+    def clerk_jwks_url(self) -> str:
+        """JWKS endpoint used to verify Clerk session tokens."""
+        if self.CLERK_JWKS_URL:
+            return self.CLERK_JWKS_URL
+        issuer = self.clerk_issuer
+        return f"{issuer}/.well-known/jwks.json" if issuer else ""
+
+    @property
+    def clerk_authorized_parties(self) -> List[str]:
+        """Allowed ``azp`` (authorised party) values for Clerk tokens."""
+        return [item.strip() for item in (self.CLERK_AUTHORIZED_PARTIES or "").split(",") if item.strip()]
+
+    @property
+    def is_clerk_configured(self) -> bool:
+        """True when Clerk tokens can be verified."""
+        return bool(self.CLERK_SECRET_KEY and (self.clerk_jwks_url or self.clerk_issuer))
+
+    @property
+    def notify_recipients(self) -> List[str]:
+        """Parsed ``NOTIFY_EMAILS`` list."""
+        return [item.strip() for item in (self.NOTIFY_EMAILS or "").split(",") if item.strip()]
+
+    @property
+    def is_resend_configured(self) -> bool:
+        """True when email notifications can be sent."""
+        return bool(self.RESEND_API_KEY and self.notify_recipients)
+
+    @property
     def is_brain_configured(self) -> bool:
         """True when an LLM API key is present."""
         return bool(self.BRAIN_API_KEY)
@@ -402,8 +586,17 @@ class Settings(BaseSettings):
             warnings.append("SECRET_KEY is unset; using the insecure development key.")
         if not self.is_brain_configured:
             warnings.append("BRAIN_API_KEY is unset; the orchestrator brain is in heuristic mode.")
-        if not self.is_terabox_configured:
-            warnings.append("No usable TERABOX_ACCOUNTS; shared storage is disabled.")
+        if self.storage_backend == "none":
+            warnings.append(
+                "No shared storage configured (set R2_* or TERABOX_ACCOUNTS); "
+                "the orchestrator keeps state and artifacts in the local workspace."
+            )
+        elif self.storage_backend == "terabox" and not self.is_terabox_configured:
+            warnings.append("STORAGE_BACKEND=terabox but no usable TERABOX_ACCOUNTS are configured.")
+        if self.AUTH_REQUIRED and not self.is_clerk_configured:
+            warnings.append("AUTH_REQUIRED is true but Clerk is not configured; the API will reject requests.")
+        if not self.NOTIFY_EMAILS:
+            warnings.append("NOTIFY_EMAILS is empty; run summaries are not emailed.")
         if not self.is_arena_configured:
             warnings.append("No ARENA_ACCOUNTS; the agent pool has no workers.")
         if not self.is_github_configured:
@@ -428,6 +621,11 @@ class Settings(BaseSettings):
             "TERABOX_APP_KEY",
             "TERABOX_ACCOUNTS",
             "ARENA_ACCOUNTS",
+            "R2_ACCOUNTS",
+            "R2_SECRET_ACCESS_KEY",
+            "CLERK_SECRET_KEY",
+            "CLERK_WEBHOOK_SECRET",
+            "RESEND_API_KEY",
         }
         data: Dict[str, Any] = {}
         for name, value in self.model_dump().items():

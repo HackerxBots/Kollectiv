@@ -1,0 +1,53 @@
+name: Deploy dashboard
+
+# Publishes web/ to Cloudflare Pages. Falls back to GitHub Pages when the
+# Cloudflare secrets are not configured, so the dashboard is deployable on day
+# one without any paid plan (both hosts have free tiers).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  cloudflare:
+    name: Cloudflare Pages
+    runs-on: ubuntu-latest
+    if: ${{ vars.CF_PAGES_PROJECT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy web --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=${{ github.ref_name }}
+
+  github-pages:
+    name: GitHub Pages (fallback)
+    runs-on: ubuntu-latest
+    if: ${{ vars.CF_PAGES_PROJECT == '' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -476,7 +476,7 @@ class SyncEngine:
                 LOGGER.warning("Skipping %s: larger than the archive limit", path)
                 continue
             remote = (
-                f"{self.settings.TERABOX_REMOTE_ROOT.rstrip('/')}/"
+                f"{getattr(self.pool, 'remote_root', self.settings.TERABOX_REMOTE_ROOT).rstrip('/')}/"
                 f"{self.state.project_id or 'global'}/github/{ref[:7] or 'head'}/{path}"
             )
             try:
@@ -517,7 +517,7 @@ class SyncEngine:
             relative = str(path.relative_to(workspace))
             size = path.stat().st_size
             remote = (
-                f"{self.settings.TERABOX_REMOTE_ROOT.rstrip('/')}/"
+                f"{getattr(self.pool, 'remote_root', self.settings.TERABOX_REMOTE_ROOT).rstrip('/')}/"
                 f"{self.state.project_id or 'global'}/artifacts/{relative}"
             )
             if (remote, size) in known:

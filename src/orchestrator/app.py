@@ -30,14 +30,11 @@ from src.db.models import (
     Project,
     ProjectFile,
     Task,
-    build_engine,
-    current_engine,
+    bind_engine,
     get_engine,
     init_db,
     new_id,
-    same_database,
     session_scope,
-    set_engine,
     utcnow,
 )
 from src.github.github_client import GitHubClient
@@ -46,7 +43,7 @@ from src.orchestrator.collector import Collector
 from src.orchestrator.dispatcher import Dispatcher
 from src.orchestrator.planner import Planner
 from src.orchestrator.sync_engine import SyncEngine
-from src.storage.pool_manager import TeraBoxPoolManager
+from src.storage.factory import build_storage
 from src.storage.state_manager import StateManager
 from src.utils.errors import ConfigurationError
 from src.utils.logger import get_logger
@@ -62,11 +59,22 @@ class Orchestrator:
         settings: Optional settings override.
     """
 
-    def __init__(self, settings: Optional[Settings] = None) -> None:
+    def __init__(
+        self,
+        settings: Optional[Settings] = None,
+        notifier: Optional[Any] = None,
+    ) -> None:
         self.settings = settings or get_settings()
 
         self.token_store = TokenStore(self.settings.fernet_secret)
-        self.pool = TeraBoxPoolManager(self.settings.terabox_account_list(), settings=self.settings)
+        # R2 (recommended) or pooled TeraBox accounts; see src/storage/factory.py.
+        self.pool = build_storage(self.settings)
+        # Optional email notifications (Resend); a no-op when unconfigured.
+        if notifier is None:
+            from src.utils.resend_client import ResendNotifier
+
+            notifier = ResendNotifier(self.settings)
+        self.notifier = notifier
         self.state = StateManager(self.pool, settings=self.settings)
         self.github = GitHubClient(settings=self.settings)
         self.brain = OrchestratorBrain(settings=self.settings)
@@ -100,11 +108,7 @@ class Orchestrator:
         An engine that already matches is kept, which keeps test fixtures and
         pre-seeded in-memory databases working.
         """
-        existing = current_engine()
-        if existing is not None and same_database(str(existing.url), self.settings.DATABASE_URL):
-            return
-        set_engine(build_engine(self.settings.DATABASE_URL))
-        LOGGER.debug("Bound the database engine to %s", self.settings.DATABASE_URL)
+        bind_engine(self.settings)
 
     async def start(self) -> Dict[str, Any]:
         """Initialise storage, agents and (optionally) the cron scheduler.
@@ -173,7 +177,16 @@ class Orchestrator:
             await self.session_manager.stop()
         except Exception as exc:  # noqa: BLE001 - shutdown is best effort
             LOGGER.debug("Session manager shutdown raised: %s", exc)
-        for closer in (self.agent_pool.close, self.pool.close, self.github.close, self.brain.close):
+        closers: List[Any] = [
+            self.agent_pool.close,
+            self.pool.close,
+            self.github.close,
+            self.brain.close,
+        ]
+        notifier_close = getattr(self.notifier, "close", None)
+        if callable(notifier_close):
+            closers.append(notifier_close)
+        for closer in closers:
             try:
                 await closer()
             except Exception as exc:  # noqa: BLE001 - shutdown is best effort
@@ -358,13 +371,16 @@ class Orchestrator:
                 "missing_dependencies": merged.get("missing_dependencies", []),
             },
         }
+        summary["storage_backend"] = self.settings.storage_backend
         LOGGER.info(
-            "Project %s finished with status %s (%s/%s tasks)",
+            "Project %s finished with status %s (%s/%s tasks, storage=%s)",
             project_id,
             status,
             summary["completed"],
             summary["tasks_dispatched"],
+            summary["storage_backend"],
         )
+        await self._notify_run(project_id, record.get("name", ""), summary)
         return summary
 
     async def get_project(self, project_id: str) -> Optional[Dict[str, Any]]:
@@ -577,7 +593,7 @@ class Orchestrator:
         if not os.path.isfile(local_path):
             raise FileNotFoundError(f"Local file not found: {local_path}")
         remote = (
-            f"{self.settings.TERABOX_REMOTE_ROOT.rstrip('/')}/{project_id}/uploads/{os.path.basename(local_path)}"
+            f"{self.pool.remote_root.rstrip('/')}/{project_id}/uploads/{os.path.basename(local_path)}"
         )
         result = await self.pool.upload_file(local_path, remote)
         with session_scope() as session:
@@ -637,6 +653,7 @@ class Orchestrator:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "subsystems": {
                 "storage": {
+                    "backend": self.settings.storage_backend,
                     "configured": self.pool.is_configured(),
                     "accounts": self.pool.account_count,
                     "healthy": len([state for state in self.pool.accounts if state.healthy]),
@@ -648,6 +665,11 @@ class Orchestrator:
                 },
                 "brain": brain_stats,
                 "github": {"configured": self.github.is_configured(), "repo": self.github.repo},
+                "notifications": (
+                    self.notifier.stats()
+                    if callable(getattr(self.notifier, "stats", None))
+                    else {"configured": False}
+                ),
                 "sessions": self.session_manager.status(),
                 "sync": self.sync_engine.status(),
             },
@@ -680,6 +702,18 @@ class Orchestrator:
                     session.add(existing)
                 else:
                     session.add(_task_from_plan(project_id, task))
+
+    async def _notify_run(
+        self, project_id: str, project_name: str, summary: Dict[str, Any]
+    ) -> None:
+        """Email a run summary when notifications are enabled (never fatal)."""
+        sender = getattr(self.notifier, "send_run_summary", None)
+        if not callable(sender):
+            return
+        try:
+            await sender(project_name or project_id, summary, project_id=project_id)
+        except Exception as exc:  # noqa: BLE001 - notifications must not fail a run
+            LOGGER.warning("Could not send the run summary email: %s", exc)
 
     async def _set_project_status(self, project_id: str, status: str) -> None:
         """Update the project status in SQLite and the in-memory cache."""

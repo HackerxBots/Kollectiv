@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from config.settings import get_settings
@@ -103,12 +104,100 @@ async def cmd_check(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
-async def cmd_init_db(args: argparse.Namespace) -> int:
-    """Create the SQLite schema."""
-    from src.db.models import get_engine, init_db
+async def cmd_bootstrap(args: argparse.Namespace) -> int:
+    """Create the local database, keys and a checklist for the free stack.
 
-    init_db(get_engine())
-    _print({"status": "ok", "database": get_settings().DATABASE_URL})
+    Nothing here requires an account: it prepares everything Kollektiv needs to
+    boot (SQLite schema, SECRET_KEY guidance, workspace directories) and then
+    prints exactly which free-tier credentials to paste into ``.env``.
+    """
+    from src.db.models import bind_engine, init_db
+    from src.utils.crypto import generate_secret_key
+
+    settings = get_settings()
+    created: List[str] = []
+
+    # 1. Database schema (SQLite file or Neon Postgres).
+    try:
+        init_db(bind_engine(settings))
+        created.append(f"database ready ({'postgres' if settings.is_postgres else 'sqlite'})")
+    except Exception as exc:  # noqa: BLE001 - report, keep going
+        LOGGER.error("Could not initialise the database: %s", exc)
+        print(f"error: could not initialise the database: {exc}")
+        return 1
+
+    # 2. Workspace directories used by the collector and the state cache.
+    workspace = settings.workspace_path
+    (workspace / "state").mkdir(parents=True, exist_ok=True)
+    created.append(f"workspace ready ({workspace})")
+
+    # 3. A SECRET_KEY for the encrypted token store.
+    if not settings.SECRET_KEY:
+        created.append("SECRET_KEY is unset (see the value below)")
+    else:
+        created.append("SECRET_KEY is set")
+
+    report = {
+        "environment": settings.ENVIRONMENT,
+        "created": created,
+        "storage_backend": settings.storage_backend,
+        "database": "postgres" if settings.is_postgres else "sqlite",
+        "subsystems": {
+            "brain": settings.is_brain_configured,
+            "agents": settings.is_arena_configured,
+            "storage": settings.storage_backend != "none",
+            "github": settings.is_github_configured,
+            "auth": settings.is_clerk_configured,
+            "email": settings.is_resend_configured,
+        },
+        "warnings": settings.config_warnings(),
+    }
+
+    if args.json:
+        _print(report, True)
+        return 0
+
+    print("Kollektiv bootstrap")
+    print("===================")
+    for item in created:
+        print(f"  ok   {item}")
+    print()
+    if not settings.SECRET_KEY:
+        print("Paste this into .env (keeps stored tokens decryptable):")
+        print(f"  SECRET_KEY={generate_secret_key()}")
+        print()
+    print("Free-tier checklist (all optional, each unlocks one capability):")
+    rows = [
+        ("Cloudflare R2", "R2_BUCKET + R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY + R2_ENDPOINT",
+         settings.storage_backend == "r2", "shared storage for state + artifacts"),
+        ("Neon Postgres", "DATABASE_URL=<pooled connection string>",
+         settings.is_postgres, "durable database for multi-replica deployments"),
+        ("Clerk", "CLERK_SECRET_KEY + CLERK_PUBLISHABLE_KEY (+ AUTH_REQUIRED=true)",
+         settings.is_clerk_configured, "user accounts and API authentication"),
+        ("Resend", "RESEND_API_KEY + NOTIFY_EMAILS",
+         settings.is_resend_configured, "run summaries and alerts by email"),
+        ("Groq / DeepSeek", "BRAIN_API_KEY (+ BRAIN_PROVIDER)",
+         settings.is_brain_configured, "LLM planning and reviews"),
+        ("Worker endpoints", "ARENA_ACCOUNTS=[...]",
+         settings.is_arena_configured, "the agents that write the code"),
+    ]
+    for name, keys, done, why in rows:
+        mark = "ok  " if done else "todo"
+        print(f"  [{mark}] {name:16} {keys}")
+        print(f"           -> {why}")
+    print()
+    print("Next: `kollektiv check --json` for machine-readable status, then")
+    print("      `kollektiv serve-api` and open http://localhost:8000/docs")
+    return 0
+
+
+async def cmd_init_db(args: argparse.Namespace) -> int:
+    """Create the database schema (SQLite file or Neon/Postgres)."""
+    from src.db.models import bind_engine, init_db
+
+    settings = get_settings()
+    init_db(bind_engine(settings))
+    _print({"status": "ok", "database": settings.database_url, "driver": "postgres" if settings.is_postgres else "sqlite"})
     return 0
 
 
@@ -277,7 +366,11 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--require-storage", action="store_true", help="Fail when TeraBox is unconfigured")
     check.add_argument("--require-agents", action="store_true", help="Fail when no agents are configured")
 
-    sub.add_parser("init-db", help="Create the SQLite schema")
+    sub.add_parser("init-db", help="Create the database schema")
+    bootstrap = sub.add_parser(
+        "bootstrap", help="Prepare the database/workspace and print the free-tier checklist"
+    )
+    bootstrap.add_argument("--json", action="store_true", help="Machine-readable report")
     sub.add_parser("projects", help="List projects").add_argument("--json", action="store_true")
 
     plan = sub.add_parser("plan", help="Plan a project without running it")
@@ -320,6 +413,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "check": cmd_check,
     "init-db": cmd_init_db,
+    "bootstrap": cmd_bootstrap,
     "projects": cmd_projects,
     "plan": cmd_plan,
     "run": cmd_run,
@@ -329,6 +423,28 @@ COMMANDS = {
     "serve-api": cmd_serve_api,
     "serve-mcp": cmd_serve_mcp,
 }
+
+
+def _run_async(coro: Any) -> Any:
+    """Run ``coro`` to completion, even when an event loop is already running.
+
+    ``asyncio.run`` refuses to start inside a running loop, which is exactly the
+    situation when the CLI is embedded (notebooks, tests, a host application
+    that already owns a loop). In that case the coroutine is executed in a
+    worker thread with its own loop.
+
+    Args:
+        coro: The coroutine to execute.
+
+    Returns:
+        Whatever the coroutine returns.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -351,7 +467,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         if asyncio.iscoroutinefunction(handler):
-            return int(asyncio.run(handler(args)) or 0)
+            return int(_run_async(handler(args)) or 0)
         result = handler(args)
         return int(result) if isinstance(result, (int, float)) else 0
     except KeyboardInterrupt:  # pragma: no cover - interactive

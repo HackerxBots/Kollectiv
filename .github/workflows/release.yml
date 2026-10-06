@@ -1,0 +1,90 @@
+name: Release
+
+# Publishing a v* tag cuts a release: build the sdist/wheel, check that the
+# changelog documents the version, then create the GitHub release with notes
+# taken from CHANGELOG.md and the artifacts attached.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)release, e.g. v0.2.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve version
+        id: version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import pathlib, re
+          text = pathlib.Path("pyproject.toml").read_text()
+          version = re.search(r'^version = "([^"]+)"', text, re.M).group(1)
+          tag = "${{ github.event.inputs.tag }}" or f"v{version}"
+          print(f"version={version}")
+          print(f"tag={tag}")
+          PY
+          echo "Resolved ${{ steps.version.outputs.tag }}"
+
+      - name: Verify the tag matches the packaged version
+        run: |
+          test "${{ steps.version.outputs.tag }}" = "v${{ steps.version.outputs.version }}" \
+            || { echo "tag/version mismatch"; exit 1; }
+
+      - name: Verify the changelog documents this version
+        run: |
+          grep -q "## \[${{ steps.version.outputs.version }}\]" CHANGELOG.md \
+            || { echo "CHANGELOG.md has no section for ${{ steps.version.outputs.version }}"; exit 1; }
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Extract release notes from the changelog
+        run: |
+          python - "${{ steps.version.outputs.version }}" <<'PY'
+          import pathlib, re, sys
+          version = sys.argv[1]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pattern = re.compile(rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|\Z)", re.M | re.S)
+          match = pattern.search(text)
+          body = match.group(1).strip() if match else ""
+          header = f"## Kollektiv v{version}\n\n"
+          extra = (
+              "\n\n---\n\n"
+              "**Install**\n\n```bash\npip install kollektiv\n# or from source\n"
+              "pip install \"kollektiv[postgres]\"\n```\n\n"
+              "Artifacts below: sdist + wheel. See the README for the free-tier setup "
+              "and `CHANGELOG.md` for the full history.\n"
+          )
+          pathlib.Path("release-notes.md").write_text(header + body + extra, encoding="utf-8")
+          PY
+          cat release-notes.md
+
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Kollektiv ${{ steps.version.outputs.tag }}
+          body_path: release-notes.md
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

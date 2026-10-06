@@ -119,6 +119,11 @@ class TeraBoxPoolManager:
         """Number of accounts in the pool."""
         return len(self._states)
 
+    @property
+    def remote_root(self) -> str:
+        """Root path for this backend's objects (``/Kollektiv`` by default)."""
+        return self.settings.TERABOX_REMOTE_ROOT.rstrip("/") or ""
+
     def is_configured(self) -> bool:
         """Return ``True`` when at least one account is present."""
         return bool(self._states)
@@ -484,7 +489,7 @@ class TeraBoxPoolManager:
         Returns:
             File dicts found under the project's remote folder.
         """
-        root = f"{self.settings.TERABOX_REMOTE_ROOT.rstrip('/')}/{project_id}"
+        root = f"{self.remote_root}/{project_id}"
         files: List[Dict[str, Any]] = []
         for account in self.accounts:
             if not account.healthy:

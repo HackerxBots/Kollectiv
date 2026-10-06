@@ -36,7 +36,15 @@ class KollektivError(Exception):
 
 
 class RetryableError(KollektivError):
-    """Marker mixin for errors that a retry may plausibly fix."""
+    """Marker mixin for errors that a retry may plausibly fix.
+
+    Args:
+        retry_after: Optional server suggested cooldown in seconds.
+    """
+
+    def __init__(self, message: str, retry_after: Optional[float] = None, **details: Any) -> None:
+        super().__init__(message, **details)
+        self.retry_after = retry_after
 
 
 class ConfigurationError(KollektivError):
@@ -70,6 +78,30 @@ class TeraBoxError(KollektivError):
 
 class TeraBoxTransientError(TeraBoxError, RetryableError):
     """A TeraBox failure that is worth retrying (5xx, timeout, connection)."""
+
+
+class R2Error(KollektivError):
+    """Raised for object-storage (R2/S3) failures that a retry will not fix."""
+
+
+class R2TransientError(R2Error, RetryableError):
+    """A storage failure worth retrying (5xx, 429, timeout, connection)."""
+
+
+class NotFoundError(KollektivError):
+    """Raised when a remote object, project or resource does not exist."""
+
+
+class EmailError(KollektivError):
+    """Raised when a transactional email cannot be sent."""
+
+
+class EmailTransientError(EmailError, RetryableError):
+    """A Resend failure worth retrying (5xx, 429, timeout)."""
+
+
+class AuthError(KollektivError):
+    """Raised when a request cannot be authenticated or authorised."""
 
 
 class ArenaError(KollektivError):

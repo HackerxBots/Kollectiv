@@ -25,14 +25,24 @@ both rely on that).
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from config.settings import Settings, get_settings
+from src import __version__
+from src.api.auth import (
+    auth_dependency,
+    install_auth,
+    parse_svix_headers,
+    verify_svix_signature,
+)
 from src.github.webhook_handler import get_orchestrator as get_webhook_orchestrator
 from src.github.webhook_handler import router as webhook_router
 from src.github.webhook_handler import set_orchestrator as set_webhook_orchestrator
@@ -123,12 +133,19 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
     application = FastAPI(
         title="Kollektiv",
         description=(
-            "Multi-agent collaborative dev team orchestrator: worker agents, TeraBox storage, "
-            "GitHub sync and an LLM planner."
+            "Multi-agent collaborative dev team orchestrator: worker agents, Cloudflare R2/"
+            "TeraBox storage, GitHub sync and an LLM planner. Optional free-tier extras: "
+            "Neon (database), Clerk (auth), Resend (email)."
         ),
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
+    dashboard = Path(__file__).resolve().parents[2] / "web"
+    if (dashboard / "index.html").is_file():
+        # The same static page that Cloudflare Pages/github Pages publish, so a
+        # single-origin deployment needs no CORS configuration at all.
+        application.mount("/ui", StaticFiles(directory=str(dashboard), html=True), name="dashboard")
+
     application.add_middleware(
         CORSMiddleware,
         allow_origins=resolved.cors_origin_list,
@@ -137,7 +154,10 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
         allow_headers=["*"],
     )
     application.include_router(webhook_router)
-    application.include_router(build_router())
+    application.include_router(build_router(resolved))
+    # Clerk: attaches identity to every request and, when AUTH_REQUIRED=true,
+    # rejects anonymous calls (webhooks and /health stay public).
+    application.state.clerk_verifier_handle = install_auth(application, resolved)
     return application
 
 
@@ -162,9 +182,20 @@ def get_orchestrator(request: Request) -> Orchestrator:
 # ----------------------------------------------------------------------
 # Routes
 # ----------------------------------------------------------------------
-def build_router() -> APIRouter:
-    """Build the main API router (kept separate so tests can mount it alone)."""
+def build_router(settings: Optional[Settings] = None) -> APIRouter:
+    """Build the main API router (kept separate so tests can mount it alone).
+
+    Args:
+        settings: The settings the app was built with. Passing them explicitly
+            keeps routes independent of the ambient ``.env`` (important when a
+            process hosts more than one configuration, e.g. in tests).
+    """
     router = APIRouter()
+    resolved = settings or get_settings()
+
+    def request_auth_required() -> bool:
+        """Return ``AUTH_REQUIRED`` for this app instance."""
+        return bool(resolved.AUTH_REQUIRED)
 
     @router.get("/health", tags=["system"])
     async def health(request: Request) -> Dict[str, Any]:
@@ -335,6 +366,66 @@ def build_router() -> APIRouter:
     async def storage_status(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
         """Return the TeraBox pool quota."""
         return await orchestrator.get_storage_status()
+
+    @router.get("/auth/me", tags=["system"])
+    async def whoami(user: Any = Depends(auth_dependency)) -> Dict[str, Any]:
+        """Return the authenticated identity (or an anonymous marker)."""
+        if user is None:
+            return {"authenticated": False, "auth_required": request_auth_required()}
+        return {"authenticated": True, "user": user.to_dict()}
+
+    @router.get("/projects/{project_id}/files/{file_path:path}/url", tags=["storage"])
+    async def file_url(
+        project_id: str,
+        file_path: str,
+        expires: Optional[int] = Query(default=None, ge=60, le=604800),
+        orchestrator: Orchestrator = Depends(get_orchestrator),
+    ) -> Dict[str, Any]:
+        """Return a time-limited download URL for a stored project file.
+
+        On R2 this is a presigned S3 URL (no credentials leak); on TeraBox it is
+        the API's own download URL.
+        """
+        remote = f"{orchestrator.pool.remote_root.rstrip('/')}/{project_id}/{file_path.lstrip('/')}"
+        try:
+            url = await orchestrator.pool.get_file_url(remote, expires=expires)
+        except TypeError:
+            url = await orchestrator.pool.get_file_url(remote)
+        except Exception as exc:  # noqa: BLE001 - report storage failures as 404/502
+            LOGGER.error("Could not build a URL for %s: %s", remote, exc)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return {"project_id": project_id, "path": remote, "url": url, "expires_in": expires}
+
+    @router.post("/webhooks/clerk", tags=["webhooks"])
+    async def clerk_webhook(request: Request) -> Dict[str, Any]:
+        """Receive Clerk webhooks (``user.created``, ``session.created``, ...).
+
+        The payload is verified with the Svix scheme before it is parsed. Clerk
+        is Kollektiv's identity provider, so this endpoint only records the
+        event — it never mutates project data.
+        """
+        raw = await request.body()
+        settings_used: Settings = request.app.state.settings_used_for_auth
+        secret = settings_used.CLERK_WEBHOOK_SECRET
+        if not secret:
+            LOGGER.warning("Received a Clerk webhook but CLERK_WEBHOOK_SECRET is unset; ignoring it.")
+            return {"received": True, "verified": False, "reason": "webhook secret not configured"}
+        headers = parse_svix_headers(request.scope.get("headers") or [])
+        if not verify_svix_signature(raw, headers, secret):
+            LOGGER.warning("Rejected a Clerk webhook with an invalid signature")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+        try:
+            payload = json.loads(raw or b"{}")
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON: {exc}") from exc
+        event_type = str(payload.get("type") or "")
+        data = payload.get("data") or {}
+        LOGGER.info(
+            "Clerk webhook %s for %s",
+            event_type or "(unknown)",
+            data.get("email_addresses", [{}])[0].get("email_address", data.get("id", "?")),
+        )
+        return {"received": True, "verified": True, "type": event_type}
 
     @router.post("/sync", tags=["sync"])
     async def trigger_sync(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:

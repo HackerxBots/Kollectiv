@@ -4,10 +4,13 @@ Guidance for AI coding agents working in this repository.
 
 ## What this project is
 
-Kollektiv is a **multi-agent collaborative dev team orchestrator**. One cheap
-LLM (the *brain*) plans and reviews work; a pool of worker agents executes
-subtasks in parallel; TeraBox holds the shared `PROJECT_STATE.md`; GitHub is
-the real-time source of truth for what actually landed.
+Kollektiv is a **multi-agent collaborative dev team orchestrator**, designed to
+run entirely on free tiers. One cheap LLM (the *brain*) plans and reviews work;
+a pool of worker agents executes subtasks in parallel; Cloudflare R2 (or pooled
+TeraBox accounts) holds the shared `PROJECT_STATE.md`; GitHub is the real-time
+source of truth for what actually landed. Neon can serve the database, Clerk the
+auth, Resend the notifications and Cloudflare Pages the dashboard — none of them
+required, all of them free.
 
 Pipeline: `brieF → planner → dispatcher (waves) → agents → collector → review →
 state/GitHub sync`.
@@ -18,11 +21,12 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 114 hermetic tests, ~4 s
+pytest -q                      # 165 hermetic tests, ~5 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config                # types (clean)
 
+kollektiv bootstrap            # schema + workspace + free-tier checklist
 kollektiv check                # what is configured / degraded
 kollektiv serve-api            # uvicorn src.api.routes:app --port 8000
 python -m src.api.mcp_server   # MCP tools, port 8001
@@ -39,8 +43,11 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 | `src/utils/errors.py` | Error hierarchy. **Permanent** errors (`ConfigurationError`, `AuthenticationError`, `GitHubError`, …) vs **transient** (`*TransientError`, subclasses of `RetryableError`). Only transient ones are retried. |
 | `src/utils/retry.py` | `async_retry` / `sync_retry` with exponential backoff, `retry_on=` / `exclude=` filters and `KOLLEKTIV_RETRY_BASE_DELAY` / `_MAX_DELAY` overrides. |
 | `src/utils/token_store.py` | Fernet-encrypted tokens in SQLite. All credentials go through it; nothing else touches tokens. |
+| `src/utils/sigv4.py` | Dependency-free AWS SigV4 signing/presigning for R2. Verified against `botocore` in `tests/test_r2.py` — change it only with those vectors green. |
+| `src/utils/resend_client.py` | `ResendNotifier`: run summaries, alerts, run-completion hooks. Never raises into the orchestrator. |
+| `src/api/auth.py` | Clerk `ClerkVerifier` (RS256 + JWKS), `install_auth` middleware, `verify_svix_signature` for `/webhooks/clerk`. |
 | `src/db/models.py` | SQLModel tables + `session_scope()` / `init_db()`. Pass `db_url` (or `sqlite:///:memory:`) in tests. |
-| `src/storage/` | `TeraBoxClient` (one account) → `TeraBoxPoolManager` (routing by free space) → `StateManager` (`PROJECT_STATE.md`). |
+| `src/storage/` | `TeraBoxClient`/`R2Client` (one account) → `PoolManager`/`R2Storage` (many accounts as **one drive**, routed by free space + health) → `StateManager` (`PROJECT_STATE.md`). `factory.build_storage()` picks R2 → TeraBox → local. |
 | `src/agents/` | `ArenaClient` (one worker over HTTP), `AgentPool` (scheduling/failover), `SessionManager` (APScheduler maintenance). |
 | `src/github/` | `GitHubClient` (REST) + `webhook_handler` (HMAC-verified, background work). |
 | `src/orchestrator/` | `brain` → `planner` → `dispatcher` → `collector` → `sync_engine`, wired by `app.Orchestrator`. |
@@ -57,7 +64,7 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   `exclude=(RateLimitError,)` for clients that must fail over instead of
   sleeping on a 429 — the pool/brain own that decision.
 - **Degrade, don't die.** Missing brain key → heuristic planner/reviewer.
-  Missing TeraBox → local file fallback. Missing GitHub → sync reports the
+  Missing R2/TeraBox → local file fallback. Missing GitHub → sync reports the
   error. `/health` and `kollektiv check` must always describe what is degraded.
 - **Secrets never reach logs.** Use `mask_email` / `redact_token` /
   `Settings.redacted()`.
@@ -71,8 +78,16 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   and `session.get(Task, ...)` takes a tuple **in that order**. The
   dispatcher's task persistence warns (never silently drops) on failure.
 - An `Orchestrator(settings=...)` rebinds the global database engine when its
-  `DATABASE_URL` differs from the installed one (`_bind_database()`); tests keep
-  their pre-seeded in-memory engine because matching engines are reused.
+  `DATABASE_URL` differs from the installed one (`db.models.bind_engine()`, also
+  used by the CLI); tests keep their pre-seeded in-memory engine because
+  matching engines are reused. `init-db`/`bootstrap` go through the same helper
+  — never call `get_engine()` directly for a configured database.
+- The CLI must stay runnable from inside a running event loop (notebooks,
+  embedders): async commands go through `cli._run_async()`, never raw
+  `asyncio.run()`.
+- New free-stack interfaces are covered in `tests/test_integrations.py` (Clerk
+  RS256/JWKS/Svix, Resend, settings helpers, bootstrap, dashboard); R2 in
+  `tests/test_r2.py`. Keep both hermetic — no real accounts in CI.
 - `mcp` has two API generations. `src/api/mcp_server.py` adapts to both
   (`FastMCP` in v1, `MCPServer` in v2). SDK v2's `server.call_tool(...)`
   returns a `CallToolResult` (read `.content[0].text`), not a JSON string.
@@ -93,3 +108,18 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 2. `ruff check .` and `mypy src config` clean.
 3. `README.md` / this file updated if interfaces, config keys or commands moved.
 4. Commit with a `feat:` / `fix:` / `test:` / `docs:` prefix.
+
+### Release checklist (README + releases stay current)
+
+Every change that alters behaviour also updates the front page and the log — the
+project is judged by its README and its releases, so they ship together:
+
+1. Bump `version` in `pyproject.toml` **and** `src/__init__.py` (SemVer).
+2. Move `CHANGELOG.md`'s `[Unreleased]` entries under the new version with
+   today's date; add the compare links at the bottom.
+3. Update the README: the "peak" block at the top (release name, test count) and
+   any tool table, command or configuration key that changed.
+4. Tag `v<version>` and push the tag — `.github/workflows/release.yml` builds
+   the artifacts, refuses to publish when the changelog lacks the version, and
+   creates the release with notes from `CHANGELOG.md`.
+5. Never rewrite a published tag; cut a patch release instead.

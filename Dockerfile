@@ -23,13 +23,16 @@ WORKDIR /app
 
 # setuptools resolves the packages listed in pyproject.toml, so the sources have
 # to be present for the install. The pip cache mount keeps rebuilds fast.
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md CHANGELOG.md ./
 COPY config ./config
 COPY src ./src
 
+# KOLLEKTIV_EXTRAS=postgres installs the psycopg driver for a Neon/Postgres
+# deployment (docker build --build-arg KOLLEKTIV_EXTRAS=postgres).
+ARG KOLLEKTIV_EXTRAS=
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --upgrade pip \
-    && python -m pip install . \
+    && python -m pip install ".${KOLLEKTIV_EXTRAS:+[$KOLLEKTIV_EXTRAS]}" \
     && rm -rf /app/*.egg-info \
     && mkdir -p /app/data/workspace \
     && useradd --create-home --uid 10001 kollektiv \

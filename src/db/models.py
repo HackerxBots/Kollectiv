@@ -276,13 +276,52 @@ def same_database(url_a: str, url_b: str) -> bool:
     return url_a.strip() == url_b.strip()
 
 
-def build_engine(url: str, echo: bool = False):
-    """Create an engine for ``url``, creating the SQLite parent directory."""
+def build_engine(url: str, echo: bool = False, settings: Any = None):
+    """Create an engine for ``url`` with backend-appropriate pooling.
+
+    SQLite gets ``check_same_thread=False`` (FastAPI worker threads) and a
+    pre-created parent directory. PostgreSQL (Neon, Supabase, RDS) gets
+    ``pool_pre_ping`` plus a short recycle window, which is what serverless
+    Postgres needs because it closes idle connections behind your back.
+    """
+    from config.settings import get_settings
+
+    config = settings or get_settings()
+    if url.startswith("postgres"):
+        url = normalise_postgres_url(url, config)
     path = sqlite_path(url)
     if path:
         Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, echo=echo, connect_args=connect_args)
+    if url.startswith("sqlite"):
+        engine_kwargs: Dict[str, Any] = {"connect_args": {"check_same_thread": False}}
+    elif url.startswith("postgres"):
+        engine_kwargs = {
+            "pool_pre_ping": True,
+            "pool_recycle": int(getattr(config, "DATABASE_POOL_RECYCLE", 300)),
+            "pool_size": int(getattr(config, "DATABASE_POOL_SIZE", 5)),
+            "max_overflow": int(getattr(config, "DATABASE_MAX_OVERFLOW", 5)),
+        }
+    else:
+        engine_kwargs = {}
+    LOGGER.debug("Creating database engine for %s", url.split("@")[-1] if "@" in url else url)
+    return create_engine(url, echo=echo, **engine_kwargs)
+
+
+def normalise_postgres_url(url: str, config: Any = None) -> str:
+    """Return a SQLAlchemy 2 driver URL for a Postgres DSN.
+
+    Neon (like Heroku) hands out ``postgres://`` URLs; SQLAlchemy needs
+    ``postgresql://`` with an explicit driver, and Neon requires TLS unless the
+    URL already says otherwise.
+    """
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://") :]
+    ssl_mode = getattr(config, "DATABASE_SSL_MODE", "require") if config else "require"
+    if ssl_mode and "sslmode=" not in url:
+        url = f"{url}{'&' if '?' in url else '?'}sslmode={ssl_mode}"
+    return url
 
 
 def get_engine(database_url: Optional[str] = None, echo: bool = False):
@@ -299,9 +338,8 @@ def get_engine(database_url: Optional[str] = None, echo: bool = False):
     if _engine is None:
         from config.settings import get_settings
 
-        url = database_url or get_settings().DATABASE_URL
-        _engine = build_engine(url, echo=echo)
-        LOGGER.debug("Created database engine for %s", url)
+        config = get_settings()
+        _engine = build_engine(database_url or config.database_url, echo=echo, settings=config)
     return _engine
 
 
@@ -314,6 +352,33 @@ def set_engine(engine: Any) -> None:
     """Override the global engine (tests, embedders, custom settings)."""
     global _engine
     _engine = engine
+
+
+def bind_engine(settings: Any = None):
+    """Return an engine matching ``settings``, rebinding the global when needed.
+
+    A process may be handed more than one configuration (tests, embedders, the
+    CLI honouring ``DATABASE_URL`` from ``.env``). When the installed engine
+    addresses a different database it is replaced; a matching engine is kept so
+    pre-seeded in-memory databases keep working.
+
+    Args:
+        settings: Settings override; defaults to the ambient settings.
+
+    Returns:
+        The engine to use.
+    """
+    from config.settings import get_settings
+
+    config = settings or get_settings()
+    target = config.database_url
+    existing = current_engine()
+    if existing is not None and same_database(str(existing.url), target):
+        return existing
+    engine = build_engine(target, settings=config)
+    set_engine(engine)
+    LOGGER.debug("Bound the database engine to %s", target)
+    return engine
 
 
 def init_db(engine: Any = None) -> None:

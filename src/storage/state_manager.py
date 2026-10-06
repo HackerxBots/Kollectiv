@@ -48,7 +48,6 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from config.settings import PROJECT_STATE_FILENAME, Settings, get_settings
-from src.storage.pool_manager import TeraBoxPoolManager
 from src.utils.logger import get_logger
 
 LOGGER = get_logger(__name__)
@@ -73,17 +72,19 @@ class StateManager:
     """Read/write the shared ``PROJECT_STATE.md`` document.
 
     Args:
-        pool: The TeraBox pool used for persistence.
+        pool: The storage backend used for persistence (``TeraBoxPoolManager``
+            or ``R2Storage`` — both expose the same surface).
         settings: Optional settings override.
         project_id: When set, the document lives at
-            ``{TERABOX_REMOTE_ROOT}/{project_id}/PROJECT_STATE.md``.
+            ``{remote_root}/{project_id}/PROJECT_STATE.md`` (``/Kollektiv/...``
+            for TeraBox, ``/...`` for R2 where the bucket prefix namespaces it).
         local_fallback_dir: Directory used to cache the document locally so a
             TeraBox outage degrades gracefully. Defaults to the workspace.
     """
 
     def __init__(
         self,
-        pool: TeraBoxPoolManager,
+        pool: Any,
         settings: Optional[Settings] = None,
         project_id: Optional[str] = None,
         local_fallback_dir: Optional[str] = None,
@@ -117,7 +118,7 @@ class StateManager:
             An absolute TeraBox path such as
             ``/Kollektiv/<project>/PROJECT_STATE.md``.
         """
-        root = self.settings.TERABOX_REMOTE_ROOT.rstrip("/") or ""
+        root = getattr(self.pool, "remote_root", self.settings.TERABOX_REMOTE_ROOT).rstrip("/")
         target = project_id if project_id is not None else self.project_id
         if target:
             return f"{root}/{target}/{self.filename}"
@@ -560,7 +561,7 @@ class StateManager:
         Returns:
             The pooled upload result.
         """
-        root = self.settings.TERABOX_REMOTE_ROOT.rstrip("/")
+        root = getattr(self.pool, "remote_root", self.settings.TERABOX_REMOTE_ROOT).rstrip("/")
         project = self.project_id or "global"
         name = os.path.basename(local_path)
         remote = f"{root}/{project}/{remote_subdir}/{name}"

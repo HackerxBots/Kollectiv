@@ -33,6 +33,15 @@ data/
 htmlcov/
 *.egg-info/
 
+# Cloudflare / Pages / deploy scratch
+.wrangler/
+dist/
+web/.wrangler/
+release-notes.md
+
+# Local dashboard preview
+web/node_modules/
+
 # Editors / OS
 .idea/
 .vscode/

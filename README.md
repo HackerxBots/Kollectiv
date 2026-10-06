@@ -1,6 +1,44 @@
 # Kollektiv
 
-**A multi-agent collaborative dev team orchestrator.**
+**Your own AI dev team, for $0 a month.**
+
+Give it a one-line brief and a few free LLM accounts. It plans the work, splits
+it into subtasks, runs them in parallel across pooled agents, reviews the
+result, keeps a shared state document in cloud storage, and pushes to GitHub —
+where the diff, the PR and the webhook trail are the real source of truth.
+
+```
+brief ──► brain (DeepSeek/Groq) ──► planner ──► N parallel workers ──► collector
+                                                                        │
+              Cloudflare R2 (shared drive) ◄── SyncEngine ──► GitHub (commits/PRs)
+                     Neon Postgres · Clerk (auth) · Resend (email) · Pages (dashboard)
+```
+
+> **Peak, in one line:** ten free tiers glued into one dev team that never
+> sleeps — and every piece of it can be swapped for your own box.
+
+<!-- Keep this section above the fold: it is the "peak" description the project
+     is judged by, and it is updated with every release. -->
+
+**Free to run, open source (MIT), and useful without any paid key:**
+
+| Capability | Free tool | What breaks without it |
+| --- | --- | --- |
+| Shared storage | Cloudflare R2 (10 GB, no egress fees) or pooled TeraBox | state and artifacts stay in the local workspace |
+| Database | Neon Postgres free tier (or local SQLite) | SQLite file next to the repo |
+| Auth | Clerk free tier (10k MAU) | API stays open, `AUTH_REQUIRED=false` |
+| Email | Resend free tier (3k emails/month) | run summaries stay in the logs |
+| Dashboard | Cloudflare Pages (or GitHub Pages) | use `/docs` and the CLI |
+| Brain | Groq / DeepSeek free credits, or heuristic mode | deterministic planner still runs |
+| Workers | any OpenAI-compatible free endpoints | pool runs with zero workers |
+
+**Current release: v0.2.0 — "free stack"** · 165 tests · Python 3.11+ ·
+see [Releases](https://github.com/HackerxBots/Kollektiv/releases) for what
+changed, and [CHANGELOG.md](CHANGELOG.md) for the running log.
+
+---
+
+**A multi-agent collaborative dev team orchestrator.** *(the long version)*
 
 Kollektiv turns a project brief into a working repository by coordinating a
 team of AI worker agents. A cheap LLM plans and reviews the work, the workers
@@ -30,7 +68,7 @@ and GitHub is the real-time source of truth for what has actually landed.
                         └───┬───────────────────────┬───┘
                             │                       │
               ┌─────────────▼──────────┐   ┌────────▼────────────────┐
-              │  TeraBox (pooled)      │   │  GitHub (commits, PRs,  │
+              │  R2 / TeraBox (pooled) │   │  GitHub (commits, PRs,  │
               │  PROJECT_STATE.md,     │   │  webhooks, actions)     │
               │  artifacts, quota      │   └────────┬────────────────┘
               └─────────────┬──────────┘            │
@@ -45,8 +83,10 @@ and GitHub is the real-time source of truth for what has actually landed.
 - **Worker agents** – a pool of accounts/endpoints that run in parallel. Each
   account is one worker; more accounts means more concurrency and resilience
   when one endpoint rate-limits.
-- **TeraBox** – shared storage. Multiple accounts act as one drive, routed by
-  free space, holding `PROJECT_STATE.md` and every artifact the team produces.
+- **Shared storage** – Cloudflare R2 by default (S3-compatible, free tier, no
+  egress fees) with pooled TeraBox accounts as the alternative. Multiple
+  accounts/buckets act as **one drive**, routed by free space, holding
+  `PROJECT_STATE.md` and every artifact the team produces.
 - **GitHub** – the real-time sync layer: pushes, pull requests, commit diffs,
   PR comments and file archiving all flow through it.
 
@@ -57,20 +97,76 @@ and every credential is encrypted (Fernet) before it touches disk.
 
 ## Table of contents
 
-1. [Quick start](#quick-start)
-2. [Configuration](#configuration)
-3. [How a run works](#how-a-run-works)
-4. [The shared state document](#the-shared-state-document)
-5. [Interfaces](#interfaces) — HTTP API, MCP, CLI
-6. [Deployment](#deployment)
-7. [Operations](#operations)
-8. [Extending Kollektiv](#extending-kollektiv)
-9. [Project layout](#project-layout)
-10. [Development](#development)
-11. [Troubleshooting](#troubleshooting)
-12. [FAQ](#faq)
-13. [Roadmap](#roadmap)
-14. [Legal & responsible use](#legal--responsible-use)
+1. [Run it for free](#run-it-for-free)
+2. [Quick start](#quick-start)
+3. [Configuration](#configuration)
+4. [How a run works](#how-a-run-works)
+5. [The shared state document](#the-shared-state-document)
+6. [Interfaces](#interfaces) — HTTP API, MCP, CLI
+7. [Deployment](#deployment)
+8. [Operations](#operations)
+9. [Extending Kollektiv](#extending-kollektiv)
+10. [Project layout](#project-layout)
+11. [Development](#development)
+12. [Troubleshooting](#troubleshooting)
+13. [FAQ](#faq)
+14. [Roadmap](#roadmap)
+15. [Legal & responsible use](#legal--responsible-use)
+
+---
+
+## Run it for free
+
+Everything Kollektiv needs has a free tier, and every piece is optional: it
+degrades instead of failing. `kollektiv bootstrap` prepares the install and
+prints this same checklist with your current status:
+
+```bash
+pip install -e ".[dev]"
+kollektiv bootstrap          # creates the schema/workspace, prints the checklist
+kollektiv check              # what is configured, what is missing, and why
+kollektiv serve-api          # http://localhost:8000/docs
+```
+
+| # | Tool | Free tier | Steps | `.env` keys |
+| - | ---- | --------- | ----- | ----------- |
+| 1 | **Cloudflare R2** | 10 GB stored, unlimited reads, **no egress fees** | R2 → *Create bucket* (`kollektiv`) → *Manage API tokens* → *Object Read & Write* | `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT` (`https://<account-id>.r2.cloudflarestorage.com`) |
+| 2 | **Neon** | serverless Postgres, 0.5 GB + autosuspend | *Create project* → copy the **pooled** connection string | `DATABASE_URL` (`postgresql://…-pooler.…neon.tech/kollektiv?sslmode=require`) |
+| 3 | **Clerk** | 10k monthly active users | *Create application* → copy the keys; add a webhook endpoint | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_WEBHOOK_SECRET`, `AUTH_REQUIRED=true` |
+| 4 | **Resend** | 3k emails/month | *API Keys* → create; verify a sender | `RESEND_API_KEY`, `RESEND_FROM`, `NOTIFY_EMAILS` |
+| 5 | **Cloudflare Pages** | unlimited static sites | *Workers & Pages* → *Create* → connect this repo → build output `web` | *(dashboard only — see [web/README.md](web/README.md))* |
+| + | **Groq / DeepSeek** | free credits / cheap tokens | create a key, keep it OpenAI-compatible | `BRAIN_API_KEY`, `BRAIN_PROVIDER`, `ARENA_ACCOUNTS` |
+
+No account for any of them? Kollektiv still runs: the brain falls back to the
+deterministic heuristic planner, storage falls back to the local workspace and
+the API runs without auth. Add the keys later — nothing has to be migrated.
+
+### One drive out of many free accounts (9Drive style)
+
+The storage layer pools accounts and presents them as **one drive**:
+
+- every account/bucket gets a weight from its free space and error rate;
+- uploads go to the healthiest account, downloads and listings are routed to
+  whichever account holds (or can serve) the object;
+- keys are namespaced per account (`R2_PREFIX`), so one account can host many
+  projects and two accounts never collide;
+- a failing account is cooled down and the pool routes around it;
+- `GET /storage/status` (and the dashboard) shows per-account usage,
+  health and cooldown until the next retry.
+
+```jsonc
+// R2_ACCOUNTS — several free Cloudflare accounts pooled into one drive
+[
+  {"name": "primary",  "bucket": "kollektiv",   "access_key_id": "…", "secret_access_key": "…",
+   "endpoint": "https://<account-a>.r2.cloudflarestorage.com"},
+  {"name": "overflow", "bucket": "kollektiv-2", "access_key_id": "…", "secret_access_key": "…",
+   "endpoint": "https://<account-b>.r2.cloudflarestorage.com", "weight": 2}
+]
+```
+
+TeraBox works the same way through `TERABOX_ACCOUNTS` (also 9Drive style: one
+logical drive, many free accounts, routed by free space) — see
+[Configuration](#configuration).
 
 ---
 
@@ -485,6 +581,32 @@ Then a second unit for `kollektiv-mcp` with
 `ExecStart=/opt/kollektiv/bin/python -m src.api.mcp_server --transport sse`.
 Put nginx/Caddy in front for TLS — GitHub only delivers webhooks over HTTPS.
 
+### Free-hosted stack (no server of your own)
+
+The whole thing runs on free tiers with no VM:
+
+| Piece | Where it runs | Notes |
+| --- | --- | --- |
+| API + scheduler | any small always-on box, a free Oracle/AWS micro instance, or `docker compose` on a laptop | it needs a long-lived process for the cron and the webhooks |
+| Database | Neon (serverless Postgres) | set `DATABASE_URL` to the **pooled** string; SQLite stays the default |
+| Shared drive | Cloudflare R2 (or pooled TeraBox) | `STORAGE_BACKEND=auto` picks R2 as soon as the keys are present |
+| Auth | Clerk | `AUTH_REQUIRED=true` protects every route except `/health`, `/docs` and `/webhooks/*` |
+| Email | Resend | run summaries/alerts; `NOTIFY_ON_FAILURE_ONLY=true` keeps the quota for failures |
+| Dashboard | Cloudflare Pages | static `web/` — see [web/README.md](web/README.md) |
+
+Bootstrap a fresh box end to end:
+
+```bash
+git clone https://github.com/HackerxBots/Kollectiv.git && cd Kollektiv
+python -m venv .venv && .venv/bin/pip install -e ".[postgres]"
+.venv/bin/kollektiv bootstrap      # prints the exact keys still missing
+.venv/bin/kollektiv serve-api      # uvicorn src.api.routes:app --port 8000
+```
+
+Cloudflare Pages deployment is automatic once you set the repository variable
+`CF_PAGES_PROJECT` (and the `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`
+secrets); without them the workflow publishes the same folder to GitHub Pages.
+
 ### Behind a proxy or a corporate CA
 
 Set `SSL_CA_BUNDLE=/path/to/ca.pem` (or `HTTP_SSL_VERIFY=false` for a local
@@ -494,6 +616,22 @@ these settings through `src/utils/net.py`.
 ---
 
 ## Operations
+
+### Releases, versioning and the README
+
+Kollektiv ships small and often, and documents every step:
+
+- **SemVer** — `MAJOR` for breaking config/API changes, `MINOR` for features,
+  `PATCH` for fixes. The version lives in `pyproject.toml` and `src/__init__.py`.
+- **Every release gets a tag and notes.** Pushing a `v*` tag runs
+  `.github/workflows/release.yml`, which builds the sdist/wheel, publishes the
+  GitHub release with generated notes plus the matching `CHANGELOG.md` section,
+  and attaches the artifacts. `CHANGELOG.md` is updated in the same PR as the
+  change — the workflow fails if the version has no changelog entry.
+- **The README is part of the release.** The "peak" panel at the top (release
+  name, test count, tool table) and the feature list are updated in the same PR,
+  so the front page never describes a version that does not exist. The release
+  checklist in `CLAUDE.md` keeps that honest.
 
 ### Health and observability
 
@@ -517,7 +655,7 @@ command from an external scheduler (cron, Kubernetes CronJob).
 
 - `data/kollektiv.db` — projects, tasks, plans, events, encrypted tokens.
 - `data/workspace/<project_id>/` — collected files for the local project; the
-  TeraBox copy is authoritative, this is the working cache.
+  copy in the shared drive (R2/TeraBox) is authoritative, this is the cache.
 - Delete a project's artifacts with `GET /projects/{id}/files` plus the pool's
   `delete_file`, or remove the remote folder `/Kollektiv/<project_id>`.
 
@@ -526,13 +664,13 @@ command from an external scheduler (cron, Kubernetes CronJob).
 | Symptom | Knob |
 | --- | --- |
 | Tasks queue behind each other | add `ARENA_ACCOUNTS`, or raise `ARENA_MAX_CONCURRENCY` |
-| Storage fills up | add `TERABOX_ACCOUNTS` (the pool routes by free space) |
+| Storage fills up | add `R2_ACCOUNTS` buckets or `TERABOX_ACCOUNTS` (the pool routes by free space) |
 | Brain is slow/expensive | keep the cheap model for planning, set a larger `BRAIN_MODEL` only for reviews |
 | Sync takes long | raise `CRON_INTERVAL_MINUTES` |
 
-SQLite handles a single API process comfortably. For multiple replicas, move
-`DATABASE_URL` to PostgreSQL (SQLModel is portable) and disable the in-process
-scheduler.
+SQLite handles a single API process comfortably. For multiple replicas, point
+`DATABASE_URL` at Neon (the `[postgres]` extra installs the driver) and disable
+the in-process scheduler so the cron runs in exactly one place.
 
 ---
 
@@ -546,9 +684,10 @@ else. Anything that accepts a prompt and returns text can be a worker.
 `BRAIN_BASE_URL`/`BRAIN_MODEL`. For a different protocol, implement `complete()`
 on a subclass of `OrchestratorBrain` and pass it to `Orchestrator(brain=…)`.
 
-**A new storage backend.** `TeraBoxPoolManager` exposes
-`upload_file/download_file/list_all_files/get_total_quota`; implement the same
-four methods (S3, WebDAV, a local NAS) and pass it as `pool=`.
+**A new storage backend.** `R2Storage`/`TeraBoxPoolManager` expose
+`upload_file/download_file/list_all_files/get_total_quota` (plus
+`get_file_url`/`get_status`); implement the same methods — WebDAV, a NAS, B2 —
+and pass it as `pool=` or add a branch to `build_storage()`.
 
 **A new tool.** Add a function decorated with `@server.tool()` inside
 `create_server()` in `src/api/mcp_server.py` — the SDK generates the schema from
@@ -568,7 +707,13 @@ src/utils/token_store.py       encrypted tokens in SQLite
 src/utils/net.py               shared httpx client, TLS/CA configuration
 src/db/models.py               SQLModel tables + session_scope()/init_db()
 src/storage/terabox_client.py  OAuth, sharded uploads, streaming downloads
-src/storage/pool_manager.py    multi-account routing by free space
+src/storage/pool_manager.py    multi-account routing by free space (9Drive style)
+src/storage/r2_client.py       Cloudflare R2 (S3) client on the sigv4 signer
+src/storage/r2_pool.py         R2 buckets/accounts pooled into one drive
+src/storage/factory.py         build_storage(): auto picks R2 → TeraBox → local
+src/utils/sigv4.py             dependency-free AWS SigV4 signing + presigning
+src/utils/resend_client.py     Resend email notifications (summaries, alerts)
+src/api/auth.py                Clerk JWT verification, auth middleware, Svix
 src/storage/state_manager.py   PROJECT_STATE.md read/write/parse + agent context
 src/agents/arena_client.py     one worker account (OpenAI + custom shapes)
 src/agents/agent_pool.py       scheduling, failover, statistics, prompts
@@ -584,7 +729,8 @@ src/orchestrator/app.py        the Orchestrator that wires everything together
 src/api/routes.py              FastAPI application + webhook router
 src/api/mcp_server.py          MCP tool server (SDK v1 and v2)
 src/api/cli.py                 the `kollektiv` command line interface
-tests/                         114 hermetic tests (no network, no credentials)
+web/                           static dashboard (Cloudflare Pages / GitHub Pages)
+tests/                         165 hermetic tests (no network, no credentials)
 ```
 
 ---
@@ -594,11 +740,17 @@ tests/                         114 hermetic tests (no network, no credentials)
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 114 tests, ~4 s, fully mocked
+pytest -q                 # 165 tests, ~5 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
 mypy src config           # types (clean)
+pytest --cov=src          # optional coverage (pip install pytest-cov)
 ```
+
+`tests/test_r2.py` pins the SigV4 vectors and, when `botocore` is installed
+(it is part of the `dev` extra), cross-checks the hand-rolled signer against
+`botocore.auth.S3SigV4Auth` — so the free-tier storage client provably matches
+the reference implementation.
 
 ### Design decisions
 
@@ -616,6 +768,10 @@ mypy src config           # types (clean)
   vendor lock-in and no automation of services that forbid it.
 - **Project-local task ids.** Plan ids (`t1`, `t2`, …) are unique per project;
   the `tasks` table is keyed by `(id, project_id)` so many projects coexist.
+- **Free tier first, paid never required.** Cloudflare R2, Neon, Clerk, Resend
+  and Pages are all optional: `STORAGE_BACKEND=auto`, SQLite, open routes and
+  log-only notifications are the defaults, so a fresh clone runs end to end
+  with zero accounts and upgrades in place when keys appear.
 - **One engine per orchestrator.** Passing a `Settings` object to an
   `Orchestrator` rebinds the database engine to that configuration, which is
   what lets tests run dozens of isolated in-memory orchestrators.
@@ -669,9 +825,14 @@ first plan starts from reality. Push changed files with
 with a summary; a human merges. That is deliberate — the orchestrator never
 writes to a protected branch on its own.
 
-**Where does the state live if TeraBox is down?** In
-`WORKSPACE_DIR/<project_id>/PROJECT_STATE.md`, and it is flushed to TeraBox as
-soon as the next upload succeeds.
+**Where does the state live if the shared drive is down?** In
+`WORKSPACE_DIR/<project_id>/PROJECT_STATE.md`, and it is flushed to R2/TeraBox
+as soon as the next upload succeeds. With no storage configured at all the
+workspace is the only copy — `/health` says so.
+
+**Is every piece really free?** Yes, and there is no paid component on the
+critical path: Cloudflare R2 (10 GB, no egress), Neon, Clerk, Resend and Pages
+all have usable free tiers, and Kollektiv runs with none of them.
 
 **How do I run it completely offline?** `BRAIN_API_KEY=` empty,
 `ARENA_ACCOUNTS=[]` — you get the heuristic planner and a pool with no workers
@@ -681,12 +842,17 @@ soon as the next upload succeeds.
 
 ## Roadmap
 
-- [ ] PostgreSQL-backed multi-replica deployment guide and migrations
+Shipped in v0.2.0 ("free stack"): Cloudflare R2 storage pool, Neon-ready
+Postgres, Clerk auth, Resend notifications, the static Pages dashboard, the
+hand-rolled SigV4 signer and `kollektiv bootstrap`.
+
+- [ ] Alembic migrations for the Postgres/Neon path
 - [ ] Worker-side sandboxing (run collected code in a container before upload)
 - [ ] Plan templates and reusable skill packs per task type
-- [ ] Web UI for the state document and event stream
-- [ ] Additional storage backends (S3, WebDAV) behind the pool interface
+- [ ] Dashboard actions for retrying a single task and viewing diffs
+- [ ] Additional storage backends (WebDAV, Backblaze B2) behind the pool
 - [ ] Cost/latency accounting per provider in `/health`
+- [ ] Signed Python wheels + SBOM attached to each release
 
 ---
 

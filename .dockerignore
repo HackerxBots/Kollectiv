@@ -12,5 +12,10 @@ data
 .ruff_cache
 tests
 docs
+web/node_modules
+.wrangler
+dist
+CHANGELOG.md
+LICENSE
 *.md
 !README.md

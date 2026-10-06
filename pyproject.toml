@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kollektiv"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-agent collaborative dev team orchestrator: worker agents, TeraBox storage, GitHub sync and an LLM planner."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,7 +45,12 @@ dev = [
     "mypy>=1.10",
     "respx>=0.21",
     "types-aiofiles",
+    # Cross-checks the hand-rolled SigV4 signer against the reference
+    # implementation in tests/test_r2.py (skipped when absent).
+    "botocore>=1.34",
 ]
+# Neon / Supabase / any PostgreSQL deployment (SQLModel + SQLAlchemy 2).
+postgres = ["psycopg[binary]>=3.1"]
 
 [project.urls]
 Homepage = "https://github.com/HackerxBots/Kollektiv"

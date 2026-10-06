@@ -283,6 +283,11 @@ class FakeTeraBoxPool:
         self.accounts: List[Any] = []
         self.settings = Settings(SECRET_KEY="test", TERABOX_REMOTE_ROOT=root, _env_file=None)
 
+    @property
+    def remote_root(self) -> str:
+        """Root path for stored objects (mirrors the real pools)."""
+        return self.root
+
     def is_configured(self) -> bool:
         """Pretend to be configured so sync paths run."""
         return True
