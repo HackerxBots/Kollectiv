@@ -1,0 +1,26 @@
+name: Cleanup stray release
+
+# One-shot housekeeping: the first beta run of the release workflow published
+# "v0.3.0" at the base branch (the tag name and commit were wrong). This job
+# removes that release and its tag, then prints what is left. It is deleted
+# again in the next commit; it never touches any other release.
+
+on:
+  push:
+    branches: [arena/6207d974-kollectiv]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the stray v0.3.0 release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -x
+          gh release delete v0.3.0 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release list --repo "$GITHUB_REPOSITORY" || true
+          git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY" || true
