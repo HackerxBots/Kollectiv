@@ -1,97 +1,62 @@
 # Kollektiv
 
-**Your own AI dev team, for $0 a month.**
+[![CI](https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml/badge.svg)](https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&label=release)](https://github.com/HackerxBots/Kollektiv/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![Tests: 199](https://img.shields.io/badge/tests-199%20passing-brightgreen.svg)](tests/)
 
-Give it a one-line brief and a few free LLM accounts. It plans the work, splits
-it into subtasks, runs them in parallel across pooled agents, reviews the
-result, keeps a shared state document in cloud storage, and pushes to GitHub —
-where the diff, the PR and the webhook trail are the real source of truth.
+**A multi-agent collaborative dev team orchestrator — free to run, self-hosted, open source (MIT).**
+
+Give Kollektiv a project brief and a few LLM endpoints. It plans the work,
+splits it into subtasks, runs them in parallel across pooled agents, reviews the
+output, keeps a shared state document in cloud storage, syncs everything through
+GitHub, and can reach out to the services you already use (Gmail, Calendar,
+Drive, Notion, Slack, your own APIs) through **connectors**.
 
 ```
-brief ──► brain (DeepSeek/Groq) ──► planner ──► N parallel workers ──► collector
-                                                                        │
-              Cloudflare R2 (shared drive) ◄── SyncEngine ──► GitHub (commits/PRs)
-                     Neon Postgres · Clerk (auth) · Resend (email) · Pages (dashboard)
+brief ─► brain (DeepSeek/Groq/local) ─► planner ─► N parallel worker agents ─► collector
+                                                          │                        │
+                                    Cloudflare R2 (one pooled drive) ◄── sync ── GitHub
+                          optional free tiers: Neon (db) · Clerk (auth) · Resend (email) · Pages (UI)
+                          connectors: GitHub · Google · Notion · Webhooks · any REST API
 ```
 
-> **Peak, in one line:** ten free tiers glued into one dev team that never
-> sleeps — and every piece of it can be swapped for your own box.
+> **In one line:** a self-hosted dev team that runs on free tiers, talks to the
+> tools you already use, and lets you swap every component for your own.
 
-<!-- Keep this section above the fold: it is the "peak" description the project
-     is judged by, and it is updated with every release. -->
+<!-- The block above is the "peak" description: it is updated with every release
+     (see the release checklist in CLAUDE.md). -->
 
-**Free to run, open source (MIT), and useful without any paid key:**
+### What it is, and what it is not
 
-| Capability | Free tool | What breaks without it |
-| --- | --- | --- |
-| Shared storage | Cloudflare R2 (10 GB, no egress fees) or pooled TeraBox | state and artifacts stay in the local workspace |
-| Database | Neon Postgres free tier (or local SQLite) | SQLite file next to the repo |
-| Auth | Clerk free tier (10k MAU) | API stays open, `AUTH_REQUIRED=false` |
-| Email | Resend free tier (3k emails/month) | run summaries stay in the logs |
-| Dashboard | Cloudflare Pages (or GitHub Pages) | use `/docs` and the CLI |
-| Brain | Groq / DeepSeek free credits, or heuristic mode | deterministic planner still runs |
-| Workers | any OpenAI-compatible free endpoints | pool runs with zero workers |
-
-**Current release: v0.2.0 — "free stack"** · 165 tests · Python 3.11+ ·
-see [Releases](https://github.com/HackerxBots/Kollektiv/releases) for what
-changed, and [CHANGELOG.md](CHANGELOG.md) for the running log.
+| Kollektiv **is** | Kollektiv **is not** |
+| --- | --- |
+| An orchestrator that plans, dispatches, collects and reviews work across many agents | An in-editor autocomplete or a single-agent CLI |
+| Provider-agnostic: any OpenAI-compatible endpoint, including local models | A wrapper around one vendor's subscription |
+| Self-hostable end to end, with free-tier defaults for every dependency | A hosted service you cannot audit |
+| Honest about state: every subsystem reports its own health | Silent about what is degraded |
 
 ---
 
-**A multi-agent collaborative dev team orchestrator.** *(the long version)*
+## Why people run it
 
-Kollektiv turns a project brief into a working repository by coordinating a
-team of AI worker agents. A cheap LLM plans and reviews the work, the workers
-write the code in parallel, every artifact is archived to shared cloud storage,
-and GitHub is the real-time source of truth for what has actually landed.
-
-```
-                        ┌───────────────────────────────┐
-   project brief ──────►│  Brain (DeepSeek / Groq / …)  │  plans, reviews,
-                        └───────────────┬───────────────┘  summarises
-                                        │ subtasks + context
-                        ┌───────────────▼───────────────┐
-                        │  Planner → execution waves    │  dependency graph
-                        └───────────────┬───────────────┘
-                                        │
-                        ┌───────────────▼───────────────┐
-                        │  Dispatcher (bounded parallel)│
-                        └───┬───────────┬───────────┬───┘
-                            │           │           │
-                   ┌────────▼──┐  ┌─────▼─────┐  ┌──▼────────┐
-                   │ worker #1 │  │ worker #2 │  │ worker #N │  (AgentPool)
-                   └────────┬──┘  └─────┬─────┘  └──┬────────┘
-                            │           │           │  markdown + file blocks
-                        ┌───▼───────────▼───────────▼───┐
-                        │  Collector (parse, path-safe, │  conflict detection
-                        │  merge, missing dependencies) │
-                        └───┬───────────────────────┬───┘
-                            │                       │
-              ┌─────────────▼──────────┐   ┌────────▼────────────────┐
-              │  R2 / TeraBox (pooled) │   │  GitHub (commits, PRs,  │
-              │  PROJECT_STATE.md,     │   │  webhooks, actions)     │
-              │  artifacts, quota      │   └────────┬────────────────┘
-              └─────────────┬──────────┘            │
-                            └────────► SyncEngine ◄─┘
-                            cron every CRON_INTERVAL_MINUTES + webhooks
-```
-
-- **Brain** – any OpenAI-compatible endpoint (`deepseek-chat` by default, Groq
-  as the fallback). Splits briefs into subtasks, reviews worker output and
-  compresses shared state into injectable context. Works without a key too:
-  a deterministic planner/reviewer keeps the pipeline usable offline.
-- **Worker agents** – a pool of accounts/endpoints that run in parallel. Each
-  account is one worker; more accounts means more concurrency and resilience
-  when one endpoint rate-limits.
-- **Shared storage** – Cloudflare R2 by default (S3-compatible, free tier, no
-  egress fees) with pooled TeraBox accounts as the alternative. Multiple
-  accounts/buckets act as **one drive**, routed by free space, holding
-  `PROJECT_STATE.md` and every artifact the team produces.
-- **GitHub** – the real-time sync layer: pushes, pull requests, commit diffs,
-  PR comments and file archiving all flow through it.
-
-Everything is async, every external call is retried with exponential backoff,
-and every credential is encrypted (Fernet) before it touches disk.
+- **Free by construction.** Every dependency is optional and every default is
+  the zero-cost path: SQLite, local workspace, open API, log-only notifications.
+  As keys appear, the same code upgrades in place (R2, Neon, Clerk, Resend,
+  Pages) — see [Run it for free](#run-it-for-free).
+- **Many accounts, one drive.** R2 buckets or TeraBox accounts are pooled into a
+  single logical drive, routed by free space and health, so several free
+  accounts add up to one large shared volume.
+- **Many agents, one team.** Worker endpoints are pooled and scheduled in
+  dependency order; a throttled or failing worker is cooled down and routed
+  around instead of stalling the run.
+- **Your tools, not ours.** Connectors expose Gmail, Calendar, Drive, Notion,
+  GitHub, outbound webhooks and *any* JSON API as callable tools for the agents
+  (and for your MCP client) — see [Connect your services](#connect-your-services).
+- **Real source of truth.** GitHub holds the commits; a shared
+  `PROJECT_STATE.md` holds the plan, task status and history; `/health` holds
+  the truth about what is configured.
 
 ---
 
@@ -99,19 +64,23 @@ and every credential is encrypted (Fernet) before it touches disk.
 
 1. [Run it for free](#run-it-for-free)
 2. [Quick start](#quick-start)
-3. [Configuration](#configuration)
-4. [How a run works](#how-a-run-works)
-5. [The shared state document](#the-shared-state-document)
-6. [Interfaces](#interfaces) — HTTP API, MCP, CLI
-7. [Deployment](#deployment)
-8. [Operations](#operations)
-9. [Extending Kollektiv](#extending-kollektiv)
-10. [Project layout](#project-layout)
-11. [Development](#development)
-12. [Troubleshooting](#troubleshooting)
-13. [FAQ](#faq)
-14. [Roadmap](#roadmap)
-15. [Legal & responsible use](#legal--responsible-use)
+3. [Connect your services](#connect-your-services) — connectors
+4. [Agent runtimes](#agent-runtimes) — free coding agents & local models
+5. [Configuration](#configuration)
+6. [How a run works](#how-a-run-works)
+7. [The shared state document](#the-shared-state-document)
+8. [Interfaces](#interfaces) — HTTP API, MCP, CLI
+9. [Deployment](#deployment) — Docker, bare metal, free hosting, self-hosting
+10. [Operations](#operations) — health, releases, scaling, the drive pool
+11. [Extending Kollektiv](#extending-kollektiv)
+12. [Project layout](#project-layout)
+13. [Development](#development)
+14. [Performance & next iteration](#performance--next-iteration)
+15. [Troubleshooting](#troubleshooting)
+16. [FAQ](#faq)
+17. [Roadmap](#roadmap)
+18. [Contributing](#contributing)
+19. [Legal & responsible use](#legal--responsible-use)
 
 ---
 
@@ -173,6 +142,10 @@ logical drive, many free accounts, routed by free space) — see
 ## Quick start
 
 ```bash
+# Option A — install the package (the API/MCP entrypoints above need this layout)
+pip install kollektiv && kollektiv bootstrap && kollektiv serve-api
+
+# Option B — work from a clone (recommended for the dashboard and docs)
 git clone https://github.com/HackerxBots/Kollektiv.git
 cd Kollektiv
 
@@ -222,6 +195,141 @@ docker compose up --build      # API on :8000, MCP server on :8001
 > `kollektiv check` list every degraded subsystem, the brain falls back to
 > heuristics, storage falls back to the local workspace and GitHub sync
 > reports itself as unconfigured. You can exercise the whole pipeline offline.
+
+---
+
+## Connect your services
+
+Connectors are small, typed adapters that expose a service as **actions**. The
+brain sees them as tools, `GET /connectors` lists them, the MCP server exposes
+them to Claude/Cursor/etc., and the CLI can call them by hand:
+
+```bash
+kollektiv connectors                 # what exists, what is configured, which actions
+kollektiv call github recent_commits --params '{"limit": 5}'
+kollektiv call notion search --params '{"query": "roadmap"}'
+kollektiv call webhook notify --params '{"text": "deploy finished"}' --confirm
+```
+
+```bash
+curl -s localhost:8000/connectors | jq '.configured, .connectors[] | {name, detail}'
+curl -s -X POST localhost:8000/connectors/github/call \
+  -H 'content-type: application/json' \
+  -d '{"action": "open_pull_requests"}'
+```
+
+| Connector | Env | Actions | Notes |
+| --- | --- | --- | --- |
+| **GitHub** | `GITHUB_TOKEN`, `GITHUB_REPO` | `recent_commits`, `commit_diff`, `open_pull_requests`, `pull_request_diff`, `file`, `repo_tree`, `open_issues`, `comment_on_pull_request`* | the repository the team works on |
+| **Google Workspace** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | `gmail_search`, `gmail_read`, `gmail_send`*, `calendar_events`, `calendar_create_event`*, `drive_search`, `drive_export` | one OAuth token covers Gmail + Calendar + Drive; the refreshed access token is cached in memory and in the encrypted store |
+| **Notion** | `NOTION_TOKEN` | `search`, `get_page`, `query_database`, `create_page`*, `append_text`* | share each page/database with the integration |
+| **Webhooks** | `EVENT_WEBHOOKS` | `notify`, `list_targets` | run summaries are broadcast after every orchestrated run; point it at Slack, Discord, n8n, Activepieces, Zapier or your own service |
+| **Any REST API** | `CUSTOM_CONNECTORS` | whatever you declare | one JSON entry per service, one action per endpoint — no code |
+
+`*` = **dangerous**: it changes something outside Kollektiv, so it requires an
+explicit confirmation (`--confirm`, `"confirm": true` or `confirm=True` in MCP).
+
+### Declaring your own connector (no code)
+
+```jsonc
+// CUSTOM_CONNECTORS in .env
+[{
+  "name": "slack", "category": "chat",
+  "description": "Post to Slack",
+  "base_url": "https://slack.com/api",
+  "auth": "bearer", "token": "xoxb-…",
+  "actions": [
+    {"name": "post_message", "method": "POST", "path": "/chat.postMessage",
+     "description": "Send a message", "dangerous": true,
+     "params": {"channel": "Channel id", "text": "Message body"}},
+    {"name": "channel_history", "method": "GET", "path": "/conversations.history",
+     "params": {"channel": "Channel id", "limit": "Max messages"}}
+  ]
+}]
+```
+
+`{placeholders}` in `path` are filled from the parameters; the rest become the
+query string (GET/DELETE) or the JSON body (POST/PUT/PATCH). `auth` is one of
+`bearer`, `header` (`header_name`, default `Authorization`), `query`
+(`query_name`, default `api_key`) or `none`.
+
+### Calling connectors from an MCP client
+
+Add Kollektiv to your MCP client (`claude_desktop_config.json`, Cursor, …) and
+every connector action becomes a tool next to the project tools:
+
+```json
+{
+  "mcpServers": {
+    "kollektiv": {
+      "command": "python",
+      "args": ["-m", "src.api.mcp_server"],
+      "env": { "KOLLEKTIV_ENV_FILE": "/etc/kollektiv.env" }
+    }
+  }
+}
+```
+
+Tools: `list_projects`, `get_project_status`, `create_project`, `run_project`,
+`replan_project`, `list_files`, `upload_file`, `get_agent_pool_status`,
+`get_storage_status`, `trigger_sync`, **`list_connectors`**, **`call_connector`**,
+plus OpenAI built-in web search when run with `--with-search`.
+
+### Credentials and safety
+
+- Connector secrets are masked in logs, in `/health` and in `redacted()`.
+- Tokens can live in the encrypted token store (`service="google"`,
+  `account="default"`), which takes precedence over `.env` — refreshed OAuth
+  tokens are written back automatically.
+- Every connector is optional and every failure is isolated: an unreachable
+  service returns an error for that action, logs it, and leaves the run alone.
+- Read actions are safe by default; anything that sends, creates or comments is
+  flagged `dangerous` and gated behind `confirm`.
+
+---
+
+## Agent runtimes
+
+Kollektiv does not care *what* writes the code — a worker is anything that
+accepts a prompt over HTTP and returns text. That means the free agentic coding
+tools of the last year can be plugged in as workers without locking you into a
+paid plan.
+
+| Runtime | Licence | Why you would plug it in |
+| --- | --- | --- |
+| **[OpenHands](https://github.com/All-Hands-AI/OpenHands)** | MIT | self-hostable autonomous agent, sandboxed runs, strongest headless/CI story |
+| **[Aider](https://github.com/Aider-AI/aider)** | Apache-2.0 | git-native edits; excellent with cheap or local models |
+| **[OpenCode](https://github.com/sst/opencode)** | MIT | provider-agnostic terminal agent, 75+ providers including local |
+| **[Goose](https://github.com/block/goose)** | Apache-2.0 | MCP-heavy automation (code *and* non-code tasks) |
+| **[Cline](https://github.com/cline/cline)** / **[Kilo Code](https://github.com/kilo-org)** | Apache-2.0 / MIT | autonomous edits in the editor; Kilo runs parallel agents |
+| **[Qwen Code](https://github.com/QwenLM/qwen-code)** | Apache-2.0 | open fork of the Gemini CLI line, pairs with open-weight models |
+| **[Codex CLI](https://github.com/openai/codex)** | Apache-2.0 | sandboxed CLI agent; local models via `--oss` |
+| **Local models** (Ollama, llama.cpp, LM Studio, vLLM) | — | zero per-token cost; expose the OpenAI-compatible endpoint as a worker |
+
+### Wiring one in
+
+The pool speaks OpenAI-compatible HTTP (`base_url` + `model` +
+`session_token`), so hosted and local endpoints work as-is:
+
+```jsonc
+// ARENA_ACCOUNTS — one entry per worker
+[
+  {"name": "local-ollama", "session_token": "ollama",
+   "base_url": "http://127.0.0.1:11434/v1", "model": "qwen2.5-coder:32b"},
+  {"name": "groq-worker-1", "session_token": "gsk_…",
+   "base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"}
+]
+```
+
+For a CLI agent (Aider, OpenHands, Codex CLI), put it behind a tiny HTTP shim
+that accepts `{"prompt": …}` and returns `{"text": …}` — a ~40-line FastAPI app —
+and register that URL as a worker. Kollektiv keeps planning, dependency
+ordering, collection, review, state and sync; the runtime only has to write the
+code for one subtask. `examples/aider_shim.py` is a working template.
+
+**The 3-example minimisation.** Three workers on free endpoints (Groq, a local
+Ollama model, a cheap DeepSeek key) cost nothing to start and are enough to see
+the whole pipeline work end to end; add accounts as you hit rate limits.
 
 ---
 
@@ -613,6 +721,34 @@ Cloudflare Pages deployment is automatic once you set the repository variable
 `CF_PAGES_PROJECT` (and the `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`
 secrets); without them the workflow publishes the same folder to GitHub Pages.
 
+### Self-hosting checklist
+
+Kollektiv is designed to be self-hosted; nothing phones home and no feature is
+reserved for a hosted edition. A single small VM (1 vCPU / 1 GB) is enough,
+because the heavy lifting happens at the LLM endpoints, not here.
+
+| Piece | Minimum | Notes |
+| --- | --- | --- |
+| Python | 3.11+ | `pip install -e ".[postgres]"` adds the Neon/Postgres driver |
+| Process | 1 API instance | the in-process cron needs exactly one scheduler in a multi-replica setup |
+| Disk | ~200 MB + workspace | artifacts also live in the shared drive |
+| Database | SQLite, or Postgres/Neon for replicas | `AUTO_INIT_DB=true` creates the schema on boot |
+| TLS | required for GitHub webhooks | nginx/Caddy in front; set `CLERK_AUTHORIZED_PARTIES` to your origin |
+| Backups | `data/` (SQLite + workspace), the drive, the repo | the repo is already a backup of the code |
+
+Security defaults worth knowing:
+
+- `AUTH_REQUIRED=false` is the default so a fresh clone works locally. Turn it
+  on (`AUTH_REQUIRED=true` + Clerk keys) before exposing the API; `/health`,
+  `/docs` and `/webhooks/*` stay public by design (they verify their own
+  signatures).
+- Connector secrets are encrypted at rest and masked in logs, `/health` and
+  `redacted()`; dangerous actions need an explicit `confirm`.
+- `SECRET_KEY` protects the token store — back it up with the database, or
+  stored tokens become unreadable.
+- Nothing about TeraBox or any other service is scraped or automated: bring
+  endpoints and tokens you are authorised to use.
+
 ### Behind a proxy or a corporate CA
 
 Set `SSL_CA_BUNDLE=/path/to/ca.pem` (or `HTTP_SSL_VERIFY=false` for a local
@@ -625,21 +761,32 @@ these settings through `src/utils/net.py`.
 
 ### Releases, versioning and the README
 
-Kollektiv ships small and often, and documents every step:
+Kollektiv ships small and often, and documents every step. **Everything is a
+beta tag for now:** the interfaces still move, so releases are published as
+GitHub *pre-releases* (`v0.3.0-beta.1`, `v0.3.0-beta.2`, …) and the README is
+updated in the same PR as the change.
 
-- **SemVer** — `MAJOR` for breaking config/API changes, `MINOR` for features,
-  `PATCH` for fixes. The version lives in `pyproject.toml` and `src/__init__.py`.
-- **Every release gets a tag and notes.** Pushing a `v*` tag runs
-  `.github/workflows/release.yml`, which builds the sdist/wheel, publishes the
-  GitHub release with generated notes plus the matching `CHANGELOG.md` section,
-  and attaches the artifacts. `CHANGELOG.md` is updated in the same PR as the
-  change — the workflow fails if the version has no changelog entry.
-- **The README is part of the release.** The "peak" panel at the top (release
-  name, test count, tool table) and the feature list are updated in the same PR,
-  so the front page never describes a version that does not exist. The release
-  checklist in `CLAUDE.md` keeps that honest.
+- **Versioning** — `0.x` while the API/config still evolves. Inside a minor
+  line: `-beta.N` increments per batch of changes, `MAJOR`/`MINOR` bumps when
+  behaviour changes, `PATCH` (`v0.3.1-beta.1`) for fixes only.
+- **Changelog first.** `CHANGELOG.md` is updated in the same PR; the release
+  workflow refuses to publish a tag whose version has no changelog section.
+- **Every release is a pre-release** until 1.0: the workflow marks `v*-beta.*`
+  as a GitHub pre-release automatically and attaches the sdist + wheel.
+- **The README is part of the release.** The peak block (release name, test
+  count) and the tool/table sections change with it; the checklist in
+  `CLAUDE.md` keeps that honest.
 
-### Health and observability
+Cutting a release:
+
+```bash
+# 1. bump version in pyproject.toml and src/__init__.py
+# 2. move the CHANGELOG "Unreleased" entries under the new version
+# 3. update the README peak block
+git tag v0.3.0-beta.1 && git push origin v0.3.0-beta.1   # workflow publishes the pre-release
+```
+
+### Health and observability### Health and observability
 
 - `GET /health` — always `200`; lists subsystems, counts and configuration
   warnings so a supervisor can distinguish "running degraded" from "down".
@@ -734,9 +881,16 @@ src/orchestrator/sync_engine.pyGitHub ⇄ TeraBox ⇄ agents synchronisation
 src/orchestrator/app.py        the Orchestrator that wires everything together
 src/api/routes.py              FastAPI application + webhook router
 src/api/mcp_server.py          MCP tool server (SDK v1 and v2)
+src/connectors/base.py         connector + action registry (one tool catalogue)
+src/connectors/github.py       repository actions (commits, PRs, issues, files)
+src/connectors/google_workspace.py  Gmail + Calendar + Drive over one OAuth token
+src/connectors/notion.py       Notion pages and databases
+src/connectors/webhook.py      outbound events (Slack/Discord/n8n/Zapier/webhooks)
+src/connectors/rest.py         declarative REST connectors (CUSTOM_CONNECTORS)
 src/api/cli.py                 the `kollektiv` command line interface
+examples/aider_shim.py         wrap any CLI coding agent as a worker endpoint
 web/                           static dashboard (Cloudflare Pages / GitHub Pages)
-tests/                         165 hermetic tests (no network, no credentials)
+tests/                         199 hermetic tests (no network, no credentials)
 ```
 
 ---
@@ -746,7 +900,7 @@ tests/                         165 hermetic tests (no network, no credentials)
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 165 tests, ~5 s, fully mocked
+pytest -q                 # 199 tests, ~11 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
 mypy src config           # types (clean)
@@ -795,6 +949,53 @@ the reference implementation.
 
 ---
 
+## Performance & next iteration
+
+The orchestrator is deliberately simple: one process, one database, one drive.
+That is plenty for tens of projects, and the bottlenecks are known — this is the
+plan for the next iterations (each item is sized so it can ship on its own).
+
+**Now (v0.3.0-beta.x)**
+
+| Item | Change | Why |
+| --- | --- | --- |
+| Dashboard connectors panel | list connectors, run safe actions from the UI | the UI can now exercise the whole tool catalogue |
+| Connector registry | one catalogue for brain, API, MCP and CLI | adding a service is a JSON entry, not a code path |
+| `bind_engine()` | one place that binds the database | CLI, orchestrator and API agree on `DATABASE_URL` |
+| Event broadcast | run summaries pushed to `EVENT_WEBHOOKS` | pipe results anywhere without polling |
+
+**Next (performance and scale)**
+
+1. **Alembic migrations** for the Postgres/Neon path (today the schema is
+   created idempotently at boot).
+2. **Broadcast state updates.** Task completion currently fans out with targeted
+   writes; a per-project broadcast channel (Postgres `LISTEN/NOTIFY`, or Redis
+   when available) removes the remaining polling for live dashboards.
+3. **Composite indexes + partial indexes** on `tasks(project_id, status)` and
+   `events(project_id, created_at)` for large event streams.
+4. **Streamed agent output.** Long worker responses are buffered whole; reading
+   the OpenAI-compatible stream would cut time-to-first-artifact and memory.
+5. **Concurrency budget per provider.** Today `ARENA_MAX_CONCURRENCY` is per
+   account; a shared token-bucket per provider avoids 429 storms with many
+   accounts on one endpoint.
+6. **Content-addressed artifacts.** Hash files before upload so repeated runs
+   skip identical uploads (a big win against 10 GB free tiers).
+7. **Speculative planning.** Warm the planner for the next wave while the
+   current one runs, so the brain is never the critical path.
+8. **Cached repo tree.** The GitHub tree is fetched per wave; cache it with an
+   ETag for the duration of a run.
+9. **Local embedding index** over `PROJECT_STATE.md` and the repo, so context
+   injection stops sending the whole document with every prompt.
+10. **Optional local brain.** Ship an Ollama profile so a fully offline run is
+    one command (`docker compose --profile local-llm up`).
+11. **Worker sandboxing** (also on the roadmap): run collected code in a
+    container before it is committed — the one gap that keeps Kollektiv from
+    being a fully autonomous pipeline.
+12. **Metering per provider** in `/health`: calls, tokens, latency and cost, so
+    a free-tier budget can be seen at a glance.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -836,6 +1037,26 @@ writes to a protected branch on its own.
 as soon as the next upload succeeds. With no storage configured at all the
 workspace is the only copy — `/health` says so.
 
+**Is this self-hostable?** Yes — it is the primary deployment: `pip install`
+(plus `docker compose up --build`), one small VM, SQLite or Neon, and an
+optional free dashboard on Pages. Nothing calls home, no feature is gated and
+every hosted free tier in the docs can be replaced by something you run
+yourself (see [Self-hosting checklist](#self-hosting-checklist)).
+
+**Can I use something other than Arena for the workers?** Yes, and most people
+do: any OpenAI-compatible endpoint works as a worker, so Groq, Together,
+OpenRouter, DeepSeek, a local Ollama/vLLM server, or a shim around a CLI agent
+(OpenHands, Aider, OpenCode, Goose, Cline/Kilo, Qwen Code, Codex CLI) all plug
+in through `ARENA_ACCOUNTS` — see [Agent runtimes](#agent-runtimes). The same is
+true for connectors: the four built-ins and `CUSTOM_CONNECTORS` cover most of
+what "linking services" means, and Activepieces/n8n/Zapier can be reached
+through `EVENT_WEBHOOKS` or their own REST APIs.
+
+**Do I need any keys to start?** No. With an empty `.env` you get the heuristic
+planner, a pool with zero workers, local-workspace storage, an open API and no
+emails. Everything reports itself in `/health`, `kollektiv check` and
+`kollektiv connectors`, so you can add one credential at a time.
+
 **Is every piece really free?** Yes, and there is no paid component on the
 critical path: Cloudflare R2 (10 GB, no egress), Neon, Clerk, Resend and Pages
 all have usable free tiers, and Kollektiv runs with none of them.
@@ -859,6 +1080,24 @@ hand-rolled SigV4 signer and `kollektiv bootstrap`.
 - [ ] Additional storage backends (WebDAV, Backblaze B2) behind the pool
 - [ ] Cost/latency accounting per provider in `/health`
 - [ ] Signed Python wheels + SBOM attached to each release
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome. The short version:
+
+1. `pytest -q`, `ruff check .`, `mypy src config` must all be green.
+2. New behaviour comes with tests; they must stay hermetic (no network, no real
+   credentials) — see `tests/conftest.py` for the fakes.
+3. Update `README.md`, `CHANGELOG.md` and (if config changed) `.env.example` in
+   the same PR. The release workflow only publishes versions the changelog
+   documents.
+4. Commit prefixes: `feat:`, `fix:`, `test:`, `docs:`, `chore:`.
+
+Good first issues are tagged in the tracker; the [roadmap](#roadmap) and
+[Performance & next iteration](#performance--next-iteration) sections are
+accurate lists of what is next.
 
 ---
 

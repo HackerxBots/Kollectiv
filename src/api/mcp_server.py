@@ -237,6 +237,40 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
         return _json({"project_id": project_id, "upload": result})
 
     @server.tool()
+    async def list_connectors() -> str:
+        """List the services Kollektiv can call (GitHub, Google, Notion, …) and their actions."""
+        instance = await get_orchestrator()
+        registry = getattr(instance, "connectors", None)
+        if registry is None:
+            return json.dumps({"count": 0, "connectors": []}, indent=2)
+        return json.dumps(
+            {
+                "count": len(registry.names),
+                "configured": registry.configured_names(),
+                "connectors": registry.statuses(),
+                "actions": registry.catalog(),
+            },
+            indent=2,
+        )
+
+    @server.tool()
+    async def call_connector(name: str, action: str, params_json: str = "{}", confirm: bool = False) -> str:
+        """Call one connector action. ``params_json`` is a JSON object of parameters."""
+        instance = await get_orchestrator()
+        registry = getattr(instance, "connectors", None)
+        if registry is None:
+            return json.dumps({"error": "the connector registry is not available"}, indent=2)
+        try:
+            params = json.loads(params_json or "{}")
+        except json.JSONDecodeError as exc:
+            return json.dumps({"error": f"params_json is not valid JSON: {exc}"}, indent=2)
+        try:
+            result = await registry.call(name, action, params, confirm=confirm)
+        except Exception as exc:  # noqa: BLE001 - report, never crash the MCP server
+            return json.dumps({"error": str(exc)}, indent=2)
+        return json.dumps({"connector": name, "action": action, "result": result}, indent=2)
+
+    @server.tool()
     async def get_agent_pool_status(probe: bool = False) -> str:
         """Return worker agent status (busy/idle/rate limited and counters).
 

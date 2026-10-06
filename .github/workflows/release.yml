@@ -87,4 +87,5 @@ jobs:
           files: dist/*
           generate_release_notes: true
           draft: false
-          prerelease: false
+          # Everything is a beta until 1.0 (see the release policy in README.md).
+          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}

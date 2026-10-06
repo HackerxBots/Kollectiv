@@ -155,6 +155,15 @@
   </section>
 
   <section>
+    <h2>Connectors</h2>
+    <p class="hint">The services Kollektiv can reach. Each action is a tool the agents (and you) can call.</p>
+    <table>
+      <thead><tr><th>Service</th><th>Status</th><th>Actions</th><th>Call</th></tr></thead>
+      <tbody id="connectors"><tr><td colspan="4" class="hint">Connect to an API to list connectors.</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
     <h2>Agents &amp; storage</h2>
     <p class="hint">Worker endpoints in the pool and the quota of the shared drive.</p>
     <table>
@@ -295,6 +304,57 @@
     }
   }
 
+  async function loadConnectors() {
+    try {
+      const data = await api("/connectors");
+      const rows = data.connectors || [];
+      if (!rows.length) {
+        $("connectors").innerHTML = `<tr><td colspan="4" class="hint">No connectors registered.</td></tr>`;
+        return;
+      }
+      $("connectors").innerHTML = rows.map((c) => `
+        <tr>
+          <td><strong>${esc(c.name)}</strong><div class="hint">${esc(c.description || c.category || "")}</div></td>
+          <td>${c.configured ? '<span class="pill ok">ready</span>' : `<span class="pill warn">setup</span><div class="hint">${esc(c.detail || "")}</div>`}</td>
+          <td class="hint mono">${(c.actions || []).map(esc).join(", ") || "—"}</td>
+          <td>
+            <select data-connector="${esc(c.name)}" aria-label="action for ${esc(c.name)}">
+              ${(c.actions || []).map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("")}
+            </select>
+            <button class="ghost" data-call="${esc(c.name)}" ${c.configured ? "" : "disabled"}>Run</button>
+          </td>
+        </tr>`).join("");
+      $("connectors").querySelectorAll("[data-call]").forEach((btn) =>
+        btn.addEventListener("click", () => callConnector(btn.dataset.call, btn)));
+    } catch (error) {
+      $("connectors").innerHTML = `<tr><td colspan="4" class="hint">${esc(error.message)}</td></tr>`;
+    }
+  }
+
+  async function callConnector(name, button) {
+    const select = document.querySelector(`[data-connector="${name}"]`);
+    const action = select ? select.value : "";
+    const raw = window.prompt(`Parameters for ${name}.${action} (JSON object)`, "{}");
+    if (raw === null) return;
+    let params = {};
+    try { params = raw.trim() ? JSON.parse(raw) : {}; }
+    catch (error) { window.alert(`Not valid JSON: ${error.message}`); return; }
+    const dangerous = /send|create|comment|append|post|delete/i.test(action);
+    if (dangerous && !window.confirm(`${name}.${action} changes data outside Kollektiv. Run it?`)) return;
+    button.disabled = true;
+    try {
+      const result = await api(`/connectors/${name}/call`, {
+        method: "POST",
+        body: JSON.stringify({ action, params, confirm: dangerous }),
+      });
+      window.alert(`OK\n\n${JSON.stringify(result.result, null, 2).slice(0, 4000)}`);
+    } catch (error) {
+      window.alert(`Failed: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   async function loadAgentsAndStorage() {
     try {
       const agents = await api("/agents/status");
@@ -356,7 +416,7 @@
       const summary = await api(`/projects/${projectId}/run`, { method: "POST" });
       $("sync-status").textContent =
         `${summary.status}: ${summary.completed}/${summary.tasks_dispatched} task(s), ${summary.artifact?.file_count ?? 0} file(s)`;
-      await Promise.all([loadProjects(), loadAgentsAndStorage()]);
+      await Promise.all([loadProjects(), loadAgentsAndStorage(), loadConnectors()]);
     } catch (error) {
       $("sync-status").textContent = `Run failed: ${error.message}`;
     } finally {
@@ -428,11 +488,11 @@
     state.base = ($("api").value || guessBase()).replace(/\/$/, "");
     store.api = state.base;
     $("api").value = state.base;
-    return Promise.all([loadHealth(), loadProjects(), loadAgentsAndStorage()]);
+    return Promise.all([loadHealth(), loadProjects(), loadAgentsAndStorage(), loadConnectors()]);
   }
 
   $("connect").addEventListener("click", connect);
-  $("refresh").addEventListener("click", () => Promise.all([loadHealth(), loadProjects(), loadAgentsAndStorage()]));
+  $("refresh").addEventListener("click", () => Promise.all([loadHealth(), loadProjects(), loadAgentsAndStorage(), loadConnectors()]));
   $("sync").addEventListener("click", sync);
   $("create").addEventListener("click", () => createProject(false));
   $("create-run").addEventListener("click", () => createProject(true));

@@ -180,6 +180,12 @@ async def cmd_bootstrap(args: argparse.Namespace) -> int:
          settings.is_brain_configured, "LLM planning and reviews"),
         ("Worker endpoints", "ARENA_ACCOUNTS=[...]",
          settings.is_arena_configured, "the agents that write the code"),
+        ("Google Workspace", "GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN",
+         settings.is_google_configured, "Gmail/Calendar/Drive as agent tools"),
+        ("Notion", "NOTION_TOKEN",
+         settings.is_notion_configured, "pages and databases as agent tools"),
+        ("Event webhooks", "EVENT_WEBHOOKS=https://…",
+         bool(settings.event_webhook_urls), "push run events to Slack/Discord/n8n/Zapier"),
     ]
     for name, keys, done, why in rows:
         mark = "ok  " if done else "todo"
@@ -189,6 +195,58 @@ async def cmd_bootstrap(args: argparse.Namespace) -> int:
     print("Next: `kollektiv check --json` for machine-readable status, then")
     print("      `kollektiv serve-api` and open http://localhost:8000/docs")
     return 0
+
+
+async def cmd_connectors(args: argparse.Namespace) -> int:
+    """List every connector, its status and the actions it exposes."""
+    from src.connectors.base import ConnectorRegistry
+
+    settings = get_settings()
+    registry = ConnectorRegistry.from_settings(settings)
+    try:
+        configured: List[str] = registry.configured_names()
+        statuses: List[Dict[str, Any]] = registry.statuses()
+        if args.json:
+            _print(
+                {"count": len(registry.names), "configured": configured, "connectors": statuses},
+                True,
+            )
+            return 0
+        print("Connectors")
+        print("==========")
+        for status in statuses:
+            mark = "ok  " if status["configured"] else "todo"
+            print(f"  [{mark}] {status['name']:<10} {status['detail']}")
+            print(f"           actions: {', '.join(status['actions']) or 'none'}")
+        print()
+        print(f"{len(configured)}/{len(statuses)} ready. Add services in .env (see the README).")
+        return 0
+    finally:
+        await registry.close()
+
+
+async def cmd_call(args: argparse.Namespace) -> int:
+    """Call one connector action from the command line."""
+    from src.connectors.base import ConnectorRegistry
+
+    settings = get_settings()
+    registry = ConnectorRegistry.from_settings(settings)
+    try:
+        try:
+            params = json.loads(args.params or "{}")
+        except json.JSONDecodeError as exc:
+            _print({"error": f"--params is not valid JSON: {exc}"}, True)
+            return 2
+        try:
+            result = await registry.call(args.connector, args.action, params, confirm=args.confirm)
+        except Exception as exc:  # noqa: BLE001 - the CLI reports, it does not traceback
+            LOGGER.error("Connector call failed: %s", exc)
+            _print({"error": str(exc)}, True)
+            return 1
+        _print({"connector": args.connector, "action": args.action, "result": result}, True)
+        return 0
+    finally:
+        await registry.close()
 
 
 async def cmd_init_db(args: argparse.Namespace) -> int:
@@ -395,6 +453,13 @@ def build_parser() -> argparse.ArgumentParser:
     sync = sub.add_parser("sync", help="Run the GitHub -> TeraBox sync once")
     sync.add_argument("--json", action="store_true")
 
+    connectors = sub.add_parser("connectors", help="List the available service connectors")
+    connectors.add_argument("--json", action="store_true", help="Machine-readable report")
+    call = sub.add_parser("call", help="Call a connector action")
+    call.add_argument("connector", help="Connector name (see `kollektiv connectors`)")
+    call.add_argument("action", help="Action name")
+    call.add_argument("--params", default="{}", help="JSON object of parameters")
+    call.add_argument("--confirm", action="store_true", help="Allow dangerous actions")
     sub.add_parser("secret", help="Print a new SECRET_KEY")
 
     serve_api = sub.add_parser("serve-api", help="Run the FastAPI app")
@@ -413,6 +478,8 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "check": cmd_check,
     "init-db": cmd_init_db,
+    "connectors": cmd_connectors,
+    "call": cmd_call,
     "bootstrap": cmd_bootstrap,
     "projects": cmd_projects,
     "plan": cmd_plan,

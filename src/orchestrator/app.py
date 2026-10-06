@@ -23,6 +23,7 @@ from sqlmodel import col, select
 from config.settings import Settings, get_settings
 from src.agents.agent_pool import AgentPool
 from src.agents.session_manager import SessionManager
+from src.connectors.base import ConnectorRegistry
 from src.db.models import (
     AgentRecord,
     EventLog,
@@ -75,6 +76,10 @@ class Orchestrator:
 
             notifier = ResendNotifier(self.settings)
         self.notifier = notifier
+        # Optional links to the services the user already uses (GitHub, Google,
+        # Notion, webhooks, declarative REST APIs). Built in start() so a
+        # failure there never blocks construction.
+        self.connectors: Optional[ConnectorRegistry] = None
         self.state = StateManager(self.pool, settings=self.settings)
         self.github = GitHubClient(settings=self.settings)
         self.brain = OrchestratorBrain(settings=self.settings)
@@ -156,6 +161,14 @@ class Orchestrator:
             report["brain"] = {"configured": False, "error": str(exc)}
 
         try:
+            self.connectors = ConnectorRegistry.from_settings(self.settings, token_store=self.token_store)
+            report["connectors"] = self.connectors.summary()
+        except Exception as exc:  # noqa: BLE001 - connectors are optional
+            LOGGER.error("Could not build the connector registry: %s", exc)
+            self.connectors = None
+            report["connectors"] = {"count": 0, "error": str(exc)}
+
+        try:
             await self.session_manager.start()
             report["sessions"] = self.session_manager.status()
         except Exception as exc:  # noqa: BLE001 - optional subsystem
@@ -186,6 +199,8 @@ class Orchestrator:
         notifier_close = getattr(self.notifier, "close", None)
         if callable(notifier_close):
             closers.append(notifier_close)
+        if self.connectors is not None:
+            closers.append(self.connectors.close)
         for closer in closers:
             try:
                 await closer()
@@ -672,6 +687,11 @@ class Orchestrator:
                 ),
                 "sessions": self.session_manager.status(),
                 "sync": self.sync_engine.status(),
+                "connectors": (
+                    self.connectors.summary()
+                    if self.connectors is not None
+                    else {"count": 0, "configured": [], "actions": 0}
+                ),
             },
             "warnings": self.settings.config_warnings(),
         }
@@ -714,6 +734,33 @@ class Orchestrator:
             await sender(project_name or project_id, summary, project_id=project_id)
         except Exception as exc:  # noqa: BLE001 - notifications must not fail a run
             LOGGER.warning("Could not send the run summary email: %s", exc)
+        await self._broadcast_run(project_id, project_name, summary)
+
+    async def _broadcast_run(
+        self, project_id: str, project_name: str, summary: Dict[str, Any]
+    ) -> None:
+        """POST the run summary to EVENT_WEBHOOKS (never fatal)."""
+        if self.connectors is None or not self.settings.event_webhook_urls:
+            return
+        status = summary.get("status", "unknown")
+        text = (
+            f"{self.settings.APP_NAME}: {project_name or project_id} {status} — "
+            f"{summary.get('completed', 0)}/{summary.get('tasks_dispatched', 0)} task(s), "
+            f"{len(summary.get('errors') or [])} error(s)"
+        )
+        try:
+            await self.connectors.broadcast(
+                {
+                    "type": "run.finished",
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "status": status,
+                    "summary": summary,
+                    "text": text,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - notifications must not fail a run
+            LOGGER.warning("Could not broadcast the run event: %s", exc)
 
     async def _set_project_status(self, project_id: str, status: str) -> None:
         """Update the project status in SQLite and the in-memory cache."""

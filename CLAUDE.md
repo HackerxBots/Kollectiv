@@ -21,12 +21,13 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 165 hermetic tests, ~5 s
+pytest -q                      # 199 hermetic tests, ~11 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config                # types (clean)
 
 kollektiv bootstrap            # schema + workspace + free-tier checklist
+kollektiv connectors           # services the agents can call (+ what is missing)
 kollektiv check                # what is configured / degraded
 kollektiv serve-api            # uvicorn src.api.routes:app --port 8000
 python -m src.api.mcp_server   # MCP tools, port 8001
@@ -51,6 +52,7 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 | `src/agents/` | `ArenaClient` (one worker over HTTP), `AgentPool` (scheduling/failover), `SessionManager` (APScheduler maintenance). |
 | `src/github/` | `GitHubClient` (REST) + `webhook_handler` (HMAC-verified, background work). |
 | `src/orchestrator/` | `brain` → `planner` → `dispatcher` → `collector` → `sync_engine`, wired by `app.Orchestrator`. |
+| `src/connectors/` | `base.py` (Connector/ConnectorAction/ConnectorRegistry) + one module per service (GitHub, Google, Notion, webhooks, declarative REST). Every connector is always registered; `configured` decides what runs, and `dangerous` actions require `confirm`. |
 | `src/api/` | `routes.py` (FastAPI), `mcp_server.py` (MCP tools), `cli.py` (`kollektiv`). |
 
 ## Conventions
@@ -87,7 +89,11 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   `asyncio.run()`.
 - New free-stack interfaces are covered in `tests/test_integrations.py` (Clerk
   RS256/JWKS/Svix, Resend, settings helpers, bootstrap, dashboard); R2 in
-  `tests/test_r2.py`. Keep both hermetic — no real accounts in CI.
+  `tests/test_r2.py`; connectors in `tests/test_connectors.py` (MockTransport
+  clients + a dict token store). Keep them hermetic — no real accounts in CI.
+- Connectors must never raise into the orchestrator: report in `status()`,
+  log, and keep read actions safe. Mark anything that sends/creates/comments as
+  `dangerous=True` and let the registry enforce `confirm`.
 - `mcp` has two API generations. `src/api/mcp_server.py` adapts to both
   (`FastMCP` in v1, `MCPServer` in v2). SDK v2's `server.call_tool(...)`
   returns a `CallToolResult` (read `.content[0].text`), not a JSON string.
@@ -116,7 +122,9 @@ project is judged by its README and its releases, so they ship together:
 
 1. Bump `version` in `pyproject.toml` **and** `src/__init__.py` (SemVer).
 2. Move `CHANGELOG.md`'s `[Unreleased]` entries under the new version with
-   today's date; add the compare links at the bottom.
+   today's date; add the compare links at the bottom. **Every release is a
+   beta for now**: tag `vX.Y.Z-beta.N`, and the workflow marks it a
+   pre-release automatically (see the policy in `README.md`).
 3. Update the README: the "peak" block at the top (release name, test count) and
    any tool table, command or configuration key that changed.
 4. Tag `v<version>` and push the tag — `.github/workflows/release.yml` builds

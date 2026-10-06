@@ -250,6 +250,32 @@ class Settings(BaseSettings):
     APP_BASE_URL: str = "http://localhost:8000"
 
     # ------------------------------------------------------------------
+    # Connectors (optional links to the services you already use)
+    # ------------------------------------------------------------------
+    #: Google Workspace OAuth client + a long-lived refresh token. One token can
+    #: cover Gmail, Calendar and Drive; store it in the encrypted token store
+    #: instead of here when you can (``kollektiv call google ...`` works either
+    #: way: the token store takes precedence over these variables).
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REFRESH_TOKEN: str = ""
+    GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
+    GOOGLE_REQUEST_TIMEOUT: float = 30.0
+    #: Notion integration token (``ntn_...``) + API version header.
+    NOTION_TOKEN: str = ""
+    NOTION_BASE_URL: str = "https://api.notion.com"
+    NOTION_VERSION: str = "2022-06-28"
+    NOTION_REQUEST_TIMEOUT: float = 30.0
+    #: Comma separated URLs that receive Kollektiv events (run started/finished,
+    #: failures). Use this to poke Slack/Discord/Zapier/n8n or your own service.
+    EVENT_WEBHOOKS: str = ""
+    #: Declarative REST connectors: any JSON API becomes a tool without code.
+    #: [{"name":"slack","category":"chat","base_url":"https://slack.com/api",
+    #:   "auth":"bearer","token":"xoxb-...","actions":[{"name":"post_message",
+    #:   "method":"POST","path":"/chat.postMessage","params":{"channel":"…","text":"…"}}]}]
+    CUSTOM_CONNECTORS: str = "[]"
+
+    # ------------------------------------------------------------------
     # Worker agents
     # ------------------------------------------------------------------
     ARENA_ACCOUNTS: str = "[]"
@@ -571,6 +597,39 @@ class Settings(BaseSettings):
         return bool(self.RESEND_API_KEY and self.notify_recipients)
 
     @property
+    def is_google_configured(self) -> bool:
+        """True when a Google OAuth client and refresh token are present."""
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET and self.GOOGLE_REFRESH_TOKEN)
+
+    @property
+    def is_notion_configured(self) -> bool:
+        """True when a Notion integration token is present."""
+        return bool(self.NOTION_TOKEN)
+
+    @property
+    def event_webhook_urls(self) -> List[str]:
+        """``EVENT_WEBHOOKS`` parsed into a list of URLs."""
+        return [url.strip() for url in (self.EVENT_WEBHOOKS or "").split(",") if url.strip()]
+
+    @property
+    def custom_connector_configs(self) -> List[Dict[str, Any]]:
+        """Parsed ``CUSTOM_CONNECTORS`` entries (invalid JSON yields none)."""
+        raw = (self.CUSTOM_CONNECTORS or "").strip()
+        if not raw or raw in ("[]", "{}"):
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            LOGGER.warning("CUSTOM_CONNECTORS is not valid JSON (%s); ignoring it", exc)
+            return []
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+        if not isinstance(parsed, list):
+            LOGGER.warning("CUSTOM_CONNECTORS must be a JSON list; ignoring %r", type(parsed).__name__)
+            return []
+        return [item for item in parsed if isinstance(item, dict) and item.get("name")]
+
+    @property
     def is_brain_configured(self) -> bool:
         """True when an LLM API key is present."""
         return bool(self.BRAIN_API_KEY)
@@ -626,6 +685,13 @@ class Settings(BaseSettings):
             "CLERK_SECRET_KEY",
             "CLERK_WEBHOOK_SECRET",
             "RESEND_API_KEY",
+            "GOOGLE_CLIENT_SECRET",
+            "GOOGLE_REFRESH_TOKEN",
+            "NOTION_TOKEN",
+            # Declarative connectors and event URLs can carry tokens in the
+            # query string or body, so they are masked wholesale.
+            "CUSTOM_CONNECTORS",
+            "EVENT_WEBHOOKS",
         }
         data: Dict[str, Any] = {}
         for name, value in self.model_dump().items():

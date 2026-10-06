@@ -104,6 +104,14 @@ class AuthError(KollektivError):
     """Raised when a request cannot be authenticated or authorised."""
 
 
+class ConnectorError(KollektivError):
+    """A connector could not perform an action (bad params, unknown action)."""
+
+
+class ConnectorTransientError(ConnectorError, RetryableError):
+    """A connector's upstream service failed in a retryable way."""
+
+
 class ArenaError(KollektivError):
     """Raised for worker-agent failures that a retry will not fix."""
 
@@ -158,6 +166,8 @@ __all__ = [
     "GitHubError",
     "GitHubTransientError",
     "BrainError",
+    "ConnectorError",
+    "ConnectorTransientError",
     "BrainTransientError",
     "StateError",
     "TaskTimeoutError",

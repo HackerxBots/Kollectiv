@@ -717,7 +717,7 @@ def test_dashboard_calls_the_documented_endpoints() -> None:
 
     page = Path(__file__).resolve().parents[1] / "web" / "index.html"
     html = page.read_text(encoding="utf-8")
-    for endpoint in ("/health", "/projects", "/agents/status", "/storage/status", "/sync", "/replan"):
+    for endpoint in ("/health", "/projects", "/agents/status", "/storage/status", "/sync", "/replan", "/connectors"):
         assert endpoint in html, endpoint
     # It must be self-contained (Cloudflare Pages serves it with no build step).
     assert "<script src=" not in html

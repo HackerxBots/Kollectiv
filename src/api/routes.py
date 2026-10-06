@@ -48,7 +48,7 @@ from src.github.webhook_handler import get_orchestrator as get_webhook_orchestra
 from src.github.webhook_handler import router as webhook_router
 from src.github.webhook_handler import set_orchestrator as set_webhook_orchestrator
 from src.orchestrator.app import Orchestrator
-from src.utils.errors import ConfigurationError, KollektivError
+from src.utils.errors import ConfigurationError, ConnectorError, KollektivError
 from src.utils.logger import configure_logging, get_logger
 
 LOGGER = get_logger(__name__)
@@ -57,6 +57,14 @@ LOGGER = get_logger(__name__)
 # ----------------------------------------------------------------------
 # Request/response models
 # ----------------------------------------------------------------------
+class ConnectorCall(BaseModel):
+    """Body of ``POST /connectors/{name}/call``."""
+
+    action: str = Field(..., description="Action name from GET /connectors.")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Action parameters.")
+    confirm: bool = Field(False, description="Required for actions flagged dangerous.")
+
+
 class ProjectCreateRequest(BaseModel):
     """Body for ``POST /projects``."""
 
@@ -382,6 +390,39 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
     async def storage_status(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
         """Return the TeraBox pool quota."""
         return await orchestrator.get_storage_status()
+
+    @router.get("/connectors", tags=["connectors"])
+    async def list_connectors(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
+        """List every connector, its status and the actions it exposes."""
+        registry = getattr(orchestrator, "connectors", None)
+        if registry is None:
+            return {"count": 0, "configured": [], "actions": [], "connectors": []}
+        return {
+            "count": len(registry.names),
+            "configured": registry.configured_names(),
+            "connectors": registry.statuses(),
+            "actions": registry.catalog(),
+        }
+
+    @router.post("/connectors/{name}/call", tags=["connectors"])
+    async def call_connector(
+        name: str, payload: ConnectorCall, orchestrator: Orchestrator = Depends(get_orchestrator)
+    ) -> Dict[str, Any]:
+        """Run one connector action (``confirm=true`` for dangerous actions)."""
+        registry = getattr(orchestrator, "connectors", None)
+        if registry is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The connector registry is not available yet.",
+            )
+        try:
+            result = await registry.call(name, payload.action, payload.params, confirm=payload.confirm)
+        except ConnectorError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - surface upstream failures as 502
+            LOGGER.error("Connector %s.%s failed: %s", name, payload.action, exc)
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        return {"connector": name, "action": payload.action, "result": result}
 
     @router.get("/auth/me", tags=["system"])
     async def whoami(user: Any = Depends(auth_dependency)) -> Dict[str, Any]:
