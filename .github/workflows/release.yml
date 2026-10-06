@@ -43,9 +43,13 @@ jobs:
           echo "Resolved ${{ steps.version.outputs.tag }}"
 
       - name: Verify the tag matches the packaged version
+        # v0.3.0 and the beta tags v0.3.0-beta.1 / -beta.2 / -rc.1 all map to 0.3.0.
         run: |
-          test "${{ steps.version.outputs.tag }}" = "v${{ steps.version.outputs.version }}" \
-            || { echo "tag/version mismatch"; exit 1; }
+          case "${{ steps.version.outputs.tag }}" in
+            "v${{ steps.version.outputs.version }}"|"v${{ steps.version.outputs.version }}-"*)
+              echo "tag is consistent with the packaged version";;
+            *) echo "tag/version mismatch"; exit 1;;
+          esac
 
       - name: Verify the changelog documents this version
         run: |
