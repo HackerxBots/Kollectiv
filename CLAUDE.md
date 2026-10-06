@@ -52,6 +52,7 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 | `src/agents/` | `ArenaClient` (one worker over HTTP), `AgentPool` (scheduling/failover), `SessionManager` (APScheduler maintenance). |
 | `src/github/` | `GitHubClient` (REST) + `webhook_handler` (HMAC-verified, background work). |
 | `src/orchestrator/` | `brain` → `planner` → `dispatcher` → `collector` → `sync_engine`, wired by `app.Orchestrator`. |
+| `src/orchestrator/handoff.py` | Resume briefings: dependency-aware next actions, blockers and rendered Markdown, written to `HANDOFF.md` after every run and served by `GET /projects/{id}/handoff` + the `get_handoff` MCP tool. |
 | `src/connectors/` | `base.py` (Connector/ConnectorAction/ConnectorRegistry) + one module per service (GitHub, Google, Notion, webhooks, declarative REST). Every connector is always registered; `configured` decides what runs, and `dangerous` actions require `confirm`. |
 | `src/api/` | `routes.py` (FastAPI), `mcp_server.py` (MCP tools), `cli.py` (`kollektiv`). |
 
@@ -68,6 +69,13 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 - **Degrade, don't die.** Missing brain key → heuristic planner/reviewer.
   Missing R2/TeraBox → local file fallback. Missing GitHub → sync reports the
   error. `/health` and `kollektiv check` must always describe what is degraded.
+- **Never add telemetry.** No analytics, crash reporting, install IDs, or
+  "anonymous usage" pings — not in the API, the CLI or the dashboard. The only
+  outbound requests are the endpoints the operator configured; the README's
+  privacy section states this and the dashboard footer repeats it.
+- **Credentials go through `TokenStore`.** `kollektiv login` writes them to the
+  encrypted database (via `db.models.bind_engine()`, so the *configured*
+  database is used), never to `.env` and never to a log.
 - **Secrets never reach logs.** Use `mask_email` / `redact_token` /
   `Settings.redacted()`.
 

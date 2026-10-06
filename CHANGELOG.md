@@ -9,6 +9,48 @@ on GitHub links to the section below for its version.
 
 _Nothing yet — open a PR and add a line here._
 
+## [0.4.0] — 2026-10-06 — “continuity”
+
+Sessions no longer lose the good part, Arena is the documented default worker
+path, connectors are hardened against the most common user errors, and the
+project documents that it collects nothing.
+
+### Added
+
+- **Session continuity** (`src/orchestrator/handoff.py`): dependency-aware resume
+  briefings with next actions, blockers, recent history and the exact commands
+  to continue. Written to `HANDOFF.md` after every run, served as JSON or
+  Markdown by `GET /projects/{id}/handoff`, exposed to MCP clients as
+  `get_handoff`, and printed by `kollektiv resume`.
+- **Arena-first login**: `kollektiv login` (Arena by default, `--provider` for
+  optional free providers) stores the session token encrypted in the database —
+  never in `.env`, never in git. `kollektiv accounts` lists them masked and
+  `kollektiv logout` revokes one.
+- **Connector probes**: `kollektiv connectors --probe` and
+  `POST /connectors/{name}/probe` run the cheapest read action and report
+  reachability with latency, so "is it the token, the service or my typo?" is
+  one command.
+- **Parameter validation**: unknown parameters are rejected with the accepted
+  list before any request leaves the process (typos were the most likely source
+  of user-reported breakage).
+- **Privacy section** in the README and a no-telemetry note in the dashboard
+  footer: no analytics, no identifiers, no data collection, and nothing to opt
+  out of.
+
+### Changed
+
+- The README explains storage as **one layer, two providers** (R2, TeraBox) plus
+  the 9Drive-style pooling pattern, and rewrites the agent-runtime table in
+  plain language with Arena as the default.
+- `kollektiv bootstrap` and `.env.example` lead with the Arena login flow.
+
+### Fixed
+
+- `login`/`logout`/`accounts` now use the configured database
+  (`db.models.bind_engine`) instead of whatever engine happened to be installed
+  — the same class of bug fixed earlier for `init-db`/`bootstrap`.
+
+
 ## [0.3.0] — 2026-10-06 — “connectors”
 
 Kollektiv can now reach the services around the project (mail, calendar, docs,
@@ -121,7 +163,8 @@ Initial public release: the orchestrator (brain, planner, dispatcher, collector,
 sync engine), the pooled worker agents, TeraBox shared storage, the FastAPI/MCP
 interfaces, the CLI, Docker Compose deployment and the hermetic test suite.
 
-[Unreleased]: https://github.com/HackerxBots/Kollektiv/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HackerxBots/Kollektiv/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/HackerxBots/Kollektiv/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HackerxBots/Kollektiv/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HackerxBots/Kollektiv/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HackerxBots/Kollektiv/releases/tag/v0.1.0

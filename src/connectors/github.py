@@ -82,6 +82,10 @@ class GitHubConnector(Connector):
         """True when a token and a real ``owner/repo`` are configured."""
         return bool(self._github.is_configured())
 
+    #: Read the smallest thing GitHub can answer cheaply.
+    probe_action = "recent_commits"
+    probe_params = {"limit": 1}
+
     def actions(self) -> List[ConnectorAction]:
         """Return the repository actions."""
         return GITHUB_ACTIONS

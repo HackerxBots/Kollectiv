@@ -79,8 +79,9 @@ brief ─► brain (DeepSeek/Groq/local) ─► planner ─► N parallel worker
 15. [Troubleshooting](#troubleshooting)
 16. [FAQ](#faq)
 17. [Roadmap](#roadmap)
-18. [Contributing](#contributing)
-19. [Legal & responsible use](#legal--responsible-use)
+18. [Privacy: no telemetry, no accounts, no data collection](#privacy-no-telemetry-no-accounts-no-data-collection)
+19. [Contributing](#contributing)
+20. [Legal & responsible use](#legal--responsible-use)
 
 ---
 
@@ -110,7 +111,27 @@ No account for any of them? Kollektiv still runs: the brain falls back to the
 deterministic heuristic planner, storage falls back to the local workspace and
 the API runs without auth. Add the keys later — nothing has to be migrated.
 
-### One drive out of many free accounts (9Drive style)
+### One storage layer, two providers (and the 9Drive trick)
+
+It is easy to read "R2 or 9Drive" as two storage options. It is really one
+layer with two *providers*, plus a pooling pattern that applies to both:
+
+| Piece | What it is |
+| --- | --- |
+| **Provider: Cloudflare R2** | a bucket you own, S3 API, 10 GB free, no egress fees |
+| **Provider: TeraBox** | free consumer cloud drive; several free accounts can be pooled |
+| **Pattern: pooling ("9Drive style")** | many accounts/buckets presented as **one logical drive**, routed by free space, health and cooldown |
+
+```bash
+STORAGE_BACKEND=auto   # R2 -> TeraBox -> local workspace
+STORAGE_BACKEND=r2     # force R2 (single key or R2_ACCOUNTS pool)
+STORAGE_BACKEND=terabox
+```
+
+So: **one** place to configure, **one** API (`upload_file`, `download_file`,
+`list_all_files`, `get_total_quota`, `get_file_url`), and the pool is what makes
+several free accounts add up to one large drive. Switch providers without
+touching a line of agent code.
 
 The storage layer pools accounts and presents them as **one drive**:
 
@@ -275,6 +296,26 @@ Tools: `list_projects`, `get_project_status`, `create_project`, `run_project`,
 `get_storage_status`, `trigger_sync`, **`list_connectors`**, **`call_connector`**,
 plus OpenAI built-in web search when run with `--with-search`.
 
+### Making connectors reliable (design for "no support tickets")
+
+The catalog above is deliberately shaped so a wrong call fails *early, cheaply
+and legibly*:
+
+| Guarantee | How it works | What a user sees |
+| --- | --- | --- |
+| **Known actions only** | every connector publishes its action list; unknown names are rejected | `Connector 'webhook' has no action 'notifyy' (available: notify, list_targets)` |
+| **Known parameters only** | parameters are validated against the action's declared params before any request | `webhook.notify does not accept tex; accepted parameters: text, url, event` |
+| **Safe by default** | read actions never mutate; anything that sends/creates/comments is `dangerous` and needs `confirm` | the call refuses to run with an explicit message |
+| **Reachability, on demand** | `kollektiv connectors --probe`, `POST /connectors/{name}/probe` run the cheapest read action and time it | `[ok] github 0.42s reachable` / `[FAIL] notion not configured (NOTION_TOKEN)` |
+| **Secrets never leak** | tokens are encrypted at rest, masked in logs, `/health` and `redacted()` | `***redacted***` in every dump |
+| **Failures are typed** | transport/5xx/429 retry with backoff and honour rate limits; 4xx fail fast with the service's own message | a 401 says "rejected the token", a 403 says which scope is missing |
+| **One service cannot break a run** | every action is isolated; failures are logged, reported and skipped | the run finishes, `/health` shows the degradation |
+| **Response caps** | bodies are truncated to a sane size before they reach an agent's context | no accidental 20 MB diff in a prompt |
+
+The probe is the first thing to run when a connector looks broken — it separates
+"the credential is wrong" from "the service is down" from "the action name is a
+typo" without reading a log.
+
 ### Credentials and safety
 
 - Connector secrets are masked in logs, in `/health` and in `redacted()`.
@@ -290,10 +331,71 @@ plus OpenAI built-in web search when run with `--with-search`.
 
 ## Agent runtimes
 
-Kollektiv does not care *what* writes the code — a worker is anything that
-accepts a prompt over HTTP and returns text. That means the free agentic coding
-tools of the last year can be plugged in as workers without locking you into a
-paid plan.
+**In plain terms.** Kollektiv is the *manager*: it plans, splits the work,
+tracks the shared state and pushes to GitHub. A "runtime" is whoever *writes the
+code* for one subtask. Any program that accepts a prompt over HTTP and returns
+text can be that writer, so the list below is a menu, not a dependency — the
+default is an Arena account, and everything else is optional.
+
+| Question | Answer |
+| --- | --- |
+| What is a "worker"? | One credential entry in `ARENA_ACCOUNTS` pointing at an endpoint + model. The pool runs several in parallel. |
+| What is a "runtime"? | The program behind that endpoint: an LLM API, a local model, or a whole CLI agent wrapped in a shim. |
+| Default | **Arena accounts** (`kollektiv login` stores the session token encrypted). |
+| Optional | Groq, DeepSeek, OpenRouter, Together, local Ollama/vLLM, or a CLI agent (Aider, OpenHands, …) — see the table. |
+
+```bash
+kollektiv login                            # Arena, default: paste your session token (encrypted)
+kollektiv login --provider groq            # optional: a key instead of an account
+kollektiv login --provider ollama          # optional: a local model, no key at all
+kollektiv accounts                         # what is stored (tokens masked)
+kollektiv connectors --probe               # can everything actually be reached?
+```
+
+### Arena accounts are the default
+
+Arena accounts are what Kollektiv was built around, and the flow is deliberately
+account-first: `kollektiv login` prompts for the session token from your
+signed-in session, encrypts it with `SECRET_KEY` and stores it in the database
+(never in `.env`, never in git). `ARENA_ACCOUNTS` then only names the account:
+
+```jsonc
+// .env — the token lives in the encrypted store, not here
+ARENA_ACCOUNTS='[{"name":"default","base_url":"https://arena.ai","provider":"arena"}]'
+```
+
+Kollektiv does not scrape, automate logins, or bypass any tier: a session token
+that you supply is used against the endpoint you are authorised to use, rate
+limits are respected, and a throttled account is cooled down rather than
+hammered. The other providers exist so the project stays usable if an account is
+unavailable — not to work around anyone's terms.
+
+### Session continuity: never lose the good part
+
+The annoying part of agent work is that a session ends mid-run and the next one
+starts from nothing. Kollektiv keeps the plan, task status, files and history in
+`PROJECT_STATE.md`, and turns that into a **resume briefing**:
+
+```bash
+kollektiv resume --project-id prj_abc123    # briefing, and refreshes HANDOFF.md
+curl -s "localhost:8000/projects/prj_abc123/handoff?markdown=true"
+```
+
+```
+## Next actions
+1. t3 — Add tests (failed — retry or replan; assigned: w3)
+2. t2 — Implement storage (already in progress; assigned: w2)
+
+## Blockers
+- task t3 (Add tests) failed: timeout
+```
+
+Paste that into a fresh Arena chat (or hand it to a colleague, or an MCP client)
+and the work continues instead of restarting. `HANDOFF.md` is rewritten after
+every run, so it is always current; `GET /projects/{id}/handoff` returns the same
+data as JSON and the MCP tool `get_handoff` exposes it to any MCP client.
+
+### The full menu (optional)
 
 | Runtime | Licence | Why you would plug it in |
 | --- | --- | --- |
@@ -306,7 +408,7 @@ paid plan.
 | **[Codex CLI](https://github.com/openai/codex)** | Apache-2.0 | sandboxed CLI agent; local models via `--oss` |
 | **Local models** (Ollama, llama.cpp, LM Studio, vLLM) | — | zero per-token cost; expose the OpenAI-compatible endpoint as a worker |
 
-### Wiring one in
+#### Wiring one in
 
 The pool speaks OpenAI-compatible HTTP (`base_url` + `model` +
 `session_token`), so hosted and local endpoints work as-is:
@@ -890,7 +992,7 @@ src/connectors/rest.py         declarative REST connectors (CUSTOM_CONNECTORS)
 src/api/cli.py                 the `kollektiv` command line interface
 examples/aider_shim.py         wrap any CLI coding agent as a worker endpoint
 web/                           static dashboard (Cloudflare Pages / GitHub Pages)
-tests/                         199 hermetic tests (no network, no credentials)
+tests/                         217 hermetic tests (no network, no credentials)
 ```
 
 ---
@@ -900,7 +1002,7 @@ tests/                         199 hermetic tests (no network, no credentials)
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 199 tests, ~11 s, fully mocked
+pytest -q                 # 217 tests, ~10 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
 mypy src config           # types (clean)
@@ -1080,6 +1182,33 @@ hand-rolled SigV4 signer and `kollektiv bootstrap`.
 - [ ] Additional storage backends (WebDAV, Backblaze B2) behind the pool
 - [ ] Cost/latency accounting per provider in `/health`
 - [ ] Signed Python wheels + SBOM attached to each release
+
+---
+
+## Privacy: no telemetry, no accounts, no data collection
+
+Kollektiv has no analytics, no crash reporting, no phoned-home pings, no
+"anonymous usage statistics" and no accounts of its own. There is nothing to opt
+out of, because nothing is collected.
+
+- **The only network traffic is what you configure.** Every outbound request
+  goes to an endpoint you put in `.env`: your LLM provider, your GitHub
+  repository, your R2/TeraBox drive, your connectors. Nothing else leaves the
+  process — grep the source for `httpx` and the list of hosts is exactly that.
+- **Your code and prompts stay yours.** Plans, artifacts and the state document
+  are written to your database and your storage. The maintainers never see them.
+- **No identifiers.** No install IDs, no device fingerprinting, no email
+  collection. `GET /health`, `kollektiv check` and the dashboard read the local
+  configuration only.
+- **Self-hosted by default** (see [Self-hosting checklist](#self-hosting-checklist)):
+  the free hosted tiers in this README (Cloudflare, Neon, Clerk, Resend) are
+  conveniences you can replace with something you run, one at a time.
+- **Auditable in one command.** `rg "httpx|requests" src/` lists every place a
+  request can be made; the connector catalogue (`GET /connectors`) shows every
+  service currently configured.
+
+There is no paid tier, no data resale and no business model that needs your
+data. That is a promise the licence (MIT) lets anyone verify and fork.
 
 ---
 

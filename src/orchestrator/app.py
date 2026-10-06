@@ -42,6 +42,7 @@ from src.github.github_client import GitHubClient
 from src.orchestrator.brain import OrchestratorBrain
 from src.orchestrator.collector import Collector
 from src.orchestrator.dispatcher import Dispatcher
+from src.orchestrator.handoff import build_handoff, write_handoff_file
 from src.orchestrator.planner import Planner
 from src.orchestrator.sync_engine import SyncEngine
 from src.storage.factory import build_storage
@@ -464,6 +465,35 @@ class Orchestrator:
         LOGGER.debug("Listing %s project(s)", len(records))
         return records
 
+    async def get_handoff(self, project_id: str, write: bool = True) -> Dict[str, Any]:
+        """Build a resume briefing for a project from its shared state.
+
+        This is the answer to "the session ended mid-run": the plan, task
+        status, files, history and the next concrete actions are rendered into a
+        briefing (and written to ``HANDOFF.md`` in the project workspace) so the
+        next agent, chat or colleague continues instead of starting over.
+
+        Args:
+            project_id: The project identifier.
+            write: Also write ``HANDOFF.md`` into the project workspace.
+
+        Returns:
+            The handoff dict, including its rendered ``markdown``.
+
+        Raises:
+            KeyError: When the project is unknown.
+        """
+        state = await self.get_project_status(project_id)
+        handoff = build_handoff(state, project_id, settings=self.settings)
+        if write:
+            directory = self.settings.workspace_path / project_id
+            try:
+                path = write_handoff_file(handoff, directory)
+                handoff["written_to"] = path
+            except OSError as exc:  # noqa: BLE001 - the briefing is still returned
+                LOGGER.warning("Could not write HANDOFF.md for %s: %s", project_id, exc)
+        return handoff
+
     async def get_project_status(self, project_id: str) -> Dict[str, Any]:
         """Return the shared state document for a project, plus live counters.
 
@@ -735,6 +765,10 @@ class Orchestrator:
         except Exception as exc:  # noqa: BLE001 - notifications must not fail a run
             LOGGER.warning("Could not send the run summary email: %s", exc)
         await self._broadcast_run(project_id, project_name, summary)
+        try:
+            await self.get_handoff(project_id)
+        except Exception as exc:  # noqa: BLE001 - a stale briefing is not fatal
+            LOGGER.debug("Could not refresh HANDOFF.md for %s: %s", project_id, exc)
 
     async def _broadcast_run(
         self, project_id: str, project_name: str, summary: Dict[str, Any]

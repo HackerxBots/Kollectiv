@@ -206,6 +206,24 @@ async def cmd_connectors(args: argparse.Namespace) -> int:
     try:
         configured: List[str] = registry.configured_names()
         statuses: List[Dict[str, Any]] = registry.statuses()
+
+        if getattr(args, "probe", False):
+            probes = await registry.probe_all()
+            if args.json:
+                _print(
+                    {"count": len(registry.names), "configured": configured, "connectors": statuses, "probes": probes},
+                    True,
+                )
+                return 0
+            print("Connector probes (read-only)")
+            print("============================")
+            for probe in probes:
+                mark = "ok  " if probe["ok"] else "FAIL"
+                detail = probe.get("detail") or probe.get("error") or ""
+                print(f"  [{mark}] {probe['connector']:<10} {probe['seconds']:>6.2f}s  {detail}")
+            print()
+            print(f"{sum(1 for p in probes if p['ok'])}/{len(probes)} reachable.")
+            return 0 if all(p["ok"] for p in probes) else 1
         if args.json:
             _print(
                 {"count": len(registry.names), "configured": configured, "connectors": statuses},
@@ -257,6 +275,220 @@ async def cmd_init_db(args: argparse.Namespace) -> int:
     init_db(bind_engine(settings))
     _print({"status": "ok", "database": settings.database_url, "driver": "postgres" if settings.is_postgres else "sqlite"})
     return 0
+
+
+#: Provider presets for `kollektiv login`. Arena is the default because Arena
+#: accounts are what Kollektiv was built around; the others are optional and
+#: only need a key instead of an account.
+PROVIDER_PRESETS: Dict[str, Dict[str, str]] = {
+    "arena": {
+        "label": "Arena.ai account",
+        "base_url": "https://arena.ai",
+        "model": "",
+        "hint": "paste the session token from your signed-in browser session",
+        "kind": "account",
+    },
+    "groq": {
+        "label": "Groq (free tier)",
+        "base_url": "https://api.groq.com/openai/v1",
+        "model": "llama-3.3-70b-versatile",
+        "hint": "API key from console.groq.com (starts with gsk_)",
+        "kind": "key",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "base_url": "https://api.deepseek.com/v1",
+        "model": "deepseek-chat",
+        "hint": "API key from platform.deepseek.com",
+        "kind": "key",
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "deepseek/deepseek-chat",
+        "hint": "API key from openrouter.ai/keys",
+        "kind": "key",
+    },
+    "together": {
+        "label": "Together AI",
+        "base_url": "https://api.together.xyz/v1",
+        "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+        "hint": "API key from api.together.xyz",
+        "kind": "key",
+    },
+    "ollama": {
+        "label": "Ollama (local, no key)",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "model": "qwen2.5-coder:32b",
+        "hint": "no key needed; the token is just a placeholder",
+        "kind": "local",
+    },
+}
+
+
+async def cmd_login(args: argparse.Namespace) -> int:
+    """Store a worker credential in the encrypted token store.
+
+    The credential never touches ``.env``: it is encrypted with ``SECRET_KEY``
+    and written to the database, so it can be rotated, revoked and audited. The
+    matching ``ARENA_ACCOUNTS`` entry only needs to name the account — Kollektiv
+    finds the token in the store.
+
+    Non-interactive use (CI, scripts) reads the token from ``KOLLEKTIV_TOKEN``
+    or ``--token`` so nothing has to be typed at a prompt.
+    """
+    import getpass
+    import os
+
+    from src.db.models import bind_engine
+    from src.utils.token_store import TokenStore
+
+    settings = get_settings()
+    provider = (args.provider or "arena").lower()
+    preset = PROVIDER_PRESETS.get(provider)
+    if preset is None:
+        _print({"error": f"Unknown provider {provider!r}", "providers": sorted(PROVIDER_PRESETS)}, True)
+        return 2
+
+    token = args.token or os.environ.get("KOLLEKTIV_TOKEN", "")
+    if not token:
+        if not sys.stdin.isatty():
+            _print(
+                {
+                    "error": "No token supplied and stdin is not a terminal.",
+                    "next": f"run `kollektiv login --provider {provider}` interactively, "
+                    "or set KOLLEKTIV_TOKEN / pass --token",
+                },
+                True,
+            )
+            return 2
+        print(f"{preset['label']} ({provider})")
+        print(f"  {preset['hint']}")
+        token = getpass.getpass("  token (hidden): ").strip()
+    if not token:
+        _print({"error": "No token supplied."}, True)
+        return 2
+
+    account_id = args.account or ("default" if provider == "arena" else provider)
+    store = TokenStore(settings.fernet_secret, engine=bind_engine(settings))
+    store.save_token(
+        provider,
+        account_id,
+        {
+            "access_token": token,
+            "session_token": token,
+            "base_url": args.base_url or preset["base_url"],
+            "model": args.model or preset["model"],
+            "provider": provider,
+            "kind": preset["kind"],
+        },
+    )
+    account = {
+        "name": account_id,
+        "account_id": account_id,
+        "base_url": args.base_url or preset["base_url"],
+        "model": args.model or preset["model"],
+        "provider": provider,
+    }
+    report: Dict[str, Any] = {
+        "stored": True,
+        "service": provider,
+        "account": account_id,
+        "token_preview": f"{token[:4]}…{token[-4:]}" if len(token) > 10 else "***",
+        "next": {
+            "env": f'ARENA_ACCOUNTS=\'[{json.dumps(account)}]\'',
+            "workers": "kollektiv check --json | jq .subsystems.agents",
+            "note": "the token is encrypted in the database; ARENA_ACCOUNTS only names the account",
+        },
+    }
+    if args.json:
+        _print(report, True)
+    else:
+        print(f"Stored an encrypted {preset['label']} credential for {account_id}.")
+        next_steps = report["next"]
+        print(f"  token: {report['token_preview']} (encrypted with SECRET_KEY; never written to .env)")
+        print()
+        print("Add this worker to .env:")
+        print(f"  {next_steps['env']}")
+        print()
+        print("Other providers are optional: " + ", ".join(sorted(PROVIDER_PRESETS)))
+    return 0
+
+
+async def cmd_logout(args: argparse.Namespace) -> int:
+    """Remove a stored credential from the encrypted token store."""
+    from src.db.models import bind_engine
+    from src.utils.token_store import TokenStore
+
+    settings = get_settings()
+    provider = (args.provider or "arena").lower()
+    account_id = args.account or ("default" if provider == "arena" else provider)
+    store = TokenStore(settings.fernet_secret, engine=bind_engine(settings))
+    removed = store.delete_token(provider, account_id)
+    _print({"removed": removed, "service": provider, "account": account_id}, True)
+    return 0 if removed else 1
+
+
+async def cmd_accounts(args: argparse.Namespace) -> int:
+    """List stored credentials (never the secrets themselves)."""
+    from src.db.models import bind_engine
+    from src.utils.token_store import TokenStore
+
+    settings = get_settings()
+    store = TokenStore(settings.fernet_secret, engine=bind_engine(settings))
+    rows = []
+    for record in store.list_tokens():
+        service = str(record.get("service") or "")
+        account_id = str(record.get("account_id") or "")
+        data = store.get_token(service, account_id) if service and account_id else {}
+        token = str(data.get("access_token") or data.get("session_token") or "")
+        rows.append(
+            {
+                "service": service,
+                "account": account_id,
+                "provider": data.get("provider", service),
+                "base_url": data.get("base_url", ""),
+                "model": data.get("model", ""),
+                "token_preview": f"{token[:4]}…{token[-4:]}" if len(token) > 10 else ("***" if token else ""),
+                "expires_at": str(record.get("expires_at") or ""),
+            }
+        )
+    if args.json:
+        _print({"count": len(rows), "accounts": rows}, True)
+        return 0
+    print("Stored credentials (encrypted with SECRET_KEY)")
+    print("==============================================")
+    if not rows:
+        print("  none — run `kollektiv login` (Arena is the default provider)")
+        return 0
+    for row in rows:
+        print(f"  {row['service']:<10} {row['account']:<12} {row['token_preview']:<14} {row['base_url']}")
+    return 0
+
+
+async def cmd_resume(args: argparse.Namespace) -> int:
+    """Print the resume briefing for a project (see GET /projects/{id}/handoff)."""
+    from src.orchestrator.app import Orchestrator
+
+    settings = get_settings()
+    orchestrator = Orchestrator(settings)
+    try:
+        await orchestrator.start()
+        try:
+            handoff = await orchestrator.get_handoff(args.project_id, write=not args.no_write)
+        except KeyError as exc:
+            _print({"error": str(exc)}, True)
+            return 1
+        if args.json:
+            _print({key: value for key, value in handoff.items() if key != "markdown"}, True)
+        else:
+            print(handoff["markdown"])
+            if handoff.get("written_to"):
+                print()
+                print(f"(also written to {handoff['written_to']})")
+        return 0
+    finally:
+        await orchestrator.stop()
 
 
 async def cmd_projects(args: argparse.Namespace) -> int:
@@ -455,11 +687,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     connectors = sub.add_parser("connectors", help="List the available service connectors")
     connectors.add_argument("--json", action="store_true", help="Machine-readable report")
+    connectors.add_argument("--probe", action="store_true", help="Run a read-only reachability probe on each service")
     call = sub.add_parser("call", help="Call a connector action")
     call.add_argument("connector", help="Connector name (see `kollektiv connectors`)")
     call.add_argument("action", help="Action name")
     call.add_argument("--params", default="{}", help="JSON object of parameters")
     call.add_argument("--confirm", action="store_true", help="Allow dangerous actions")
+    login = sub.add_parser("login", help="Store an encrypted worker credential (Arena by default)")
+    login.add_argument("--provider", default="arena", help="arena (default), groq, deepseek, openrouter, together, ollama")
+    login.add_argument("--token", default="", help="Token (otherwise prompted; KOLLEKTIV_TOKEN also works)")
+    login.add_argument("--account", default="", help="Account name (default: 'default' for Arena, else the provider)")
+    login.add_argument("--base-url", default="", help="Override the provider endpoint")
+    login.add_argument("--model", default="", help="Override the default model")
+    login.add_argument("--json", action="store_true", help="Machine-readable report")
+    logout = sub.add_parser("logout", help="Delete a stored credential")
+    logout.add_argument("--provider", default="arena", help="Provider whose credential to remove")
+    logout.add_argument("--account", default="", help="Account name")
+    accounts = sub.add_parser("accounts", help="List stored credentials (masked)")
+    accounts.add_argument("--json", action="store_true", help="Machine-readable report")
+    resume = sub.add_parser("resume", help="Print the resume briefing for a project")
+    resume.add_argument("--project-id", required=True, help="Project identifier")
+    resume.add_argument("--json", action="store_true", help="Structured output (no markdown)")
+    resume.add_argument("--no-write", action="store_true", help="Do not refresh HANDOFF.md")
     sub.add_parser("secret", help="Print a new SECRET_KEY")
 
     serve_api = sub.add_parser("serve-api", help="Run the FastAPI app")
@@ -479,6 +728,10 @@ COMMANDS = {
     "check": cmd_check,
     "init-db": cmd_init_db,
     "connectors": cmd_connectors,
+    "login": cmd_login,
+    "logout": cmd_logout,
+    "accounts": cmd_accounts,
+    "resume": cmd_resume,
     "call": cmd_call,
     "bootstrap": cmd_bootstrap,
     "projects": cmd_projects,

@@ -20,6 +20,7 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -119,6 +120,43 @@ class Connector(ABC):
         missing = ", ".join(self.required_env) or "credentials"
         return f"not configured ({missing})"
 
+    #: A safe, cheap action used by ``kollektiv connectors --probe``.
+    probe_action: str = ""
+    #: Parameters for the probe action.
+    probe_params: Payload = {}
+
+    async def probe(self) -> Payload:
+        """Run the read-only probe action and report latency and outcome.
+
+        Returns:
+            ``{connector, configured, ok, action, seconds, detail, error}``.
+        """
+        started = time.perf_counter()
+        result: Payload = {
+            "connector": self.name,
+            "configured": self.is_configured,
+            "action": self.probe_action or None,
+            "ok": False,
+        }
+        if not self.is_configured:
+            result["error"] = self.detail()
+            result["seconds"] = round(time.perf_counter() - started, 3)
+            return result
+        if not self.probe_action:
+            result["ok"] = True
+            result["detail"] = "no probe defined for this connector"
+            result["seconds"] = round(time.perf_counter() - started, 3)
+            return result
+        try:
+            await self.call(self.probe_action, dict(self.probe_params))
+            result["ok"] = True
+            result["detail"] = "reachable"
+        except Exception as exc:  # noqa: BLE001 - a probe reports, it never raises
+            result["error"] = str(exc)
+            LOGGER.warning("Connector probe %s.%s failed: %s", self.name, self.probe_action, exc)
+        result["seconds"] = round(time.perf_counter() - started, 3)
+        return result
+
     def status(self) -> Payload:
         """Return a JSON-serialisable status record."""
         return {
@@ -142,6 +180,34 @@ class Connector(ABC):
             }
             for action in self.actions()
         ]
+
+    def validate(self, action: str, params: Optional[Payload] = None) -> ConnectorAction:
+        """Validate an action name and its parameters before anything runs.
+
+        Typos are the most common cause of "the connector is broken" reports,
+        so unknown parameters are rejected with the accepted list instead of
+        being silently dropped or forwarded.
+
+        Args:
+            action: Action name.
+            params: Parameters the caller supplied.
+
+        Returns:
+            The matched :class:`ConnectorAction`.
+
+        Raises:
+            ConnectorError: Unknown action or unexpected parameters.
+        """
+        spec = self.action(action)
+        if not params:
+            return spec
+        unexpected = [key for key in params if key not in spec.params]
+        if unexpected:
+            raise ConnectorError(
+                f"{self.name}.{action} does not accept {', '.join(sorted(unexpected))}; "
+                f"accepted parameters: {', '.join(spec.params) or 'none'}"
+            )
+        return spec
 
     def action(self, name: str) -> ConnectorAction:
         """Look up an action by name (raises :class:`ConnectorError`)."""
@@ -296,7 +362,7 @@ class ConnectorRegistry:
                 a dangerous action that was not confirmed.
         """
         connector = self.get(name)
-        spec = connector.action(action)
+        spec = connector.validate(action, params)
         if not connector.is_configured:
             raise ConnectorError(f"Connector {name!r} is not configured: {connector.detail()}")
         if spec.dangerous and not confirm:
@@ -306,6 +372,14 @@ class ConnectorRegistry:
         async with self._lock:
             LOGGER.info("Connector call %s.%s", name, action)
             return await connector.call(action, params or {})
+
+    async def probe(self, name: str) -> Payload:
+        """Probe one connector (read-only, never raises)."""
+        return await self.get(name).probe()
+
+    async def probe_all(self) -> List[Payload]:
+        """Probe every connector and return one report per service."""
+        return [await self._connectors[name].probe() for name in self.names]
 
     async def broadcast(self, event: Payload) -> List[Payload]:
         """Send ``event`` to every configured event webhook (never raises)."""

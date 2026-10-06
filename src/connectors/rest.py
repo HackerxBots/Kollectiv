@@ -157,6 +157,22 @@ class RestConnector(Connector):
         """True when the connector has every credential it asked for."""
         return self.auth == "none" or bool(self.token)
 
+    @property
+    def probe_action(self) -> str:  # type: ignore[override]
+        """The first read-only action, or empty when the connector only writes."""
+        for name, spec in self._actions.items():
+            method = str(self._endpoints[name]["method"])
+            if method in ("GET", "HEAD") and not spec.dangerous:
+                return name
+        return ""
+
+    @property
+    def probe_params(self) -> Dict[str, Any]:  # type: ignore[override]
+        """Placeholders for the probe action, filled with benign defaults."""
+        if not self.probe_action:
+            return {}
+        return dict.fromkeys(self._actions[self.probe_action].params, "1")
+
     def actions(self) -> List[ConnectorAction]:
         """Return the configured actions."""
         return list(self._actions.values())

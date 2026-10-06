@@ -205,6 +205,16 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
         return _json({key: value for key, value in outcome.items() if key != "plan"})
 
     @server.tool()
+    async def get_handoff(project_id: str) -> str:
+        """Resume briefing for a project: progress, next actions, blockers, history."""
+        instance = await get_orchestrator()
+        try:
+            handoff = await instance.get_handoff(project_id)
+        except Exception as exc:  # noqa: BLE001 - report, never crash the MCP server
+            return json.dumps({"error": str(exc)}, indent=2)
+        return json.dumps({key: value for key, value in handoff.items() if key != "markdown"}, indent=2)
+
+    @server.tool()
     async def list_files(project_id: str) -> str:
         """List the files stored for a project (TeraBox + local index).
 

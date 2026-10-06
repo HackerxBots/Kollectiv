@@ -206,6 +206,10 @@ class GoogleWorkspaceConnector(Connector):
     # ------------------------------------------------------------------
     # Contract
     # ------------------------------------------------------------------
+    #: Calendar read touches the token refresh path and nothing else.
+    probe_action = "calendar_events"
+    probe_params = {"max_results": 1, "days": 1}
+
     def actions(self) -> List[ConnectorAction]:
         """Return the Workspace actions."""
         return GOOGLE_ACTIONS

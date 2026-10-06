@@ -76,6 +76,10 @@ class WebhookConnector(Connector):
             return "not configured (EVENT_WEBHOOKS)"
         return f"{len(self._urls)} target(s): {', '.join(self._urls[:3])}{'…' if len(self._urls) > 3 else ''}"
 
+    #: Listing targets is local; sending a test event is opt-in per probe run.
+    probe_action = "list_targets"
+    probe_params: Payload = {}
+
     def actions(self) -> List[ConnectorAction]:
         """Return the webhook actions."""
         return WEBHOOK_ACTIONS

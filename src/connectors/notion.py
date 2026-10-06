@@ -120,6 +120,10 @@ class NotionConnector(Connector):
             raise ConnectorError(f"Notion returned {response.status_code}: {response.text[:200]}")
         return response.json() if response.content else {}
 
+    #: A one-result search verifies the token without reading any page body.
+    probe_action = "search"
+    probe_params = {"limit": 1}
+
     def actions(self) -> List[ConnectorAction]:
         """Return the Notion actions."""
         return NOTION_ACTIONS

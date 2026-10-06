@@ -32,7 +32,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -349,6 +349,25 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         except KollektivError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
+    @router.get("/projects/{project_id}/handoff", tags=["projects"])
+    async def project_handoff(
+        project_id: str,
+        markdown: bool = Query(False, description="Return the rendered briefing instead of JSON"),
+        orchestrator: Orchestrator = Depends(get_orchestrator),
+    ) -> Any:
+        """Resume briefing for a project: next actions, blockers, recent history.
+
+        Generated from the shared state document, so a new session (Arena chat,
+        teammate, CI job) continues where the previous one stopped.
+        """
+        try:
+            handoff = await orchestrator.get_handoff(project_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        if markdown:
+            return Response(content=handoff["markdown"], media_type="text/markdown")
+        return {key: value for key, value in handoff.items() if key != "markdown"}
+
     @router.get("/projects/{project_id}/files", tags=["projects"])
     async def project_files(
         project_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)
@@ -423,6 +442,21 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             LOGGER.error("Connector %s.%s failed: %s", name, payload.action, exc)
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         return {"connector": name, "action": payload.action, "result": result}
+
+    @router.post("/connectors/{name}/probe", tags=["connectors"])
+    async def probe_connector(name: str, orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
+        """Run the connector's read-only probe and report reachability + latency."""
+        registry = getattr(orchestrator, "connectors", None)
+        if registry is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The connector registry is not available yet.",
+            )
+        try:
+            report = await registry.probe(name)
+        except ConnectorError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return report
 
     @router.get("/auth/me", tags=["system"])
     async def whoami(user: Any = Depends(auth_dependency)) -> Dict[str, Any]:
