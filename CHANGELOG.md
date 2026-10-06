@@ -58,6 +58,11 @@ Until 1.0 every release is published as a **beta pre-release**
   `NOTION_TOKEN`, `CUSTOM_CONNECTORS` and `EVENT_WEBHOOKS`.
 - `CUSTOM_CONNECTORS` entries with an unknown `auth` fail at build time with
   the allowed list instead of at the first call.
+- A rejected GitHub token (or any other `KollektivError`) no longer aborts a
+  sync pass: the failure is recorded in the summary and surfaced in `/health`.
+- `tests/test_orchestrator.py` no longer talks to the real GitHub API (it
+  passed locally only because this sandbox blocks egress and failed anywhere
+  else, including CI); the fake orchestrator now installs a mock transport.
 
 ## [0.2.0] — 2026-10-06 — “free stack”
 

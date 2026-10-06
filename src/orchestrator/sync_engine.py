@@ -29,7 +29,7 @@ from src.github.github_client import GitHubClient
 from src.orchestrator.brain import OrchestratorBrain
 from src.storage.pool_manager import TeraBoxPoolManager
 from src.storage.state_manager import StateManager
-from src.utils.errors import GitHubError
+from src.utils.errors import GitHubError, KollektivError
 from src.utils.logger import get_logger
 
 LOGGER = get_logger(__name__)
@@ -249,7 +249,9 @@ class SyncEngine:
                 summary["commits"] = len(commits)
                 if commits:
                     summary["last_commit"] = commits[0]["sha"]
-            except GitHubError as exc:
+            except KollektivError as exc:
+                # A rejected/limited token must degrade the pass, not abort it;
+                # /health and the summary both report what failed.
                 summary["errors"].append(f"github: {exc}")
                 LOGGER.error("Cron sync could not read commits: %s", exc)
         else:

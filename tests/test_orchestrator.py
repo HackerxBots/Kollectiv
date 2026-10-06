@@ -12,9 +12,11 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+import httpx
 import pytest
 
 from config.settings import Settings
+from src.github.github_client import GitHubClient
 from src.orchestrator.app import Orchestrator
 from src.orchestrator.brain import OrchestratorBrain
 from src.orchestrator.collector import Collector
@@ -500,6 +502,30 @@ async def test_dispatch_parallel_marks_blocked_tasks(settings: Any) -> None:
 # ----------------------------------------------------------------------
 # Orchestrator (end to end with fakes)
 # ----------------------------------------------------------------------
+def _fake_github_client(settings: Settings) -> Any:
+    """A GitHubClient wired to an in-memory transport with an empty repo."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/commits"):
+            return httpx.Response(200, json=[])
+        if path.endswith("/pulls"):
+            return httpx.Response(200, json=[])
+        if "/contents/" in path:
+            return httpx.Response(404, json={"message": "Not Found"})
+        if path.endswith("/git/trees/main"):
+            return httpx.Response(200, json={"tree": []})
+        if path.endswith("/branches/main"):
+            return httpx.Response(200, json={"commit": {"sha": "0" * 40}})
+        return httpx.Response(200, json={})
+
+    client = GitHubClient(settings=settings)
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url=settings.GITHUB_API_URL
+    )
+    return client
+
+
 def build_fake_orchestrator(settings: Settings) -> Orchestrator:
     """Build an Orchestrator whose subsystems are all in-memory fakes."""
     orchestrator = Orchestrator(settings)
@@ -511,6 +537,10 @@ def build_fake_orchestrator(settings: Settings) -> Orchestrator:
     )
     orchestrator.brain = OrchestratorBrain(settings)
     orchestrator.planner = Planner(orchestrator.brain, settings=settings)
+    # Hermetic GitHub: tests must never reach api.github.com (CI has network and
+    # would answer 401 for the fake token in the settings fixture).
+    orchestrator.github = _fake_github_client(settings)
+    orchestrator.sync_engine.github = orchestrator.github
     orchestrator.sync_engine.agent_pool = orchestrator.agent_pool
     return orchestrator
 
