@@ -31,16 +31,27 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
-          import pathlib, re
+          import os, pathlib, re
+
           text = pathlib.Path("pyproject.toml").read_text()
           version = re.search(r'^version = "([^"]+)"', text, re.M).group(1)
-          tag = "${{ github.event.inputs.tag }}" or f"v{version}"
+          # On a tag push the tag IS the release name; on workflow_dispatch the
+          # caller supplies it; otherwise fall back to v<version>.
+          if os.environ.get("REF_TYPE") == "tag":
+              tag = os.environ["REF_NAME"]
+          else:
+              tag = os.environ.get("INPUT_TAG") or f"v{version}"
           print(f"version={version}")
           print(f"tag={tag}")
+          print(f"sha={os.environ.get('GITHUB_SHA', '')}")
           PY
-          echo "Resolved ${{ steps.version.outputs.tag }}"
+          echo "Resolved ${{ steps.version.outputs.tag }} (${{ steps.version.outputs.sha }})"
 
       - name: Verify the tag matches the packaged version
         # v0.3.0 and the beta tags v0.3.0-beta.1 / -beta.2 / -rc.1 all map to 0.3.0.
@@ -86,6 +97,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          # Pin a newly created tag to the commit being built instead of
+          # letting the action default to the base branch.
+          target_commitish: ${{ steps.version.outputs.sha }}
+          fail_on_unmatched_files: true
           name: Kollektiv ${{ steps.version.outputs.tag }}
           body_path: release-notes.md
           files: dist/*
