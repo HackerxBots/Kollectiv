@@ -10,8 +10,15 @@ web/
 │   ├── styles.css        design tokens, components, hover/focus/motion states
 │   ├── app.js            API client, renderers, command palette (⌘K), SSE live view
 │   └── favicon.svg       logo
+├── _headers              Cloudflare Pages CSP + cache headers
+├── _redirects            Cloudflare Pages redirects (optional API proxy)
 └── README.md             this file
 ```
+
+`_headers` sets a strict CSP (`script-src 'self'`, `connect-src *` for your own
+API origin), `nosniff`, `no-referrer` and short asset caching; `_redirects`
+explains why hash routing needs no SPA fallback and how to proxy the API through
+Pages with `?api=/api` to avoid CORS entirely.
 
 No build step, no framework, no CDN, no telemetry: plain ES modules and CSS.
 The API serves this folder itself at `/ui` (and `/` redirects there), so a

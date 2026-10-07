@@ -1,0 +1,21 @@
+# Cloudflare Pages response headers for the dashboard.
+# https://developers.cloudflare.com/pages/configuration/headers/
+#
+# The page is dependency-free: scripts, styles and the icon all come from
+# 'self', and the only outbound connections are to the API the operator points
+# it at (connect-src *), so nothing here breaks the app.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src *
+  Cache-Control: public, max-age=0, must-revalidate
+
+/assets/*
+  Cache-Control: public, max-age=604800
+
+# Long-lived, content-addressed-looking assets: bump the query string (or the
+# file) when they change, since Pages serves the newest deploy anyway.
+/favicon.svg
+  Cache-Control: public, max-age=604800
