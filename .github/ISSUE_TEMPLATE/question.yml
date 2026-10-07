@@ -1,0 +1,26 @@
+name: Question / setup help
+description: Ask about configuration, deployment or behaviour.
+title: "question: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two commands answer most setup questions:
+        `kollektiv check --json` (what is configured) and
+        `kollektiv connectors --probe` (what is reachable). Paste their output —
+        secrets are redacted.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What you tried, and the output of `kollektiv check --json` (redacted).
+      render: shell
+    validations:
+      required: true
