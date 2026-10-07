@@ -49,6 +49,7 @@ from typing import Any, Dict, List, Optional
 
 from config.settings import PROJECT_STATE_FILENAME, Settings, get_settings
 from src.utils.logger import get_logger
+from src.utils.paths import safe_path_segment
 
 LOGGER = get_logger(__name__)
 
@@ -121,14 +122,15 @@ class StateManager:
         root = getattr(self.pool, "remote_root", self.settings.TERABOX_REMOTE_ROOT).rstrip("/")
         target = project_id if project_id is not None else self.project_id
         if target:
-            return f"{root}/{target}/{self.filename}"
+            safe = safe_path_segment(target, label="project id")
+            return f"{root}/{safe}/{self.filename}"
         return f"{root}/{self.filename}"
 
     def local_path(self, project_id: Optional[str] = None) -> str:
         """Return the local cache path of the state document."""
         target = project_id if project_id is not None else self.project_id
-        name = f"{target or 'global'}-{self.filename}"
-        return os.path.join(self._local_dir, name)
+        safe = safe_path_segment(target, label="project id") if target else "global"
+        return os.path.join(self._local_dir, f"{safe}-{self.filename}")
 
     # ------------------------------------------------------------------
     # Read
@@ -142,8 +144,12 @@ class StateManager:
 
         Returns:
             The parsed state dict (missing sections filled with defaults).
-            Never raises: an unreachable TeraBox falls back to the local
-            cache and then to an empty-but-valid document.
+            Never raises for storage: an unreachable TeraBox falls back to
+            the local cache and then to an empty-but-valid document.
+
+        Raises:
+            ValueError: When ``project_id`` is not a safe path segment (see
+                :func:`src.utils.paths.safe_path_segment`).
         """
         use_cache = project_id is None or project_id == self.project_id
         if self._cache is not None and not force and use_cache:

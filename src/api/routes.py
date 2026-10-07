@@ -34,7 +34,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -52,6 +52,7 @@ from src.github.webhook_handler import set_orchestrator as set_webhook_orchestra
 from src.orchestrator.app import Orchestrator
 from src.utils.errors import ConfigurationError, ConnectorError, KollektivError
 from src.utils.logger import configure_logging, get_logger
+from src.utils.paths import safe_path_segment, safe_relative_path
 
 LOGGER = get_logger(__name__)
 
@@ -170,6 +171,21 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
     # Clerk: attaches identity to every request and, when AUTH_REQUIRED=true,
     # rejects anonymous calls (webhooks and /health stay public).
     application.state.clerk_verifier_handle = install_auth(application, resolved)
+
+    @application.exception_handler(ValueError)
+    async def invalid_input_handler(request: Request, exc: ValueError) -> JSONResponse:
+        """Answer invalid identifiers and paths with 400, never a stack trace.
+
+        ``safe_path_segment``/``safe_relative_path`` raise :class:`ValueError`
+        for project ids, account ids and file paths that could escape the
+        workspace or a bucket prefix; connectors raise it for bad parameters.
+        """
+        LOGGER.warning("Rejected invalid input on %s: %s", request.url.path, exc)
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": str(exc)},
+        )
+
     return application
 
 
@@ -236,8 +252,12 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         try:
             return await orchestrator.health()
         except Exception as exc:  # noqa: BLE001 - health must answer something
-            LOGGER.error("Health check failed: %s", exc)
-            return {"status": "degraded", "error": str(exc)}
+            LOGGER.error("Health check failed: %s", exc, exc_info=True)
+            return {
+                "status": "degraded",
+                "error": "the health check raised; see the server logs",
+                "error_type": type(exc).__name__,
+            }
 
     @router.post("/projects", response_model=ProjectCreateResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
     async def create_project(
@@ -378,8 +398,12 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
                     yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
                     return
                 except Exception as exc:  # noqa: BLE001 - report, then stop cleanly
-                    LOGGER.error("SSE stream for %s failed: %s", project_id, exc)
-                    yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+                    LOGGER.error("SSE stream for %s failed: %s", project_id, exc, exc_info=True)
+                    failure = {
+                        "error": "internal error while reading the project state",
+                        "error_type": type(exc).__name__,
+                    }
+                    yield f"event: error\ndata: {json.dumps(failure)}\n\n"
                     return
                 payload = {key: status.get(key) for key in ("status", "tasks", "files", "history", "last_commit", "queued_tasks")}
                 digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
@@ -524,7 +548,9 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         On R2 this is a presigned S3 URL (no credentials leak); on TeraBox it is
         the API's own download URL.
         """
-        remote = f"{orchestrator.pool.remote_root.rstrip('/')}/{project_id}/{file_path.lstrip('/')}"
+        project_segment = safe_path_segment(project_id, label="project id")
+        file_segment = safe_relative_path(file_path, label="file path")
+        remote = f"{orchestrator.pool.remote_root.rstrip('/')}/{project_segment}/{file_segment}"
         try:
             url = await orchestrator.pool.get_file_url(remote, expires=expires)
         except TypeError:

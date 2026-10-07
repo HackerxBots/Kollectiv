@@ -49,6 +49,7 @@ from src.storage.factory import build_storage
 from src.storage.state_manager import StateManager
 from src.utils.errors import ConfigurationError
 from src.utils.logger import get_logger
+from src.utils.paths import safe_path_segment
 from src.utils.token_store import TokenStore
 
 LOGGER = get_logger(__name__)
@@ -637,8 +638,10 @@ class Orchestrator:
 
         if not os.path.isfile(local_path):
             raise FileNotFoundError(f"Local file not found: {local_path}")
+        project_segment = safe_path_segment(project_id, label="project id")
         remote = (
-            f"{self.pool.remote_root.rstrip('/')}/{project_id}/uploads/{os.path.basename(local_path)}"
+            f"{self.pool.remote_root.rstrip('/')}/"
+            f"{project_segment}/uploads/{os.path.basename(local_path)}"
         )
         result = await self.pool.upload_file(local_path, remote)
         with session_scope() as session:
