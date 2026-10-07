@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,14 +8,16 @@ version = "0.4.0"
 description = "Multi-agent collaborative dev team orchestrator: worker agents, TeraBox storage, GitHub sync and an LLM planner."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+# PEP 639 SPDX expression (setuptools >= 77); the LICENSE file ships via
+# license-files and pyproject no longer needs the deprecated classifier.
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Kollektiv contributors" }]
 keywords = ["agents", "orchestration", "llm", "fastapi", "mcp", "github", "terabox"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -63,7 +65,29 @@ kollektiv-api = "src.api.routes:main"
 kollektiv-mcp = "src.api.mcp_server:main"
 
 [tool.setuptools]
-packages = ["config", "src", "src.agents", "src.api", "src.db", "src.github", "src.orchestrator", "src.storage", "src.utils"]
+packages = [
+    "config",
+    "src",
+    "src.agents",
+    "src.api",
+    "src.connectors",
+    "src.db",
+    "src.github",
+    "src.orchestrator",
+    "src.storage",
+    "src.utils",
+    # The dashboard is a static site, not a Python package: web.assets is
+    # listed only because setuptools treats a data directory as one.
+    "web",
+    "web.assets",
+]
+
+# The dashboard ships inside the wheel: without it ``pip install kollektiv``
+# would serve an API with no /ui. web/ has no __init__.py -- it is a static
+# site, not a Python package -- so its files are listed explicitly here (for
+# the wheel) and in MANIFEST.in (for the sdist).
+[tool.setuptools.package-data]
+web = ["index.html", "assets/*", "README.md"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

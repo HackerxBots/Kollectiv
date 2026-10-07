@@ -35,7 +35,7 @@ jobs:
         run: ruff check .
 
       - name: Type check
-        run: mypy src config examples
+        run: mypy src config examples scripts
 
       - name: Tests
         run: pytest -q --junitxml=pytest-report.xml -rf
@@ -111,9 +111,46 @@ jobs:
         run: |
           python -m pip install --upgrade build
           python -m build
-      - name: Install the wheel in a clean environment
+      - name: Install the wheel and prove it works
+        # This step is the guard against "works editable, broken installed":
+        # a missing subpackage or a dashboard that stayed behind is only visible
+        # in a real install, so nothing here is allowed to fail silently.
         run: |
           python -m venv /tmp/wheel-test
           /tmp/wheel-test/bin/pip install dist/*.whl
-          /tmp/wheel-test/bin/kollektiv check --json > /tmp/check.json || true
-          head -c 400 /tmp/check.json
+          cd /tmp
+          /tmp/wheel-test/bin/python - <<'PY'
+          import pathlib
+          import web
+          from src.api.mcp_server import create_server
+          from src.api.routes import create_app
+
+          app = create_app()
+          mounted = {getattr(route, "path", None) for route in app.routes}
+          assert "/ui" in mounted, f"/ui is not mounted: {mounted}"
+
+          # ``web`` is a PEP 420 namespace package (a static site has no
+          # __init__.py), so its location comes from __path__, not __file__.
+          dashboard = pathlib.Path(next(iter(web.__path__))) / "index.html"
+          assert dashboard.is_file(), f"the wheel has no dashboard: {dashboard}"
+
+          server = create_server()
+          assert server is not None
+          print("wheel install OK: API app, MCP server and dashboard all import")
+          PY
+          /tmp/wheel-test/bin/kollektiv --help > /dev/null
+          /tmp/wheel-test/bin/kollektiv check --json | head -c 300
+
+      - name: Smoke-test the installed API
+        # The full deployment path in one job: start the *installed* server on a
+        # port, wait for /health, then run the same scripts/smoke.py an operator
+        # runs after a deploy. Ten checks, and it must exit 0.
+        run: |
+          /tmp/wheel-test/bin/python -m uvicorn src.api.routes:app \
+              --host 127.0.0.1 --port 8123 --log-level warning &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8123/health > /dev/null; then break; fi
+            sleep 2
+          done
+          python -m pip install --quiet httpx
+          python scripts/smoke.py --base-url http://127.0.0.1:8123

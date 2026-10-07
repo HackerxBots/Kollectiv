@@ -26,6 +26,10 @@ WORKDIR /app
 COPY pyproject.toml README.md CHANGELOG.md ./
 COPY config ./config
 COPY src ./src
+# The dashboard. It is also inside the wheel, but the image runs uvicorn from
+# /app with the sources on disk, so `create_app` resolves the dashboard to
+# /app/web — without this line the container serves an API with no /ui.
+COPY web ./web
 
 # KOLLEKTIV_EXTRAS=postgres installs the psycopg driver for a Neon/Postgres
 # deployment (docker build --build-arg KOLLEKTIV_EXTRAS=postgres).
