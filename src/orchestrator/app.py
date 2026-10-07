@@ -26,6 +26,7 @@ from src.agents.agent_pool import AgentPool
 from src.agents.session_manager import SessionManager
 from src.connectors.base import ConnectorRegistry
 from src.db.models import (
+    AgentLinkRecord,
     AgentRecord,
     EventLog,
     PlanRecord,
@@ -720,6 +721,180 @@ class Orchestrator:
         return result
 
     # ------------------------------------------------------------------
+    # Agent links: who may use which connector
+    # ------------------------------------------------------------------
+    async def list_links(self) -> List[Dict[str, Any]]:
+        """Return every agent-connector link, newest last.
+
+        Returns:
+            ``[{link_id, agent_id, agent_name, connector, note, created_by, created_at}]``.
+        """
+        try:
+            with session_scope() as session:
+                # ``col()`` makes the column expression explicit for the type checker;
+                # without it SQLModel hands the attribute's *value* type to order_by.
+                rows = session.exec(select(AgentLinkRecord).order_by(col(AgentLinkRecord.created_at))).all()
+                return [self._link_payload(row) for row in rows]
+        except Exception as exc:  # noqa: BLE001 - a broken ledger must not break the UI
+            LOGGER.error("Could not read agent links: %s", exc)
+            return []
+
+    @staticmethod
+    def _link_payload(row: AgentLinkRecord) -> Dict[str, Any]:
+        """Serialise one link row (and name the agent as it is known now)."""
+        return {
+            "link_id": row.link_id,
+            "agent_id": row.agent_id,
+            "agent_name": row.agent_name,
+            "connector": row.connector,
+            "note": row.note,
+            "created_by": row.created_by,
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+        }
+
+    def agent_name(self, agent_id: str) -> str:
+        """Return the display name for an agent id, or ``""`` when unknown."""
+        agent = self.agent_pool.get_agent(agent_id)
+        if agent is None:
+            return ""
+        return str(getattr(agent, "name", "") or getattr(agent, "label", ""))
+
+    def ensure_connectors(self) -> Optional[ConnectorRegistry]:
+        """Return the connector registry, building it if the app was never started.
+
+        The CLI and the tests link agents without running the whole orchestrator
+        lifecycle, and a grant should not depend on that: build the registry
+        lazily and keep it.
+
+        Returns:
+            The registry, or ``None`` when it could not be built (reported).
+        """
+        if self.connectors is None:
+            try:
+                self.connectors = ConnectorRegistry.from_settings(self.settings, token_store=self.token_store)
+            except Exception as exc:  # noqa: BLE001 - a broken registry is not fatal here
+                LOGGER.error("Could not build the connector registry: %s", exc)
+                return None
+        return self.connectors
+
+    def connector_names(self) -> List[str]:
+        """Return the connectors that exist (configured or not)."""
+        registry = self.ensure_connectors()
+        return list(registry.names) if registry is not None else []
+
+    async def link_agent(
+        self, agent_id: str, connector: str, *, note: str = "", created_by: str = ""
+    ) -> Dict[str, Any]:
+        """Grant an agent access to a connector.
+
+        Args:
+            agent_id: Account id of the worker agent (from ``GET /agents/status``).
+            connector: Connector name (from ``GET /connectors``).
+            note: Optional human note ("owns the release notes").
+            created_by: Who did it, for the audit trail.
+
+        Returns:
+            The stored link.
+
+        Raises:
+            KeyError: When the agent or the connector does not exist.
+            ValueError: When the same pair is already linked.
+        """
+        if not self.agent_name(agent_id):
+            raise KeyError(f"Unknown agent: {agent_id}")
+        if connector not in self.connector_names():
+            raise KeyError(f"Unknown connector: {connector}")
+
+        link_id = new_id("lnk")
+        try:
+            with session_scope() as session:
+                existing = session.exec(
+                    select(AgentLinkRecord).where(
+                        AgentLinkRecord.agent_id == agent_id, AgentLinkRecord.connector == connector
+                    )
+                ).first()
+                if existing is not None:
+                    raise ValueError(f"{agent_id} is already linked to {connector}")
+                row = AgentLinkRecord(
+                    link_id=link_id,
+                    agent_id=agent_id,
+                    agent_name=self.agent_name(agent_id),
+                    connector=connector,
+                    note=note[:280],
+                    created_by=created_by[:120],
+                )
+                session.add(row)
+                session.flush()
+                payload = self._link_payload(row)
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - surface storage problems clearly
+            LOGGER.error("Could not link %s -> %s: %s", agent_id, connector, exc)
+            raise
+        LOGGER.info("Linked agent %s to connector %s", agent_id, connector)
+        return payload
+
+    async def unlink_agent(self, link_id: str) -> Dict[str, Any]:
+        """Remove one link.
+
+        Args:
+            link_id: The link to delete (``DELETE /links/{link_id}``).
+
+        Returns:
+            ``{removed: True, link_id: ...}``.
+
+        Raises:
+            KeyError: When the link does not exist.
+        """
+        with session_scope() as session:
+            row = session.get(AgentLinkRecord, link_id)
+            if row is None:
+                raise KeyError(f"Unknown link: {link_id}")
+            payload = self._link_payload(row)
+            session.delete(row)
+        LOGGER.info("Unlinked %s from %s", payload["agent_id"], payload["connector"])
+        return {"removed": True, **payload}
+
+    async def resolve_link(self, agent_id: str, connector: str) -> Dict[str, Any]:
+        """Return the link for a pair, or an empty dict when there is none."""
+        with session_scope() as session:
+            row = session.exec(
+                select(AgentLinkRecord).where(
+                    AgentLinkRecord.agent_id == agent_id, AgentLinkRecord.connector == connector
+                )
+            ).first()
+            return self._link_payload(row) if row is not None else {}
+
+    async def access_decision(self, connector: str, agent_id: str = "") -> tuple[bool, str]:
+        """Decide whether a connector call is allowed, and say why.
+
+        Args:
+            connector: Connector being called.
+            agent_id: The calling agent, when the caller names one.
+
+        Returns:
+            ``(allowed, reason)`` — the reason is what the API reports, so an
+            operator can tell "not linked" from "connector is open".
+        """
+        links = [link for link in await self.list_links() if link["connector"] == connector]
+        if not links:
+            return True, "connector has no links: open to every caller"
+        if not agent_id:
+            return True, "operator call (no agent named); links constrain worker agents only"
+        allowed = any(link["agent_id"] == agent_id for link in links)
+        if allowed:
+            return True, f"agent {agent_id} is linked to {connector}"
+        names = ", ".join(sorted({link["agent_name"] or link["agent_id"] for link in links}))
+        return False, f"{connector} is linked to {names}; {agent_id} is not one of them"
+
+    async def links_by_connector(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Group links by connector, for the connectors payload."""
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for link in await self.list_links():
+            grouped.setdefault(link["connector"], []).append(link)
+        return grouped
+
+    # ------------------------------------------------------------------
     # Status / sync
     # ------------------------------------------------------------------
     async def get_agents_status(self, probe: bool = False) -> List[Dict[str, Any]]:
@@ -771,6 +946,7 @@ class Orchestrator:
                     "configured": self.agent_pool.is_configured(),
                     "agents": self.agent_pool.size,
                     "busy": len([agent for agent in self.agent_pool.agents if agent.busy]),
+                    "names": list(self.agent_pool.names.values()),
                 },
                 "brain": brain_stats,
                 "github": {"configured": self.github.is_configured(), "repo": self.github.repo},

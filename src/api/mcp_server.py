@@ -355,6 +355,64 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
         return _json(report)
 
     @server.tool()
+    async def agent_links() -> str:
+        """List the agent-connector grants: who may use which service.
+
+        Linking is not calling. ``connectors_status`` lists a connector's
+        actions; this lists the grants that let a worker agent use them. A
+        connector with no links is open to every caller — links only restrict
+        calls that name an agent.
+        """
+        instance = await get_orchestrator()
+        try:
+            links = await instance.list_links()
+        except Exception as exc:  # noqa: BLE001 - tools report, never raise
+            LOGGER.error("agent_links failed: %s", exc)
+            return _json({"error": str(exc)})
+        return _json({"count": len(links), "links": links})
+
+    @server.tool()
+    async def link_agent(agent_id: str, connector: str, note: str = "") -> str:
+        """Grant one worker agent access to one connector.
+
+        Args:
+            agent_id: Account id from ``agents_status``.
+            connector: Connector name from ``connectors_status``.
+            note: Optional human note ("owns the release notes").
+
+        Returns:
+            The stored link, or an error object — never an exception.
+        """
+        instance = await get_orchestrator()
+        try:
+            link = await instance.link_agent(agent_id, connector, note=note, created_by="mcp")
+        except KeyError as exc:
+            return _json({"error": str(exc), "kind": "not_found"})
+        except ValueError as exc:
+            return _json({"error": str(exc), "kind": "conflict"})
+        except Exception as exc:  # noqa: BLE001 - tools report, never raise
+            LOGGER.error("link_agent failed: %s", exc)
+            return _json({"error": str(exc)})
+        return _json(link)
+
+    @server.tool()
+    async def unlink_agent(link_id: str) -> str:
+        """Revoke one agent-connector grant.
+
+        Args:
+            link_id: Identifier from ``agent_links``.
+        """
+        instance = await get_orchestrator()
+        try:
+            removed = await instance.unlink_agent(link_id)
+        except KeyError as exc:
+            return _json({"error": str(exc), "kind": "not_found"})
+        except Exception as exc:  # noqa: BLE001 - tools report, never raise
+            LOGGER.error("unlink_agent failed: %s", exc)
+            return _json({"error": str(exc)})
+        return _json(removed)
+
+    @server.tool()
     async def sponsor_line(context: str = "waiting") -> str:
         """Return the opt-in sponsor line for a dead-time moment, if enabled.
 

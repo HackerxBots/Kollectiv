@@ -69,6 +69,23 @@ class ConnectorCall(BaseModel):
     action: str = Field(..., description="Action name from GET /connectors.")
     params: Dict[str, Any] = Field(default_factory=dict, description="Action parameters.")
     confirm: bool = Field(False, description="Required for actions flagged dangerous.")
+    agent_id: str = Field(
+        "",
+        description=(
+            "Optional: the worker agent making the call. When a connector has links, "
+            "only linked agents may call it. Operator surfaces (CLI, MCP, this API "
+            "with the API token) leave it empty and are not constrained."
+        ),
+    )
+
+
+class LinkCreate(BaseModel):
+    """Body of ``POST /links`` — grant one agent one connector."""
+
+    agent_id: str = Field(..., description="Account id from GET /agents/status.")
+    connector: str = Field(..., description="Connector name from GET /connectors.")
+    note: str = Field("", description="Optional human note.")
+    created_by: str = Field("", description="Who granted it (audit trail).")
 
 
 class ProjectCreateRequest(BaseModel):
@@ -76,7 +93,16 @@ class ProjectCreateRequest(BaseModel):
 
     name: str = Field(default="", description="Project name")
     description: str = Field(..., description="What the project should do")
-    n_agents: int = Field(default=3, ge=1, le=12, description="Number of worker agents")
+    n_agents: int = Field(
+        default=3,
+        ge=1,
+        le=64,
+        description=(
+            "How many worker agents to plan for. There is no four-agent limit: the pool "
+            "serves every account in ARENA_ACCOUNTS, and 64 is a sanity bound, not a cap "
+            "on what the pool can hold."
+        ),
+    )
 
 
 class ProjectCreateResponse(BaseModel):
@@ -375,7 +401,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
     @router.get("/projects/{project_id}/estimate", tags=["projects"])
     async def estimate_project(
         project_id: str,
-        n_agents: Optional[int] = Query(default=None, ge=1, le=12, description="Estimate a different agent count"),
+        n_agents: Optional[int] = Query(default=None, ge=1, le=64, description="Estimate a different agent count"),
         orchestrator: Orchestrator = Depends(get_orchestrator),
     ) -> Dict[str, Any]:
         """Estimate what running this project will cost, before running it.
@@ -549,12 +575,64 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         registry = getattr(orchestrator, "connectors", None)
         if registry is None:
             return {"count": 0, "configured": [], "actions": [], "connectors": []}
+        links = await orchestrator.links_by_connector()
+        connectors = []
+        for status_entry in registry.statuses():
+            entry = dict(status_entry)
+            entry["linked_agents"] = links.get(str(entry.get("name")), [])
+            connectors.append(entry)
         return {
             "count": len(registry.names),
             "configured": registry.configured_names(),
-            "connectors": registry.statuses(),
+            "connectors": connectors,
+            # The actions stay here on purpose: linking and calling are different
+            # jobs, and a connector's actions belong to the connector, not to the
+            # grant that lets an agent reach it.
             "actions": registry.catalog(),
         }
+
+    @router.get("/links", tags=["links"])
+    async def list_links(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
+        """List agent-connector grants.
+
+        Linking is *not* calling: ``GET /connectors`` holds the actions, this
+        holds who is allowed to use them. A connector with no links is open.
+        """
+        links = await orchestrator.list_links()
+        return {"count": len(links), "links": links}
+
+    @router.post("/links", status_code=status.HTTP_201_CREATED, tags=["links"])
+    async def create_link(
+        body: LinkCreate, orchestrator: Orchestrator = Depends(get_orchestrator)
+    ) -> Dict[str, Any]:
+        """Grant an agent access to a connector.
+
+        Raises:
+            HTTPException: 404 for an unknown agent or connector, 409 when the
+                pair is already linked.
+        """
+        try:
+            return await orchestrator.link_agent(
+                body.agent_id, body.connector, note=body.note, created_by=body.created_by
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    @router.delete("/links/{link_id}", tags=["links"])
+    async def delete_link(
+        link_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)
+    ) -> Dict[str, Any]:
+        """Revoke one link.
+
+        Raises:
+            HTTPException: 404 when the link does not exist.
+        """
+        try:
+            return await orchestrator.unlink_agent(link_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     @router.post("/connectors/{name}/call", tags=["connectors"])
     async def call_connector(
@@ -567,6 +645,9 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="The connector registry is not available yet.",
             )
+        allowed, reason = await orchestrator.access_decision(name, payload.agent_id)
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
         try:
             result = await registry.call(name, payload.action, payload.params, confirm=payload.confirm)
         except ConnectorError as exc:

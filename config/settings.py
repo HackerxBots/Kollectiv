@@ -472,7 +472,10 @@ class Settings(BaseSettings):
     TASK_TIMEOUT_SECONDS: int = 900
     STATE_HISTORY_LIMIT: int = 200
     DEFAULT_AGENT_COUNT: int = 3
-    MAX_AGENT_COUNT: int = 12
+    #: Sanity bound for a single project's plan, not a cap on the pool: add
+    #: accounts to ARENA_ACCOUNTS and the pool serves them all (64 workers is
+    #: already far past what one cheap brain can keep fed).
+    MAX_AGENT_COUNT: int = 64
 
     # ------------------------------------------------------------------
     # Derived helpers

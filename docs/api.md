@@ -21,7 +21,10 @@ Run it with `kollektiv serve-api`, `kollektiv-api`, or
 | `GET` | `/projects/{id}/estimate` | `?n_agents=` | Cost estimate before running: tokens, dollars, cap, verdict |
 | `GET` | `/budget` | — | The local ledger: today, all time, caps and prices |
 | `POST` | `/projects/{id}/upload` | `{file_path}` or multipart | `{path, size, url}` |
-| `GET` | `/agents/status` | `?probe=true` | `{count, available, agents:[…]}` |
+| `GET` | `/agents/status` | `?probe=true` | `{count, available, agents:[{account_id, name, status, …}]}` |
+| `GET` | `/links` | — | `{count, links: [{link_id, agent_id, agent_name, connector, …}]}` |
+| `POST` | `/links` | `{agent_id, connector, note?, created_by?}` | `201` the link; `404` unknown agent/connector, `409` already linked |
+| `DELETE` | `/links/{link_id}` | — | `{removed: true, …}`; `404` when it is gone |
 | `GET` | `/storage/status` | — | `{used_gb, free_gb, total_gb, per_account}` |
 | `POST` | `/sync` | — | `{commits, prs, archived, errors, state_updated}` |
 | `POST` | `/webhooks/github` | GitHub payload + HMAC header | `200`/`202`, or `401` when unsigned |
@@ -58,6 +61,9 @@ Supports `mcp` SDK v1 (`FastMCP`) and v2 (`MCPServer`).
 | `sponsor_line` | `context` | The opt-in line for a dead-time moment (`{line: null}` when off) |
 | `sponsor_ledger` | — | Local sponsor ledger: impressions and cents earned |
 | `estimate_cost` | `project_id`, `n_agents` | Cost estimate for a run, before running it |
+| `agent_links` | — | Grants: who may use which connector |
+| `link_agent` | `agent_id`, `connector`, `note` | Grant an agent access to a connector |
+| `unlink_agent` | `link_id` | Revoke a grant |
 | `budget_report` | — | Local spend ledger: tokens, dollars, caps |
 
 ```bash
@@ -119,6 +125,9 @@ kollektiv estimate --project-id prj_… cost estimate without running anything
 kollektiv budget [--json]             local spend ledger: tokens, dollars, caps
 kollektiv init-config [--path] [--force]
                                       write a commented .kollektiv.yml
+kollektiv links [--json]              agent-connector grants (who may use which service)
+kollektiv link <agent_id> <connector> grant one; --note "why" shows in the dashboard
+kollektiv unlink <link_id>            revoke one
 kollektiv status --project-id prj_…   print the shared state document
 kollektiv sync                        one sync pass (GitHub → TeraBox → agents)
 kollektiv secret                      print a fresh Fernet key for SECRET_KEY

@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from config.settings import Settings, get_settings
 from src.agents.arena_client import ArenaClient
+from src.agents.names import assign_names
 from src.utils.errors import ArenaError, AuthenticationError, ConfigurationError, RateLimitError
 from src.utils.logger import get_logger
 
@@ -67,6 +68,11 @@ class AgentPool:
         for account in raw_accounts:
             agent = self._make_client(account)
             self._agents[agent.account_id] = agent
+
+        # Display names: the operator's name when given, a stable friendly one
+        # otherwise, made unique within the pool. The pool is not capped — add
+        # accounts and you add agents, which is exactly what the dashboard shows.
+        self.names: Dict[str, str] = assign_names(self._agents.values())
 
     # ------------------------------------------------------------------
     # Construction

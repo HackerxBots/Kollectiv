@@ -1278,6 +1278,76 @@ def cmd_serve_mcp(args: argparse.Namespace) -> int:
 # ----------------------------------------------------------------------
 # Argument parsing
 # ----------------------------------------------------------------------
+async def cmd_links(args: argparse.Namespace) -> int:
+    """List agent-connector grants: who may use which service.
+
+    The connectors command lists *actions*; this lists *grants*. A connector
+    with no grant is open to every caller, so a fresh install needs none.
+    """
+    from src.orchestrator.app import Orchestrator
+
+    orchestrator = Orchestrator()
+    try:
+        links = await orchestrator.list_links()
+        connectors = orchestrator.connector_names()
+    finally:
+        await orchestrator.stop()
+    if args.json:
+        _print({"count": len(links), "connectors": connectors, "links": links}, True)
+        return 0
+    if not links:
+        print("links    : none — every connector is open to every caller")
+        print(f"connectors: {', '.join(connectors) or '(registry unavailable)'}")
+        print("link one : kollektiv link <agent_id> <connector>")
+        return 0
+    print(f"links    : {len(links)}")
+    for link in links:
+        note = f"  — {link['note']}" if link["note"] else ""
+        print(f"  {link['link_id']}  {link['agent_name'] or link['agent_id']} -> {link['connector']}{note}")
+    return 0
+
+
+async def cmd_link(args: argparse.Namespace) -> int:
+    """Grant one agent access to one connector."""
+    from src.orchestrator.app import Orchestrator
+
+    orchestrator = Orchestrator()
+    try:
+        link = await orchestrator.link_agent(args.agent_id, args.connector, note=args.note, created_by="cli")
+    except KeyError as exc:
+        print(f"kollektiv: {exc}", file=sys.stderr)
+        print("agents    : kollektiv accounts   (or GET /agents/status)", file=sys.stderr)
+        print("connectors: kollektiv connectors", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"kollektiv: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await orchestrator.stop()
+    if args.json:
+        _print(link, True)
+        return 0
+    print(f"linked   : {link['agent_name'] or link['agent_id']} -> {link['connector']}  ({link['link_id']})")
+    return 0
+
+
+async def cmd_unlink(args: argparse.Namespace) -> int:
+    """Revoke an agent-connector grant (by link id)."""
+    from src.orchestrator.app import Orchestrator
+
+    orchestrator = Orchestrator()
+    try:
+        removed = await orchestrator.unlink_agent(args.link_id)
+    except KeyError as exc:
+        print(f"kollektiv: {exc}", file=sys.stderr)
+        print("list them: kollektiv links", file=sys.stderr)
+        return 1
+    finally:
+        await orchestrator.stop()
+    print(f"unlinked : {removed['agent_name'] or removed['agent_id']} -/-> {removed['connector']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser with every subcommand."""
     parser = argparse.ArgumentParser(
@@ -1328,6 +1398,16 @@ def build_parser() -> argparse.ArgumentParser:
     init_config = sub.add_parser("init-config", help="Write a commented .kollektiv.yml")
     init_config.add_argument("--path", default="", help="Where to write it (default ./.kollektiv.yml)")
     init_config.add_argument("--force", action="store_true", help="Overwrite an existing file")
+
+    links = sub.add_parser("links", help="List agent-connector grants (who may use which service)")
+    links.add_argument("--json", action="store_true")
+    link = sub.add_parser("link", help="Grant one agent access to one connector")
+    link.add_argument("agent_id", help="Account id from `kollektiv accounts`")
+    link.add_argument("connector", help="Connector name from `kollektiv connectors`")
+    link.add_argument("--note", default="", help="Why it was granted (shown in the dashboard)")
+    link.add_argument("--json", action="store_true")
+    unlink = sub.add_parser("unlink", help="Revoke an agent-connector grant (by link id)")
+    unlink.add_argument("link_id", help="Link id from `kollektiv links`")
 
     status = sub.add_parser("status", help="Print a project's shared state")
     status.add_argument("project_id")
@@ -1430,6 +1510,9 @@ COMMANDS = {
     "gateway": cmd_gateway,
     "estimate": cmd_estimate,
     "budget": cmd_budget,
+    "links": cmd_links,
+    "link": cmd_link,
+    "unlink": cmd_unlink,
     "init-config": cmd_init_config,
     "sponsors": cmd_sponsors,
     "resume": cmd_resume,

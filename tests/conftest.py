@@ -355,6 +355,7 @@ class FakeAgent:
 
     def __init__(self, account_id: str, outputs: Optional[Iterable[str]] = None) -> None:
         self.account_id = account_id
+        self.name = ""
         self.label = account_id
         self.email = f"{account_id}@example.com"
         self.outputs = list(outputs or ["```python path=src/app.py\nprint('hi')\n```"])
@@ -416,6 +417,11 @@ class FakeAgentPool:
         self._agents = agents or [FakeAgent("agent-1")]
         self.max_concurrency = 2
         self.settings = make_settings(SECRET_KEY="test")
+        #: Display names, mirroring the real pool's contract (see src/agents/names.py).
+        self.names: Dict[str, str] = {
+            agent.account_id: getattr(agent, "name", "") or f"Agent {index + 1}"
+            for index, agent in enumerate(self._agents)
+        }
 
     @property
     def agents(self) -> List[FakeAgent]:

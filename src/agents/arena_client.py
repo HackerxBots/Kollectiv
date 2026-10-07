@@ -86,6 +86,9 @@ class ArenaClient:
         self.account_id: str = str(
             self.account.get("account_id") or self.account.get("id") or self._derive_id()
         )
+        #: Operator-chosen label; the agent pool fills it in when it is empty
+        #: (see :mod:`src.agents.names`). It is a display name, never a key.
+        self.name: str = str(self.account.get("name") or "")
         self.base_url: str = str(self.account.get("base_url") or self.settings.ARENA_BASE_URL or "").rstrip("/")
         self.model: str = str(self.account.get("model") or self.settings.ARENA_MODEL or "")
         self.api_style: str = str(self.account.get("api_style") or "auto").lower()
@@ -631,6 +634,7 @@ class ArenaClient:
         """Return cumulative statistics for this agent."""
         return {
             "account_id": self.account_id,
+            "name": self.name or self.label,
             "label": self.label,
             "status": "rate_limited" if self.is_rate_limited() else ("busy" if self.busy else "idle"),
             "tasks_done": self.tasks_done,

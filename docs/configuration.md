@@ -33,6 +33,14 @@ posts the custom envelope (`{"prompt", "agent_mode", "stream"}`) to
 `ARENA_MAX_CONCURRENCY`, `ARENA_RATE_LIMIT_COOLDOWN`,
 `ARENA_SESSION_LIFETIME_MINUTES`.
 
+**Names, and how many agents you may have.** Each entry may carry a `name`
+("Reviewer", "Docs bot") — that is what the dashboard, `GET /agents/status` and
+`/health` show. Without one, the agent gets a stable friendly name derived from
+its account id (`Nova`, `Atlas`, `Vega` …), unique within the pool, so a restart
+never renames anyone. The pool serves **every** account you list: there is no
+four-agent limit, and `MAX_AGENT_COUNT` (64) only bounds how many a *single
+project's plan* will spread work across.
+
 > **Use endpoints you are allowed to use.** Kollektiv does not scrape services,
 > bypass paywalls or evade rate limits. Point the pool at API keys,
 > self-hosted models or your own endpoints. When a provider answers `429`, that

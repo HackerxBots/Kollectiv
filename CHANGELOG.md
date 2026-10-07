@@ -131,7 +131,10 @@ on GitHub links to the section below for its version.
   estimate's arithmetic and verdicts, caps, the ledger's totals and its
   failure-is-a-warning behaviour, the CLI, and a real offline orchestrator
   refusing an over-budget run), `tests/test_perf.py` (7 performance tripwires)
-  and three more dashboard tests for the PWA. **464 tests total.**
+  and three more dashboard tests for the PWA), plus `tests/test_agent_links.py`
+  (15 tests: naming, the pool beyond four agents, the link lifecycle over HTTP,
+  enforcement with reasons, persistence, the CLI and the MCP tools).
+  **479 tests total.**
 
 - **Budgets: estimate, cap, and record.** A run can no longer cost more than you
   expected without saying so first.
@@ -182,6 +185,27 @@ on GitHub links to the section below for its version.
   written down as a recipe in `docs/performance.md#browser-or-desktop-app` —
   deliberately not built yet, because it needs signed builds for three platforms
   and a frozen Python per OS to be anything other than a toy.
+
+- **Agents have names, and there is no four-agent ceiling.** Every worker gets a
+  display name — the operator's `name` from `ARENA_ACCOUNTS` when given, otherwise
+  a stable friendly one derived from the account id (`src/agents/names.py`), made
+  unique within the pool. `GET /agents/status`, `/health` and the pool snapshot
+  carry it, so a dashboard shows "Nova, Atlas, Vega…" instead of masked emails.
+  The old `MAX_AGENT_COUNT: 12` (and the request bound that mirrored it) was a
+  typo in spirit and is now 64, with the docs saying plainly that the pool itself
+  is uncapped: add accounts, get agents.
+- **Linking agents to connectors, as its own surface.** `GET/POST /links` and
+  `DELETE /links/{link_id}`, `kollektiv links|link|unlink`, and the MCP tools
+  `agent_links`, `link_agent`, `unlink_agent` record *grants*: which worker agent
+  may use which connector. Deliberately **not** a second copy of a connector's
+  actions — those stay in the registry, the CLI, the API and the gateway — because
+  a dashboard that lists actions drifts from the registry and conflicts with it.
+  A connector with no links is open (fresh installs and existing workflows are
+  untouched); once it has links, a call that names an agent must come from a
+  linked one (`403` with a reason), while operator surfaces stay unconstrained.
+  Links live in the `agent_links` table, unique per `(agent_id, connector)`, and
+  `GET /connectors` now carries `linked_agents` per connector so a UI can render
+  link/unlink with no other calls.
 
 ### Changed
 

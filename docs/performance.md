@@ -85,7 +85,7 @@ The two numbers worth improving, if you care at all:
    layer).
 5. **A rewrite** — Rust/Go/C#/C++ — is the last rung and, for this project, the
    wrong one. What it buys: the sub-1 % of wall clock above. What it costs: the
-   464-test suite, FastAPI/SQLModel/httpx/MCP, the OpenAI-compatible client
+   479-test suite, FastAPI/SQLModel/httpx/MCP, the OpenAI-compatible client
    stack, every connector, and the ability of a contributor to read the code.
    If Kollektiv ever needs a rewrite it will be because the *product* changed
    (a hosted control plane serving thousands of tenants, say), not because

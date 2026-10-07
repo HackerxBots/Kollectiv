@@ -217,6 +217,39 @@ class AgentRecord(SQLModel, table=True):
         return round(self.total_latency_ms / self.tasks_done, 1)
 
 
+class AgentLinkRecord(SQLModel, table=True):
+    """A grant: one worker agent may use one connector.
+
+    Links are how a team says "Nova may post to Slack, Atlas may read the repo".
+    They are deliberately *not* a second copy of the connector's actions: the
+    actions stay in the connector registry (`GET /connectors`), the MCP server and
+    the CLI, and this table only records who is allowed to call them.
+
+    Semantics, kept boring on purpose:
+
+    * a connector with **no links** is open — a fresh install behaves exactly as
+      before, and no existing workflow needs a new grant to keep working;
+    * once a connector has links, a call that names an agent must come from a
+      linked agent (``403`` otherwise);
+    * operator surfaces (CLI, MCP, the dashboard with the API token) do not name
+      an agent and are not constrained — they *are* the operator.
+
+    The pair ``(agent_id, connector)`` is unique, so linking twice is an error
+    the caller can see rather than a silent duplicate.
+    """
+
+    __tablename__ = "agent_links"
+    __table_args__ = (UniqueConstraint("agent_id", "connector", name="uq_link_agent_connector"),)
+
+    link_id: str = Field(primary_key=True, max_length=64)
+    agent_id: str = Field(max_length=128, index=True)
+    agent_name: str = Field(default="", max_length=120)
+    connector: str = Field(max_length=64, index=True)
+    note: str = Field(default="", max_length=280)
+    created_by: str = Field(default="", max_length=120)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class ProjectStateRecord(SQLModel, table=True):
     """Local mirror of the ``PROJECT_STATE.md`` document kept on TeraBox."""
 
