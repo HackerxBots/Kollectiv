@@ -7,7 +7,58 @@ on GitHub links to the section below for its version.
 
 ## [Unreleased]
 
-_Nothing yet — open a PR and add a line here._
+### Added
+
+- **Live project stream** — `GET /projects/{id}/events/stream` speaks Server-Sent
+  Events: an `event: state` frame whenever the project's status, tasks, files,
+  history or queue changes, `: keep-alive` heartbeats otherwise, a 0.5–30 s
+  `interval` parameter, `Cache-Control: no-cache` and `X-Accel-Buffering: no` so
+  reverse proxies do not buffer it. The dashboard's project drawer now updates
+  without polling.
+- **Multi-file dashboard** — `web/index.html` + `web/assets/styles.css` +
+  `web/assets/app.js` + `web/assets/favicon.svg`: four views (overview,
+  projects, connectors, agents & storage), a project drawer with the live task
+  table and artifact links, a command palette (⌘K / Ctrl-K) over commands *and*
+  projects, a confirmation dialog before dangerous connector actions, toasts,
+  skeletons, hash routing and a 30-second background refresh. No build step, no
+  framework, no CDN, no web fonts, no analytics; dark first, light via
+  `prefers-color-scheme` or the persisted toggle, `prefers-reduced-motion`
+  respected, and hover/active/focus-visible states on every control.
+  `docs/ui-prompt.md` is the prompt of record and `web/README.md` documents the
+  Cloudflare Pages (or GitHub Pages) deployment.
+- **Community health files** — `SECURITY.md` (supported versions, private
+  reporting through GitHub advisories, threat model, operator hardening
+  checklist), `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1 with a 4-step
+  enforcement ladder), `CONTRIBUTING.md` (quick start, the three gates, six
+  non-negotiables, connector recipe, release checklist),
+  `.github/ISSUE_TEMPLATE/{bug_report,feature_request,question}.yml` +
+  `config.yml`, and `.github/pull_request_template.md`.
+- **Automated hygiene** — `.github/workflows/codeql.yml` (CodeQL
+  `security-and-quality` on pull requests, `security-extended` weekly, and
+  `security-events: write` so code-scanning alerts light up) and
+  `.github/dependabot.yml` (weekly grouped pip updates, GitHub Actions, monthly
+  Docker) with `chore(deps)`/`chore(ci)` commit prefixes.
+- **Tests** — `tests/test_dashboard.py` (6 tests) keeps the UI honest: every
+  endpoint the JavaScript calls must exist in the OpenAPI schema with the method
+  it uses, the SSE consumer must point at a registered route, the UI must stay
+  split across files (no inline `<style>`/`<script>`), the interactive components
+  must define hover/focus/reduced-motion states, and no tracker, CDN or
+  third-party origin may appear. `tests/test_api.py` adds two SSE tests
+  (state frame + faithful copy of `/status`, and an `event: error` frame for an
+  unknown project). 223 tests total.
+
+### Changed
+
+- **Beta releases are published as normal GitHub releases.** Tags stay
+  `vX.Y.Z-beta.N` and the release notes open with a beta warning, but the release
+  is no longer marked as a GitHub *pre-release* — pre-releases are skipped by the
+  sidebar's "Latest" widget, which made every release hard to find. The beta note
+  now links to the release policy with an absolute URL, so it works from forks
+  too.
+- `README.md`, `CLAUDE.md` and `CONTRIBUTING.md` document the new dashboard file
+  split, the SSE endpoint, the CI gates (`mypy src config examples`) and the
+  current test count; the duplicated "Health and observability" heading in the
+  README is gone.
 
 ## [0.4.0] — 2026-10-06 — “continuity”
 

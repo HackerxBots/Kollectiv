@@ -21,10 +21,10 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 199 hermetic tests, ~11 s
+pytest -q                      # 223 hermetic tests, ~11 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
-mypy src config                # types (clean)
+mypy src config examples       # types (clean)
 
 kollektiv bootstrap            # schema + workspace + free-tier checklist
 kollektiv connectors           # services the agents can call (+ what is missing)
@@ -99,6 +99,18 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   RS256/JWKS/Svix, Resend, settings helpers, bootstrap, dashboard); R2 in
   `tests/test_r2.py`; connectors in `tests/test_connectors.py` (MockTransport
   clients + a dict token store). Keep them hermetic — no real accounts in CI.
+- The dashboard is a static multi-file site (`web/index.html` +
+  `web/assets/{styles.css,app.js,favicon.svg}`) — **never collapse it back into
+  a single HTML file**, and keep hover/focus/reduced-motion states in the CSS.
+  `tests/test_dashboard.py` parses the shipped JS and fails when it calls an
+  endpoint that is not in the OpenAPI schema, when an inline `<style>`/`<script>`
+  appears, or when a tracker/CDN origin shows up. `docs/ui-prompt.md` is the
+  prompt of record; update it with the assets.
+- Live updates use Server-Sent Events (`GET /projects/{id}/events/stream`,
+  `event: state` when the project's state digest changes, `: keep-alive`
+  otherwise). Note for tests: `httpx.ASGITransport` buffers whole responses, so
+  a streaming endpoint must be driven through the route function (see
+  `tests/test_api.py::test_project_event_stream_emits_state`).
 - Connectors must never raise into the orchestrator: report in `status()`,
   log, and keep read actions safe. Mark anything that sends/creates/comments as
   `dangerous=True` and let the registry enforce `confirm`.
@@ -131,8 +143,9 @@ project is judged by its README and its releases, so they ship together:
 1. Bump `version` in `pyproject.toml` **and** `src/__init__.py` (SemVer).
 2. Move `CHANGELOG.md`'s `[Unreleased]` entries under the new version with
    today's date; add the compare links at the bottom. **Every release is a
-   beta for now**: tag `vX.Y.Z-beta.N`, and the workflow marks it a
-   pre-release automatically (see the policy in `README.md`).
+   beta for now**: tag `vX.Y.Z-beta.N`; the workflow adds the beta banner and
+   publishes it as a normal release so it stays findable (see the policy in
+   `README.md`).
 3. Update the README: the "peak" block at the top (release name, test count) and
    any tool table, command or configuration key that changed.
 4. Tag `v<version>` and push the tag — `.github/workflows/release.yml` builds

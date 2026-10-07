@@ -74,14 +74,22 @@ jobs:
 
       - name: Extract release notes from the changelog
         run: |
-          python - "${{ steps.version.outputs.version }}" <<'PY'
-          import pathlib, re, sys
-          version = sys.argv[1]
+          python - "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.tag }}" <<'PY'
+          import os, pathlib, re, sys
+
+          version, tag = sys.argv[1], sys.argv[2]
           text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
           pattern = re.compile(rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|\Z)", re.M | re.S)
           match = pattern.search(text)
           body = match.group(1).strip() if match else ""
-          header = f"## Kollektiv v{version}\n\n"
+          repo = os.environ.get("GITHUB_REPOSITORY", "HackerxBots/Kollektiv")
+          server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+          policy = f"{server}/{repo}/blob/main/README.md#releases-versioning-and-the-readme"
+          beta = (
+              "\n> **Beta release.** Interfaces and configuration may still change between\n"
+              f"> beta tags; see the [release policy]({policy}).\n"
+          )
+          header = f"## Kollektiv {tag}\n{beta}\n"
           extra = (
               "\n\n---\n\n"
               "**Install**\n\n```bash\npip install kollektiv\n# or from source\n"
@@ -106,5 +114,7 @@ jobs:
           files: dist/*
           generate_release_notes: true
           draft: false
-          # Everything is a beta until 1.0 (see the release policy in README.md).
-          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
+          # Tags stay beta (`v0.4.0-beta.1`) and the notes say so, but the
+          # release is not a GitHub "pre-release": pre-releases are skipped by
+          # the sidebar's "Latest" widget, and we want people to find them.
+          prerelease: false

@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&label=release)](https://github.com/HackerxBots/Kollektiv/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Tests: 199](https://img.shields.io/badge/tests-199%20passing-brightgreen.svg)](tests/)
+[![Tests: 223](https://img.shields.io/badge/tests-223%20passing-brightgreen.svg)](tests/)
 
 **A multi-agent collaborative dev team orchestrator — free to run, self-hosted, open source (MIT).**
 
@@ -192,6 +192,16 @@ The dashboard (projects, tasks, agents, storage quota, health):
 ```bash
 open http://localhost:8000/ui        # or point Cloudflare Pages at web/
 ```
+
+It is a plain static site in `web/`: `index.html` plus `assets/styles.css`,
+`assets/app.js` and `assets/favicon.svg` — no build step, no framework, no CDN,
+no web fonts, no analytics. The project drawer streams live state over Server-Sent
+Events (`GET /projects/{id}/events/stream`), the command palette (⌘K / Ctrl-K)
+drives every action, dangerous connector calls ask for confirmation, everything
+has hover, focus-visible and reduced-motion states, and the API serves the same
+files at `/ui` so a single-origin deployment needs no CORS at all.
+`docs/ui-prompt.md` records the prompt that rebuilds it; `web/README.md` covers
+the Cloudflare Pages deployment.
 
 Or over HTTP:
 
@@ -864,17 +874,20 @@ these settings through `src/utils/net.py`.
 ### Releases, versioning and the README
 
 Kollektiv ships small and often, and documents every step. **Everything is a
-beta tag for now:** the interfaces still move, so releases are published as
-GitHub *pre-releases* (`v0.3.0-beta.1`, `v0.3.0-beta.2`, …) and the README is
-updated in the same PR as the change.
+beta tag for now:** the interfaces still move, so every tag is `v0.3.0-beta.1`,
+`v0.3.0-beta.2`, … and the release notes open with a beta warning. The release
+itself is published as a *normal* GitHub release (not a pre-release) so it shows
+up in the sidebar's "Latest" widget instead of hiding — the tag is the honest
+signal, and the README is updated in the same PR as the change.
 
 - **Versioning** — `0.x` while the API/config still evolves. Inside a minor
   line: `-beta.N` increments per batch of changes, `MAJOR`/`MINOR` bumps when
   behaviour changes, `PATCH` (`v0.3.1-beta.1`) for fixes only.
 - **Changelog first.** `CHANGELOG.md` is updated in the same PR; the release
   workflow refuses to publish a tag whose version has no changelog section.
-- **Every release is a pre-release** until 1.0: the workflow marks `v*-beta.*`
-  as a GitHub pre-release automatically and attaches the sdist + wheel.
+- **Beta tags, findable releases:** the workflow keeps `vX.Y.Z-beta.N` tagging
+  and a beta banner in the notes, attaches the sdist + wheel, and publishes the
+  release so it is listed (pre-releases are skipped by "Latest").
 - **The README is part of the release.** The peak block (release name, test
   count) and the tool/table sections change with it; the checklist in
   `CLAUDE.md` keeps that honest.
@@ -885,10 +898,10 @@ Cutting a release:
 # 1. bump version in pyproject.toml and src/__init__.py
 # 2. move the CHANGELOG "Unreleased" entries under the new version
 # 3. update the README peak block
-git tag v0.3.0-beta.1 && git push origin v0.3.0-beta.1   # workflow publishes the pre-release
+git tag v0.3.0-beta.1 && git push origin v0.3.0-beta.1   # workflow publishes the release
 ```
 
-### Health and observability### Health and observability
+### Health and observability
 
 - `GET /health` — always `200`; lists subsystems, counts and configuration
   warnings so a supervisor can distinguish "running degraded" from "down".
@@ -991,8 +1004,17 @@ src/connectors/webhook.py      outbound events (Slack/Discord/n8n/Zapier/webhook
 src/connectors/rest.py         declarative REST connectors (CUSTOM_CONNECTORS)
 src/api/cli.py                 the `kollektiv` command line interface
 examples/aider_shim.py         wrap any CLI coding agent as a worker endpoint
-web/                           static dashboard (Cloudflare Pages / GitHub Pages)
-tests/                         217 hermetic tests (no network, no credentials)
+web/index.html                 dashboard markup — four views, hash routes
+web/assets/styles.css          design tokens, components, hover/focus states
+web/assets/app.js              API client, renderers, command palette, SSE consumer
+web/assets/favicon.svg         logo (inline SVG, no icon font)
+docs/ui-prompt.md              prompt that (re)builds the dashboard
+SECURITY.md                    private vulnerability reporting + threat model
+CONTRIBUTING.md                gates, non-negotiables, connector + release recipes
+CODE_OF_CONDUCT.md             Contributor Covenant 2.1
+.github/ISSUE_TEMPLATE/         bug, feature and question forms
+.github/workflows/codeql.yml   CodeQL scanning (PRs + weekly)
+tests/                         223 hermetic tests (no network, no credentials)
 ```
 
 ---
@@ -1002,10 +1024,10 @@ tests/                         217 hermetic tests (no network, no credentials)
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 217 tests, ~10 s, fully mocked
+pytest -q                 # 223 tests, ~10 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
-mypy src config           # types (clean)
+mypy src config examples  # types (clean)
 pytest --cov=src          # optional coverage (pip install pytest-cov)
 ```
 
@@ -1070,9 +1092,10 @@ plan for the next iterations (each item is sized so it can ship on its own).
 
 1. **Alembic migrations** for the Postgres/Neon path (today the schema is
    created idempotently at boot).
-2. **Broadcast state updates.** Task completion currently fans out with targeted
-   writes; a per-project broadcast channel (Postgres `LISTEN/NOTIFY`, or Redis
-   when available) removes the remaining polling for live dashboards.
+2. **Broadcast state updates.** The dashboard already consumes
+   `GET /projects/{id}/events/stream`, but each connected client polls the
+   database; a per-project broadcast channel (Postgres `LISTEN/NOTIFY`, or
+   Redis when available) removes that last hop.
 3. **Composite indexes + partial indexes** on `tasks(project_id, status)` and
    `events(project_id, created_at)` for large event streams.
 4. **Streamed agent output.** Long worker responses are buffered whole; reading
