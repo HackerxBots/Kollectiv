@@ -55,6 +55,22 @@ Anything without a CLI is still scriptable — every endpoint in
 [API, MCP and CLI](api.md) has a `curl` and every setting has an env var, which
 is all a CI job needs.
 
+**Row 7, what you should see.** Until `CF_PAGES_PROJECT` exists, the *Deploy
+dashboard* run finishes with both jobs `skipped` — that is the gate doing its
+job, not a broken workflow (the `Deploy dashboard` run appears whenever `web/**`
+or the workflow itself changes). After the three values are in place, each push
+deploys `web/` and the run prints the environment URL it published:
+
+```text
+Cloudflare Pages: https://<branch>.<project>.pages.dev     # preview, every branch
+Cloudflare Pages: https://<project>.pages.dev              # production (main)
+```
+
+A preview URL per branch, no build minutes to manage, and no server to keep
+awake: that one link is the whole hosting story for the dashboard. People who
+want to *use* Kollektiv still run the orchestrator themselves — the published
+page points at their own API (`?api=https://…`, stored locally).
+
 ## 2. Which host (honestly)
 
 Free compute changed in 2025–2026: Heroku's free tier is gone, Fly.io removed its
