@@ -69,7 +69,28 @@ on GitHub links to the section below for its version.
   third-party origin may appear. `tests/test_api.py` adds two SSE tests
   (state frame + faithful copy of `/status`, and an `event: error` frame for an
   unknown project). `tests/test_path_safety.py` covers the path rules end to end,
-  from the helpers to the API's `400`. 351 tests total.
+  from the helpers to the API's `400`. 354 tests total.
+
+### Changed
+
+- **The dashboard got its colour back.** `web/` is now "aurora glass": four
+  blurred, slowly drifting colour fields behind every surface (pure CSS
+  gradients plus a grain layer so they never band), frosted panels with a 1px
+  inner highlight (`backdrop-filter` at 16–30px), 14/22/32px radii and pill
+  controls, a per-subsystem hue that follows each card into its icon, glow and
+  progress bar, gradient headlines, and 3D tilt with a pointer spotlight on
+  every card (±7°, off for coarse pointers and `prefers-reduced-motion`). The
+  palette moves from muted slate to candy: grape, cyan, pink, lime, peach, sun,
+  sky — in both themes.
+- **Onboarding, mobile chrome and installability.** A three-step first-run
+  overlay (what Kollektiv does → point it at your API → keyboard shortcuts) with
+  a hue-rotating gradient tile, progress dots, a confetti finish and
+  `kollektiv.onboarded` in `localStorage`; reopenable from "Show me around".
+  Under 900px the sidebar becomes a slide-in panel, a floating frosted tab bar
+  appears, and tables become cards with their labels preserved via `data-label`.
+  A local web manifest makes the shell installable as a standalone app. Three
+  new dashboard tests enforce the visual language, the onboarding/mobile hooks
+  and the manifest.
 
 ### Added
 

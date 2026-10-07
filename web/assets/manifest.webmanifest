@@ -1,0 +1,26 @@
+{
+  "name": "Kollektiv — mission control",
+  "short_name": "Kollektiv",
+  "description": "Dashboard for a self-hosted multi-agent dev-team orchestrator. No telemetry, no accounts: it talks only to the API you point it at.",
+  "start_url": "./index.html#/overview",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05060f",
+  "theme_color": "#05060f",
+  "categories": ["developer", "productivity"],
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

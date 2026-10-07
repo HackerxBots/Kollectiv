@@ -22,6 +22,8 @@ const STORAGE = {
   get token() { try { return localStorage.getItem("kollektiv.token") || ""; } catch { return ""; } },
   get theme() { try { return localStorage.getItem("kollektiv.theme") || ""; } catch { return ""; } },
   set theme(value) { try { localStorage.setItem("kollektiv.theme", value); } catch { /* private mode */ } },
+  get onboarded() { try { return localStorage.getItem("kollektiv.onboarded") === "yes"; } catch { return false; } },
+  set onboarded(value) { try { localStorage.setItem("kollektiv.onboarded", value ? "yes" : ""); } catch { /* private mode */ } },
 };
 
 /** Guess the API base: ?api= > saved > served-from-/ui > same origin. */
@@ -48,6 +50,7 @@ const store = {
   storage: null,
   openProject: null,
   stream: null,
+  onboardStep: 1,
   listeners: new Set(),
   set(patch) {
     Object.assign(this, patch);
@@ -203,14 +206,14 @@ function renderProjects() {
     const done = project.tasks_completed ?? null;
     const percent = total ? Math.round((100 * (done || 0)) / total) : Number(project.progress ?? 0);
     return `<tr data-project="${esc(project.project_id)}">
-      <td><strong>${esc(project.name || project.project_id)}</strong>
+      <td data-label="Project"><strong>${esc(project.name || project.project_id)}</strong>
           <div class="kv-muted kv-mono">${esc(project.project_id)}</div></td>
-      <td>${pill(project.status, { tip: `Updated ${esc(project.updated_at || project.created_at || "unknown")}` })}</td>
-      <td class="kv-mono">${done === null ? num(total) : `${done}/${total}`}</td>
-      <td style="min-width:130px">
+      <td data-label="Status">${pill(project.status, { tip: `Updated ${esc(project.updated_at || project.created_at || "unknown")}` })}</td>
+      <td data-label="Tasks" class="kv-mono">${done === null ? num(total) : `${done}/${total}`}</td>
+      <td data-label="Progress" style="min-width:130px">
         <div class="kv-progress thin" data-tip="${percent}% complete"><span style="width:${percent}%"></span></div>
       </td>
-      <td class="kv-nowrap">
+      <td data-label="Actions" class="kv-nowrap">
         <button class="kv-btn ghost small" data-act="open" data-id="${esc(project.project_id)}">Open</button>
         <button class="kv-btn ghost small" data-act="run" data-id="${esc(project.project_id)}">Run</button>
         <button class="kv-btn ghost small" data-act="handoff" data-id="${esc(project.project_id)}">Handoff</button>
@@ -229,13 +232,13 @@ function renderConnectors() {
     const actions = connector.actions || [];
     const dangerous = new Set(connector.dangerous_actions || []);
     return `<tr data-connector="${esc(connector.name)}">
-      <td><strong>${esc(connector.name)}</strong>
+      <td data-label="Service"><strong>${esc(connector.name)}</strong>
           <div class="kv-muted">${esc(connector.description || connector.category || "")}</div></td>
-      <td>${connector.configured
+      <td data-label="Status">${connector.configured
         ? pill("ready", { tip: "Configured and ready to call" })
         : `${pill("setup", { tip: esc(connector.detail || "missing credentials") })}<div class="kv-muted" style="margin-top:4px">${esc(connector.detail || "")}</div>`}</td>
-      <td class="kv-muted kv-mono">${actions.map((a) => esc(a)).join(", ") || "—"}</td>
-      <td class="kv-nowrap">
+      <td data-label="Actions" class="kv-muted kv-mono">${actions.map((a) => esc(a)).join(", ") || "—"}</td>
+      <td data-label="Run" class="kv-nowrap">
         <select class="kv-select" style="max-width:190px" data-action-select="${esc(connector.name)}"
                 ${connector.configured ? "" : "disabled"}>
           ${actions.map((a) => `<option value="${esc(a)}">${esc(a)}${dangerous.has(a) ? " ⚠" : ""}</option>`).join("")}
@@ -253,12 +256,12 @@ function renderAgentsAndStorage() {
   const agents = store.agents || [];
   agentsBody.innerHTML = agents.length
     ? agents.map((agent) => `<tr>
-        <td><strong>${esc(agent.label || agent.account_id)}</strong>
+        <td data-label="Agent"><strong>${esc(agent.label || agent.account_id)}</strong>
             <div class="kv-muted kv-mono">${esc(agent.account_id)}</div></td>
-        <td>${pill(agent.busy ? "busy" : agent.status || "idle")}</td>
-        <td class="kv-mono">${num(agent.tasks_done ?? 0)}</td>
-        <td class="kv-mono">${num(agent.tasks_failed ?? 0)}</td>
-        <td class="kv-muted">${esc(agent.last_error || "")}</td>
+        <td data-label="Status">${pill(agent.busy ? "busy" : agent.status || "idle")}</td>
+        <td data-label="Done" class="kv-mono">${num(agent.tasks_done ?? 0)}</td>
+        <td data-label="Failures" class="kv-mono">${num(agent.tasks_failed ?? 0)}</td>
+        <td data-label="Last error" class="kv-muted">${esc(agent.last_error || "")}</td>
       </tr>`).join("")
     : `<tr><td colspan="5"><div class="kv-empty"><strong>No worker agents</strong>
         Set <span class="kv-mono">ARENA_ACCOUNTS</span> (or run <span class="kv-mono">kollektiv login</span>).</div></td></tr>`;
@@ -268,11 +271,11 @@ function renderAgentsAndStorage() {
   const storageBody = $("#storage-body");
   storageBody.innerHTML = rows.length
     ? rows.map((account) => `<tr>
-        <td><strong>${esc(account.label || account.account_id)}</strong></td>
-        <td>${account.healthy ? pill("healthy") : pill("unhealthy")}</td>
-        <td class="kv-mono">${esc(account.used_human || `${account.used_gb ?? 0} GB`)}</td>
-        <td class="kv-mono">${esc(account.free_human || `${account.free_gb ?? 0} GB`)}</td>
-        <td class="kv-muted kv-mono">${esc(account.bucket || account.remote_root || "")}</td>
+        <td data-label="Account"><strong>${esc(account.label || account.account_id)}</strong></td>
+        <td data-label="Healthy">${account.healthy ? pill("healthy") : pill("unhealthy")}</td>
+        <td data-label="Used" class="kv-mono">${esc(account.used_human || `${account.used_gb ?? 0} GB`)}</td>
+        <td data-label="Free" class="kv-mono">${esc(account.free_human || `${account.free_gb ?? 0} GB`)}</td>
+        <td data-label="Bucket" class="kv-muted kv-mono">${esc(account.bucket || account.remote_root || "")}</td>
       </tr>`).join("")
     : `<tr><td colspan="5"><div class="kv-empty"><strong>No shared drive configured</strong>
         Set <span class="kv-mono">R2_*</span> or <span class="kv-mono">TERABOX_ACCOUNTS</span>; state stays in the local workspace.</div></td></tr>`;
@@ -702,10 +705,11 @@ function navigate(route) {
   const known = views.map((view) => view.dataset.view);
   const target = known.includes(route) ? route : "overview";
   views.forEach((view) => view.classList.toggle("kv-hidden", view.dataset.view !== target));
-  $$(".kv-nav a").forEach((link) => {
+  $$(".kv-nav a, .kv-tabbar a").forEach((link) => {
     if (link.dataset.route === target) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
+  closeSidebar();
   if (location.hash !== `#/${target}`) history.replaceState(null, "", `#/${target}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -820,6 +824,134 @@ function bindEvents() {
   window.addEventListener("hashchange", () => navigate((location.hash || "#/overview").replace("#/", "")));
 }
 
+/* ------------------------------------------------------------------ *
+ * Depth: 3D tilt + pointer spotlight on the glass cards
+ * ------------------------------------------------------------------ */
+function initTilt() {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const fine = window.matchMedia("(pointer: fine)").matches;
+  if (reduced || !fine) return;  // touch and reduced-motion users get a still card
+  const MAX = 7;                 // degrees; enough to feel 3D, not enough to skew text
+
+  document.addEventListener("pointermove", (event) => {
+    const card = event.target.closest(".kv-card");
+    if (!card) return;
+    const box = card.getBoundingClientRect();
+    const px = (event.clientX - box.left) / box.width;
+    const py = (event.clientY - box.top) / box.height;
+    card.style.setProperty("--kv-mx", `${(px * 100).toFixed(1)}%`);
+    card.style.setProperty("--kv-my", `${(py * 100).toFixed(1)}%`);
+    card.style.setProperty("--kv-ry", `${((px - 0.5) * 2 * MAX).toFixed(2)}deg`);
+    card.style.setProperty("--kv-rx", `${((0.5 - py) * 2 * MAX).toFixed(2)}deg`);
+  }, { passive: true });
+
+  document.addEventListener("pointerout", (event) => {
+    const card = event.target.closest(".kv-card");
+    if (!card || card.contains(event.relatedTarget)) return;
+    for (const prop of ["--kv-rx", "--kv-ry"]) card.style.removeProperty(prop);
+  }, { passive: true });
+}
+
+/* ------------------------------------------------------------------ *
+ * Mobile chrome: slide-in sidebar, dismissed on navigation
+ * ------------------------------------------------------------------ */
+function openSidebar() {
+  const sidebar = $("#sidebar");
+  if (sidebar) sidebar.dataset.open = "true";
+}
+function closeSidebar() {
+  const sidebar = $("#sidebar");
+  if (sidebar) sidebar.dataset.open = "false";
+}
+function initSidebar() {
+  const menu = $("#menu-toggle");
+  const sidebar = $("#sidebar");
+  if (!menu || !sidebar) return;
+  menu.addEventListener("click", () => {
+    sidebar.dataset.open = sidebar.dataset.open === "true" ? "false" : "true";
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSidebar();
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Onboarding: three steps, skippable, remembered locally
+ * ------------------------------------------------------------------ */
+function renderOnboardStep(step) {
+  const clamped = Math.min(3, Math.max(1, step));
+  $$(".kv-onboard-step").forEach((node) => { node.dataset.active = String(Number(node.dataset.step) === clamped); });
+  $$(".kv-onboard-dot").forEach((node) => { node.dataset.active = String(Number(node.dataset.dot) === clamped); });
+  $("#onboard-back").disabled = clamped === 1;
+  $("#onboard-next").textContent = clamped === 3 ? "Start building ✦" : "Next";
+  const field = $("#onboard-api");
+  if (field && !field.value) field.value = store.base || "";
+  return clamped;
+}
+
+function confetti() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const host = document.createElement("div");
+  host.className = "kv-confetti";
+  const colours = ["#7c5cff", "#22d3ee", "#f472b6", "#a3e635", "#fb923c", "#fde047"];
+  for (let i = 0; i < 34; i += 1) {
+    const piece = document.createElement("span");
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = colours[i % colours.length];
+    piece.style.animationDelay = `${(Math.random() * 0.5).toFixed(2)}s`;
+    piece.style.transform = `rotate(${Math.random() * 180}deg)`;
+    host.append(piece);
+  }
+  document.body.append(host);
+  setTimeout(() => host.remove(), 3400);
+}
+
+function closeOnboarding(remember = true) {
+  const overlay = $("#onboard");
+  if (overlay) overlay.hidden = true;
+  if (remember) STORAGE.onboarded = true;
+}
+
+function openOnboarding() {
+  const overlay = $("#onboard");
+  if (!overlay) return;
+  overlay.hidden = false;
+  store.onboardStep = renderOnboardStep(1);
+  $("#onboard-next").focus({ preventScroll: true });
+}
+
+function initOnboarding() {
+  const overlay = $("#onboard");
+  if (!overlay) return;
+  $("#onboard-next").addEventListener("click", () => {
+    if (store.onboardStep >= 3) {
+      const typed = ($("#onboard-api") && $("#onboard-api").value.trim()) || "";
+      if (typed && typed !== store.base) {
+        store.base = typed.replace(/\/$/, "");
+        STORAGE.api = store.base;
+        $("#api-input").value = store.base;
+        renderConnection();
+        refreshAll();
+      }
+      closeOnboarding(true);
+      confetti();
+      toast("You are in. Create a project to start the first wave.", "ok");
+      return;
+    }
+    store.onboardStep = renderOnboardStep(store.onboardStep + 1);
+  });
+  $("#onboard-back").addEventListener("click", () => { store.onboardStep = renderOnboardStep(store.onboardStep - 1); });
+  $("#onboard-skip").addEventListener("click", () => closeOnboarding(true));
+  const tour = $("#tour-start");
+  if (tour) tour.addEventListener("click", openOnboarding);
+  document.addEventListener("keydown", (event) => {
+    if (overlay.hidden) return;
+    if (event.key === "Escape") closeOnboarding(true);
+    if (event.key === "Enter") $("#onboard-next").click();
+  });
+  if (!STORAGE.onboarded) setTimeout(() => openOnboarding(), 420);
+}
+
 function closeDrawer() {
   store.set({ openProject: null });
   stopStream();
@@ -835,6 +967,9 @@ function boot() {
   store.base = guessBase();
   renderConnection();
   bindEvents();
+  initTilt();
+  initSidebar();
+  initOnboarding();
   navigate((location.hash || "#/overview").replace("#/", ""));
   refreshAll();
 

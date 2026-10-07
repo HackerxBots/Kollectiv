@@ -5,15 +5,33 @@ live progress, connectors with probes, agent pool and shared-drive quota.
 
 ```
 web/
-├── index.html            markup and hash routes (#/overview, #/projects, #/connectors, #/agents)
+├── index.html                    markup, hash routes, onboarding, mobile tab bar
 ├── assets/
-│   ├── styles.css        design tokens, components, hover/focus/motion states
-│   ├── app.js            API client, renderers, command palette (⌘K), SSE live view
-│   └── favicon.svg       logo
-├── _headers              Cloudflare Pages CSP + cache headers
-├── _redirects            Cloudflare Pages redirects (optional API proxy)
-└── README.md             this file
+│   ├── styles.css                "aurora glass" design system: tokens, aurora, glass, states
+│   ├── app.js                    API client, renderers, 3D tilt, onboarding, palette, SSE
+│   ├── favicon.svg               logo
+│   └── manifest.webmanifest      installable shell (standalone, themed, local icon)
+├── _headers                      Cloudflare Pages CSP + cache headers
+├── _redirects                    Cloudflare Pages redirects (optional API proxy)
+└── README.md                     this file
 ```
+
+## The look
+
+**Aurora glass, candy accents.** Four blurred colour fields drift behind every
+surface; panels are frosted (`backdrop-filter`) with a 1px inner highlight;
+cards tilt ±7° toward the pointer with a spotlight that follows it. Each
+subsystem owns a hue (API cyan, storage lime, agents grape, brain pink, GitHub
+peach, connectors sky) and keeps it in its card, icon, glow and progress bar.
+Everything is rounded (14 / 22 / 32px, pills for controls) and monospaced where
+it is data (ids, commands, env vars).
+
+All of it is zero-dependency: the aurora is gradients, the glass is
+`backdrop-filter`, the icons are characters, the confetti is 34 CSS spans. No
+image file, no font, no script from anywhere but `assets/`.
+
+**Reduced motion** stops the aurora drift, the tilt, the shimmer and the
+confetti; coarse pointers never get the tilt at all.
 
 `_headers` sets a strict CSP (`script-src 'self'`, `connect-src *` for your own
 API origin), `nosniff`, `no-referrer` and short asset caching; `_redirects`
@@ -42,8 +60,17 @@ single-origin deployment needs no CORS configuration.
 - **Accessibility**: real buttons and labels, `aria-current` navigation,
   focus-visible rings, `prefers-reduced-motion` support, light and dark themes
   (system default, toggle persisted).
-- **Hover craft**: cards lift with a spotlight, buttons sweep a sheen, table rows
-  highlight with an accent edge, pills reveal tooltips, the brand mark tilts.
+- **Hover craft**: cards lift, tilt in 3D and light a spotlight that follows the
+  pointer; buttons rise and sweep a diagonal sheen; nav pills slide with a
+  gradient bar; table rows wash with an accent gradient and grow a 4px edge;
+  pills lift and reveal CSS-only tooltips; the logo tile tilts and saturates.
+- **Onboarding** (first run, or **Show me around**): three steps — what Kollektiv
+  does, the API URL, the keyboard — with a hue-rotating gradient tile, progress
+  dots and a confetti finish. Skippable, remembered in `localStorage`, never
+  blocks the dashboard.
+- **Mobile**: a floating frosted tab bar, a slide-in sidebar with a menu button,
+  and tables that become cards (each cell keeps its label via `data-label`).
+  Installable from the manifest as a standalone app.
 
 ## Deploy on Cloudflare Pages (free)
 
