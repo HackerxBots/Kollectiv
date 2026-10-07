@@ -69,7 +69,7 @@ on GitHub links to the section below for its version.
   third-party origin may appear. `tests/test_api.py` adds two SSE tests
   (state frame + faithful copy of `/status`, and an `event: error` frame for an
   unknown project). `tests/test_path_safety.py` covers the path rules end to end,
-  from the helpers to the API's `400`. 287 tests total.
+  from the helpers to the API's `400`. 303 tests total.
 
 ### Security
 
@@ -90,6 +90,41 @@ on GitHub links to the section below for its version.
   CodeQL cannot prove, the CLI printing a freshly generated `SECRET_KEY` to the
   operator's own terminal, the example shim running the command the operator
   configured — is written down with the reason to type when dismissing it.
+
+### Fixed
+
+- **`pip install kollektiv` installed a broken package.** `src/connectors` was
+  missing from `[tool.setuptools] packages`, so the wheel failed at import with
+  `ModuleNotFoundError` — invisible in CI because the test job uses an editable
+  install (`pip install -e .`) which reads the source tree directly. The wheel
+  smoke step in CI had also swallowed the failure with `|| true`.
+- **The dashboard was missing from the wheel and the image.** `web/` is now
+  packaged (`packages` + `package-data` for the wheel, `MANIFEST.in` for the
+  sdist) so `create_app()` finds it at `<site-packages>/web` after a real
+  install, and the Dockerfile copies it to `/app/web` for the same reason. Both
+  were verified by installing the built wheel in a clean environment and serving
+  `/ui/`, `/ui/assets/*` and `/health` from it.
+- **Deprecated packaging metadata** — `project.license` is now the PEP 639 SPDX
+  string (`license = "MIT"` + `license-files`), the license classifier is gone
+  and the build requirement moved to `setuptools>=77`. The build is warning-free.
+
+### Added
+
+- **Deployment smoke test** — `scripts/smoke.py` runs ten checks against any
+  deployment (health, the bundled dashboard, the four read surfaces the UI uses,
+  project planning, the state document, the resume briefing, one SSE frame and a
+  `kollektiv check`), prints a table or `--json`, and exits `0`/`1`/`2` so a
+  supervisor can tell "not deployed" from "deployed but broken". 16 tests cover
+  the failure directions (missing dashboard, empty plan, wrong payload shape,
+  unreachable host, token forwarding).
+- **`docs/deploy-checklist.md`** — the order of operations for going live:
+  accounts to create with **which ones have a CLI** (`wrangler`, `neon`, `clerk`,
+  `resend-cli`, `cloudflared`, `gh`, `ollama`), which hosts genuinely still have a
+  free tier in 2026 and which fit an always-on webhook/cron process, the first
+  real project, the smoke test, and the known limits.
+- **Packaging tests** (`tests/test_packaging.py`) — every source package must be
+  declared, the dashboard must ship, the three console scripts must exist, the
+  metadata must stay modern, and the CI smoke step must not swallow failures.
 
 ### Changed
 

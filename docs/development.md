@@ -7,10 +7,10 @@
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 287 tests, ~11 s, fully mocked
+pytest -q                 # 303 tests, ~11 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
-mypy src config examples  # types (clean)
+mypy src config examples scripts  # types (clean)
 pytest --cov=src          # optional coverage (pip install pytest-cov)
 ```
 

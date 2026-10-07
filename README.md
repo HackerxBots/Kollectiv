@@ -18,7 +18,7 @@
   <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollektiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="https://github.com/HackerxBots/Kollektiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-287%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-303%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Documentation"></a>
 </div>
 
@@ -103,6 +103,7 @@ kollektiv run "Build a URL shortener: FastAPI service, SQLite storage, CLI and p
     --name shortener --agents 3
 kollektiv status --project-id prj_…     # the shared state document
 kollektiv resume --project-id prj_…     # continue it in a new session
+python scripts/smoke.py                 # 10 checks: is this deployment actually working?
 ```
 
 **Dashboards and clients.** `http://localhost:8000/ui` serves the bundled static
@@ -131,6 +132,7 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 - [Why Kollektiv](docs/why-kollektiv.md) — the idea, and what it is not
 - [Architecture](docs/architecture.md) — a run end to end, the shared state, the layout
 - [Configuration](docs/configuration.md) — every setting, with examples
+- [Deploy checklist](docs/deploy-checklist.md) — accounts, CLIs, hosts that actually fit, and `scripts/smoke.py`
 - [Deployment and the free stack](docs/deployment.md) — Compose, bare metal, free hosting, self-hosting checklist
 - [Agent runtimes](docs/agent-runtimes.md) — Arena by default, and the whole free menu
 - [Connectors](docs/connectors.md) — Google, Notion, GitHub, webhooks, any REST API
@@ -142,7 +144,7 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 ## Contributing
 
 Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
-(three gates: `pytest -q`, `ruff check .`, `mypy src config examples`), the
+(three gates: `pytest -q`, `ruff check .`, `mypy src config examples scripts`), the
 [code of conduct](CODE_OF_CONDUCT.md), and the [security policy](SECURITY.md) for
 vulnerability reports. `docs/` and `CHANGELOG.md` ship with the change.
 

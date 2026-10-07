@@ -10,7 +10,7 @@ git clone https://github.com/HackerxBots/Kollektiv.git
 cd Kollektiv
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q                 # 287 hermetic tests, ~10 s
+pytest -q                 # 303 hermetic tests, ~10 s
 kollektiv bootstrap       # prepares the database/workspace, prints the checklist
 kollektiv serve-api       # dashboard at http://localhost:8000/ui
 ```
@@ -22,7 +22,7 @@ Every pull request must be green on all three:
 ```bash
 pytest -q                 # tests (add some with behaviour changes)
 ruff check .              # lint
-mypy src config examples  # types
+mypy src config examples scripts  # types
 ```
 
 CI runs the same on Python 3.11 and 3.12, plus a packaging job, and posts any
@@ -59,7 +59,7 @@ failures back onto your PR.
 ```bash
 git checkout -b feat/short-description
 # ... edit, add tests ...
-pytest -q && ruff check . && mypy src config examples
+pytest -q && ruff check . && mypy src config examples scripts
 ```
 
 Commit messages use a prefix: `feat:`, `fix:`, `test:`, `docs:`, `chore:`.

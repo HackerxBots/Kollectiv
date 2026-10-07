@@ -21,7 +21,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 287 hermetic tests, ~11 s
+pytest -q                      # 303 hermetic tests, ~11 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config examples       # types (clean)
@@ -113,6 +113,14 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   request value onto a directory or a bucket prefix. `ValueError` from those
   helpers is a client error: the API answers `400` (global handler in
   `src/api/routes.py`), and `tests/test_path_safety.py` pins the rules.
+- **A new subpackage must be added to `[tool.setuptools] packages`** in
+  `pyproject.toml`. `src/connectors` once shipped missing, which made
+  `pip install kollektiv` fail at import while CI stayed green (it installs
+  editable). `tests/test_packaging.py` checks the list against the tree and
+  the CI `package` job installs the built wheel and asserts `/ui` is mounted.
+- Static assets that the runtime reads (`web/`) ship via `package-data` and
+  `MANIFEST.in`, and the Dockerfile copies them too — the image runs uvicorn
+  from the source tree, where the lookup resolves to `/app/web`.
 - Errors that reach a client are generic: log the exception with
   `exc_info=True`, answer with a fixed message (an exception *class* name is the
   most detail that goes out). CodeQL watches for `py/stack-trace-exposure`.

@@ -10,6 +10,7 @@ then come here for depth. Every page is self-contained and links back.
 | [Architecture](architecture.md) | How a run works, the shared `PROJECT_STATE.md`, session continuity (handoff), and the full project layout. |
 | [Configuration](configuration.md) | Every setting: workers, storage, GitHub, brain, runtime, with examples. |
 | [Deployment and the free stack](deployment.md) | Docker Compose, bare metal, the free-hosted path (R2 + Neon + Clerk + Resend + Pages) and the self-hosting checklist. |
+| [Deploy checklist](deploy-checklist.md) | The order of operations: which accounts to create (and which have a CLI), which host actually fits in 2026, the first real project, and `scripts/smoke.py`. |
 | [Agent runtimes](agent-runtimes.md) | Arena accounts as the default, plus the full free menu (Groq, Ollama, CLI agents) and how to wire one in. |
 | [Connectors](connectors.md) | GitHub, Google, Notion, webhooks, declarative REST, calling them from MCP, and the safety rules. |
 | [API, MCP and CLI](api.md) | HTTP endpoints, the MCP tool server, and every CLI command. |
