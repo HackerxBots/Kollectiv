@@ -70,19 +70,31 @@ integrations, or hosting — and then, optionally, charge for it.
   project, connector, storage, handoff, sponsor and status tools.
 - `AUTH_REQUIRED` + Clerk for the HTTP surface, so a shared gateway is a
   deployment decision rather than a rewrite.
+- **`kollektiv gateway` — built.** `src/gateway/` is live, documented in
+  [gateway.md](gateway.md) and tested in `tests/test_gateway.py`:
+  - one process, one port, many clients — Claude Code, Codex, Cursor, a
+    teammate's IDE, a cron job — each with its own `kgw_…` token, encrypted at
+    rest, shown once, rotatable and revocable;
+  - tool namespacing (`projects.*`, `storage.*`, `connectors.notion.*`,
+    `gateway.*`), so two servers with a `search` tool cannot collide, and the
+    catalogue a client sees is the catalogue it may use;
+  - a local audit log (SQLite, on your disk, never uploaded) of tool, client,
+    duration, outcome and the *names* of the arguments — never the values;
+  - policies: five named presets plus `allow`/`deny`/`confirm` globs and a
+    `read_only` flag, overridable from a JSON file you keep in git. Empty
+    `allow` denies everything: a policy that fails open is not a policy;
+  - the rules below, honoured in code: the gateway serves *our* tools to *your*
+    client, proxies no subscription and is optional (`GATEWAY_ENABLED=false`;
+    `kollektiv-mcp` and the REST API stay first-class).
 
-**Next, small and useful: `kollektiv gateway` — designed, not built**
+**Still ahead** (small, and deliberately not blocking)
 
-- One process, one port, many clients. Each client (Claude Code, Codex, Cursor,
-  a teammate's IDE) gets its own token; every call is attributed to it.
-- Tool namespacing: `github.*`, `storage.*`, `connectors.notion.*`, so two MCP
-  servers with a `search` tool cannot collide.
-- A local audit log (SQLite, on your disk, never uploaded) of tool, client,
-  duration and outcome. The point is *your* debugging, not our analytics.
-- Policy file: which tools are read-only, which need `confirm=true`, which are
-  refused for a given client. Default deny for anything destructive.
 - Kollektiv as an MCP *client* too, so a worker agent can attach a third-party
-  MCP server without a plugin system.
+  MCP server without a plugin system. `src/gateway/tools.py` is already the seam
+  where a remote server's tools would be namespaced the same way ours are.
+- Managed hosting of the gateway (the one thing a self-hosted, telemetry-free
+  project can charge for fairly): we run the process, you keep the tokens, the
+  policies and the audit log.
 
 **Rules for the gateway**
 
@@ -242,6 +254,39 @@ Explicitly rejected: selling user data (there is none), "anonymised analytics"
 (that is data), prompt-based targeting, always-on ads, injecting lines into
 model output, per-token markup on free providers, and any scheme where the free
 tier exists to make the paid tier feel safe.
+
+### The "free tier paid for by ads" combo (the Freebuff shape, made honest)
+
+The user-facing pitch we like: **a hosted Kollektiv that is genuinely free for
+individuals, funded by a sponsor line that pays users a share.** It works
+because every input is optional and every part is visible:
+
+| Layer | What it is | Who pays | What the user gives up |
+| --- | --- | --- | --- |
+| Advertising surface | One “Sponsored …” line in dead time (the same line as §5), or a card in the hosted dashboard | sponsors | 1 line per 90 s, dismissible, never inside generated code or prompts |
+| User share | 75 % of each impression goes to the user's account as a balance | sponsors → user | nothing; the balance pays for their own hosted usage |
+| Free quota | Hosted runs, agent concurrency and retention, backed by that balance | the balance (then us) | nothing until the balance runs out |
+| Paid tier | More concurrency, longer retention, priority queue, **not** more features | the user | nothing the self-hosted edition keeps |
+| Self-hosted | Everything, MIT, forever, no ads unless the operator opts in | the user's own free credentials | nothing |
+
+Rules that make it defensible rather than extractive:
+
+1. **Ads never sit inside the work.** Between runs, in a dashboard, never in a
+   prompt, an artifact, a commit or a model's answer.
+2. **Ads are opt-in on self-hosted installs** (`SPONSORS_ENABLED=false` by
+   default) and non-negotiable only on *our* hosted free tier, where they pay
+   the bill. State that on the signup page, not in a changelog.
+3. **No targeting beyond the categories the operator declares.** No prompt
+   reading, no repo contents, no behavioural profiles, no third-party pixels.
+4. **The free tier is not a trap.** It never gets slower, smaller or noisier as
+   an upsell; the paid tier is capacity, not features.
+5. **Payouts are real and small.** A balance, a signed local claim
+   (`kollektiv sponsors claim`) and a documented threshold — not a wall of
+   "estimated earnings" nobody can withdraw.
+
+What is still missing for this to be more than a plan: an advertiser side (a
+rate card, a fill rate, an actual sponsor or two), a tested payout path, and the
+hosted quota accounting that ties a balance to runs. §8 is the honest gate.
 
 ---
 

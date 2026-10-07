@@ -45,8 +45,10 @@ plan for the next iterations (each item is sized so it can ship on its own).
 11. **Worker sandboxing** (also on the roadmap): run collected code in a
     container before it is committed — the one gap that keeps Kollektiv from
     being a fully autonomous pipeline.
-12. **Metering per provider** in `/health`: calls, tokens, latency and cost, so
-    a free-tier budget can be seen at a glance.
+12. ~~**Metering per provider** in `/health`~~ — **shipped** as the budget
+    ledger plus `GET /budget`, `GET /projects/{id}/estimate` and
+    `kollektiv budget` (per-project and per-day totals, brain tokens measured
+    from the provider's `usage` block). Per-provider latency is still open.
 
 ---
 
@@ -63,7 +65,8 @@ hand-rolled SigV4 signer and `kollektiv bootstrap`.
 - [ ] Plan templates and reusable skill packs per task type
 - [ ] Dashboard actions for retrying a single task and viewing diffs
 - [ ] Additional storage backends (WebDAV, Backblaze B2) behind the pool
-- [ ] Cost/latency accounting per provider in `/health`
+- [x] Cost accounting and caps (`.kollektiv.yml`, `BUDGET_MAX_USD`, dry-run estimate)
+- [ ] Latency accounting per provider in `/health`
 - [ ] Signed Python wheels + SBOM attached to each release
 
 ---

@@ -268,6 +268,111 @@ class Settings(BaseSettings):
     NOTION_REQUEST_TIMEOUT: float = 30.0
     #: Comma separated URLs that receive Kollektiv events (run started/finished,
     #: failures). Use this to poke Slack/Discord/Zapier/n8n or your own service.
+    # ------------------------------------------------------------------
+    # Chat and messaging connectors (all optional, all off by default)
+    # ------------------------------------------------------------------
+    #: Telegram Bot API -- create a bot with @BotFather, then talk to it.
+    TELEGRAM_BOT_TOKEN: str = ""
+    #: Default destination when an action does not name a chat.
+    TELEGRAM_CHAT_ID: str = ""
+    TELEGRAM_BASE_URL: str = "https://api.telegram.org"
+    TELEGRAM_REQUEST_TIMEOUT: float = 30.0
+    #: Discord: a bot token (channel actions) and/or an incoming webhook URL.
+    DISCORD_BOT_TOKEN: str = ""
+    DISCORD_DEFAULT_CHANNEL: str = ""
+    DISCORD_WEBHOOK_URL: str = ""
+    DISCORD_BASE_URL: str = "https://discord.com/api"
+    DISCORD_API_VERSION: str = "v10"
+    DISCORD_REQUEST_TIMEOUT: float = 30.0
+    #: Slack: a bot token (Web API) and/or an incoming webhook URL.
+    SLACK_BOT_TOKEN: str = ""
+    SLACK_DEFAULT_CHANNEL: str = ""
+    SLACK_WEBHOOK_URL: str = ""
+    SLACK_BASE_URL: str = "https://slack.com/api"
+    SLACK_REQUEST_TIMEOUT: float = 30.0
+    #: Linear GraphQL API -- personal API key (``lin_api_...``).
+    LINEAR_API_KEY: str = ""
+    #: Default team for ``create_issue`` when the caller does not name one.
+    LINEAR_TEAM_ID: str = ""
+    LINEAR_BASE_URL: str = "https://api.linear.app"
+    LINEAR_REQUEST_TIMEOUT: float = 30.0
+    #: WhatsApp. ``""`` keeps it off; ``cloud`` is Meta's official Business API
+    #: (sanctioned, needs a verified business number); ``bridge`` talks to a
+    #: local linked-device bridge (the route OpenClaw takes with Baileys /
+    #: whatsapp-web.js) and additionally requires WA_ALLOW_UNOFFICIAL.
+    WA_BACKEND: str = ""
+    WA_DEFAULT_TO: str = ""
+    WA_CLOUD_TOKEN: str = ""
+    WA_PHONE_NUMBER_ID: str = ""
+    WA_GRAPH_URL: str = "https://graph.facebook.com"
+    WA_GRAPH_VERSION: str = "v21.0"
+    WA_BRIDGE_URL: str = ""
+    WA_BRIDGE_TOKEN: str = ""
+    WA_BRIDGE_SEND_PATH: str = "/send"
+    WA_BRIDGE_STATUS_PATH: str = "/status"
+    #: The honest switch: automating a personal account is against Meta's terms
+    #: and can get the number banned. Bridge mode refuses to start without it.
+    WA_ALLOW_UNOFFICIAL: bool = False
+    WA_REQUEST_TIMEOUT: float = 30.0
+
+    # ------------------------------------------------------------------
+    # Budget: estimates, caps and the local spend ledger
+    # ------------------------------------------------------------------
+    #: Estimate every project's cost before it runs, and record what each run
+    #: used. Estimation is free and side-effect free; only the caps block runs.
+    BUDGET_ENABLED: bool = True
+    #: Refuse to run a project whose *estimate* is above this (0 = no cap).
+    BUDGET_MAX_USD: float = 0.0
+    #: Refuse any run when today's recorded spend is already above this (0 = off).
+    BUDGET_DAILY_MAX_USD: float = 0.0
+    #: Warn from this fraction of a cap (0.8 = 80%).
+    BUDGET_WARN_AT: float = 0.8
+    #: Prices used to turn tokens into money *for the estimate only*. They are
+    #: arithmetic on your numbers, not a quote: override them with your
+    #: provider's current rates. Defaults match a cheap DeepSeek-class model.
+    BUDGET_PRICE_IN_PER_MTOK: float = 0.30
+    BUDGET_PRICE_OUT_PER_MTOK: float = 1.20
+    #: Worker endpoints are free by default (Arena accounts, local models).
+    BUDGET_WORKER_PRICE_IN_PER_MTOK: float = 0.0
+    BUDGET_WORKER_PRICE_OUT_PER_MTOK: float = 0.0
+    #: Token heuristics behind the estimate, so it can be tuned rather than
+    #: trusted blindly.
+    BUDGET_PROMPT_OVERHEAD_TOKENS: int = 900
+    BUDGET_OUTPUT_TOKENS_PER_TASK: int = 700
+    #: Explicit path to the project's `.kollektiv.yml` (otherwise auto-found).
+    PROJECT_CONFIG_PATH: str = ""
+
+    # ------------------------------------------------------------------
+    # MCP gateway (one URL, per-client tokens, local audit log)
+    # ------------------------------------------------------------------
+    #: Serve the gateway. Off by default: the plain MCP server and the HTTP API
+    #: stay first-class and the gateway is an addition, never a requirement.
+    GATEWAY_ENABLED: bool = False
+    GATEWAY_HOST: str = "0.0.0.0"
+    GATEWAY_PORT: int = 8010
+    #: Path the MCP endpoint is mounted on (Claude Code, Codex, Cursor, ...).
+    GATEWAY_MCP_PATH: str = "/mcp"
+    #: Refuse unauthenticated tool calls. Turning this off is a development
+    #: convenience and logs a warning at startup.
+    GATEWAY_REQUIRE_TOKENS: bool = True
+    #: Optional JSON policy file; per-client overrides live in the database.
+    GATEWAY_POLICY_PATH: str = ""
+    #: How many audit rows ``GET /audit`` returns by default.
+    GATEWAY_AUDIT_LIMIT: int = 200
+    #: Name of the first client ``kollektiv gateway init`` creates.
+    GATEWAY_DEFAULT_CLIENT: str = "dashboard"
+    GATEWAY_REQUEST_TIMEOUT: float = 120.0
+    #: Host-header allowlist for the MCP mount (comma separated, e.g.
+    #: ``gateway.example.com,myhost:*``). Empty (the default) disables the MCP
+    #: SDK's DNS-rebinding check, which is the right call for a bearer-token
+    #: endpoint and the wrong one for an open server — so set it if you expose
+    #: the gateway to a browser you do not control.
+    GATEWAY_ALLOWED_HOSTS: str = ""
+    #: Origin allowlist for the MCP mount; defaults to the hosts above.
+    GATEWAY_ALLOWED_ORIGINS: str = ""
+    #: Longest request body the MCP endpoint accepts, in bytes.
+    GATEWAY_MAX_BODY_BYTES: int = 4194304
+
     EVENT_WEBHOOKS: str = ""
     #: Declarative REST connectors: any JSON API becomes a tool without code.
     #: [{"name":"slack","category":"chat","base_url":"https://slack.com/api",

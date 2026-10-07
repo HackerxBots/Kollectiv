@@ -412,11 +412,16 @@ class ConnectorRegistry:
         Every connector is always registered (so the UI can show what exists and
         what is missing); ``configured`` tells the caller which ones work.
         """
+        from src.connectors.discord import DiscordConnector
         from src.connectors.github import GitHubConnector
         from src.connectors.google_workspace import GoogleWorkspaceConnector
+        from src.connectors.linear import LinearConnector
         from src.connectors.notion import NotionConnector
         from src.connectors.rest import build_rest_connectors
+        from src.connectors.slack import SlackConnector
+        from src.connectors.telegram import TelegramConnector
         from src.connectors.webhook import WebhookConnector
+        from src.connectors.whatsapp import WhatsAppConnector
 
         resolved = settings or get_settings()
         registry = cls(resolved, token_store=token_store)
@@ -425,6 +430,13 @@ class ConnectorRegistry:
         registry.register(GoogleWorkspaceConnector(resolved, token_store=store))
         registry.register(NotionConnector(resolved, token_store=store))
         registry.register(WebhookConnector(resolved, token_store=store))
+        # Messaging connectors: registered but inert until credentials exist, so
+        # ``GET /connectors`` can show what is one env var away from working.
+        registry.register(TelegramConnector(resolved, token_store=store))
+        registry.register(DiscordConnector(resolved, token_store=store))
+        registry.register(SlackConnector(resolved, token_store=store))
+        registry.register(LinearConnector(resolved, token_store=store))
+        registry.register(WhatsAppConnector(resolved, token_store=store))
         for custom in build_rest_connectors(resolved):
             if custom.name in registry.names:
                 LOGGER.warning("CUSTOM_CONNECTORS entry %r shadows a built-in connector", custom.name)

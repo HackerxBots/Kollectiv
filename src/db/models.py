@@ -255,6 +255,79 @@ class SponsorLedgerRecord(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class BudgetRecord(SQLModel, table=True):
+    """Spend recorded for one project on one day (the local cost ledger).
+
+    Keyed by ``(project_id, day)`` so both questions an operator asks are cheap:
+    "what has this project cost?" (sum its rows) and "what have I spent today?"
+    (sum today's rows). Token counts come from the provider's ``usage`` block
+    when it is available and from the caller's estimate when it is not; the
+    ``estimated`` flag says which, so nobody mistakes one for the other.
+    """
+
+    __tablename__ = "budget_ledger"
+
+    project_id: str = Field(primary_key=True, max_length=64)
+    day: str = Field(primary_key=True, max_length=10)  # YYYY-MM-DD, UTC
+    runs: int = Field(default=0)
+    tasks: int = Field(default=0)
+    brain_calls: int = Field(default=0)
+    brain_tokens_in: int = Field(default=0)
+    brain_tokens_out: int = Field(default=0)
+    worker_tokens_in: int = Field(default=0)
+    worker_tokens_out: int = Field(default=0)
+    usd: float = Field(default=0.0)
+    estimated: bool = Field(default=True)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class GatewayClientRecord(SQLModel, table=True):
+    """One client allowed to call tools through the MCP gateway.
+
+    The secret itself is never stored here: it lives encrypted in
+    ``token_records`` (service ``gateway``, account = ``name``) and is verified
+    by comparing decrypted values in constant time. This row carries the
+    *policy* and the bookkeeping -- which client, what it may do, when it was
+    last seen -- so revoking access or narrowing a policy never touches a
+    secret.
+    """
+
+    __tablename__ = "gateway_clients"
+
+    name: str = Field(primary_key=True, max_length=64)
+    label: str = Field(default="", max_length=200)
+    role: str = Field(default="client", max_length=32)
+    #: JSON: {"allow": [...], "deny": [...], "confirm": [...], "read_only": bool}
+    policy: str = Field(default="{}", sa_column=Column(Text, nullable=False, default="{}"))
+    active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    last_seen: Optional[datetime] = Field(default=None)
+    calls: int = Field(default=0)
+
+
+class GatewayAuditRecord(SQLModel, table=True):
+    """One tool call, logged locally for the operator's own debugging.
+
+    Deliberately says nothing about the *content* of a call: no arguments, no
+    prompt, no payload -- only the tool name, how long it took, whether it
+    worked and the argument *names* that were used. An audit log that can leak
+    the data it audits is not worth having.
+    """
+
+    __tablename__ = "gateway_audit"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    client: str = Field(default="", index=True, max_length=64)
+    tool: str = Field(default="", index=True, max_length=200)
+    namespace: str = Field(default="", max_length=64)
+    ok: bool = Field(default=True)
+    denied: bool = Field(default=False)
+    milliseconds: int = Field(default=0)
+    arg_names: str = Field(default="", max_length=300)
+    detail: str = Field(default="", max_length=500)
+
+
 # ----------------------------------------------------------------------
 # Engine / session management
 # ----------------------------------------------------------------------
@@ -456,6 +529,9 @@ __all__ = [
     "AgentRecord",
     "ProjectStateRecord",
     "SponsorLedgerRecord",
+    "BudgetRecord",
+    "GatewayClientRecord",
+    "GatewayAuditRecord",
     "get_engine",
     "set_engine",
     "init_db",

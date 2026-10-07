@@ -71,7 +71,9 @@ class StubOrchestrator:
             for record in self.projects.values()
         ]
 
-    async def run_project(self, project_id: str, max_concurrency: int | None = None) -> Dict[str, Any]:
+    async def run_project(
+        self, project_id: str, max_concurrency: int | None = None, *, allow_over_budget: bool = False
+    ) -> Dict[str, Any]:
         """Pretend to run the project."""
         if project_id not in self.projects:
             raise KeyError(project_id)

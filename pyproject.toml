@@ -63,6 +63,7 @@ Issues = "https://github.com/HackerxBots/Kollektiv/issues"
 kollektiv = "src.api.cli:main"
 kollektiv-api = "src.api.routes:main"
 kollektiv-mcp = "src.api.mcp_server:main"
+kollektiv-gateway = "src.gateway.app:main"
 
 [tool.setuptools]
 packages = [
@@ -72,6 +73,7 @@ packages = [
     "src.api",
     "src.connectors",
     "src.db",
+    "src.gateway",
     "src.github",
     "src.orchestrator",
     "src.sponsors",

@@ -1,12 +1,22 @@
 name: Deploy dashboard
 
-# Publishes web/ to Cloudflare Pages. Falls back to GitHub Pages when the
-# Cloudflare secrets are not configured, so the dashboard is deployable on day
-# one without any paid plan (both hosts have free tiers).
+# Publishes web/ to Cloudflare Pages — every branch, so each push gets its own
+# preview URL, and main gets the production URL. Falls back to GitHub Pages when
+# the Cloudflare secrets are not configured (both hosts have free tiers), which
+# is why the fallback only runs for main: GitHub Pages has exactly one site per
+# repository, so a branch deploy there would overwrite production.
+#
+# One shareable link is all an open-source project needs; the Cloudflare route
+# adds previews on top of it. Setup is three values in the repository settings —
+# see docs/deploy-checklist.md step 7:
+#   variable CF_PAGES_PROJECT, secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 
 on:
   push:
-    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
+  pull_request:
     paths:
       - "web/**"
       - ".github/workflows/pages.yml"
@@ -17,9 +27,10 @@ permissions:
   deployments: write
   pages: write
   id-token: write
+  pull-requests: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -29,17 +40,53 @@ jobs:
     if: ${{ vars.CF_PAGES_PROJECT != '' }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Publish to Cloudflare Pages
+        id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy web --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=${{ github.ref_name }}
+          # The branch name decides preview vs production: main publishes to the
+          # project's production URL, anything else to <branch>.<project>.pages.dev.
+          command: >-
+            pages deploy web
+            --project-name=${{ vars.CF_PAGES_PROJECT }}
+            --branch=${{ github.head_ref || github.ref_name }}
+
+      - name: Read the deployment URL
+        id: url
+        env:
+          # wrangler prints the URL; parsing it keeps us working across action
+          # versions that do (and do not) expose it as an output.
+          OUTPUT: ${{ steps.deploy.outputs.command-output }}
+        run: |
+          url=$(printf '%s\n' "$OUTPUT" | grep -oE 'https://[A-Za-z0-9._-]+\.pages\.dev' | head -1 || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Dashboard: ${url:-unknown}"
+
+      - name: Comment the preview link on the pull request
+        if: ${{ github.event_name == 'pull_request' && steps.url.outputs.url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          URL: ${{ steps.url.outputs.url }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # One sticky comment per pull request, updated in place.
+          body=$(printf '<!-- kollektiv-preview -->\n**Dashboard preview:** %s\n\nBuilt from `%s`.' "$URL" "${GITHUB_SHA::7}")
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+            --jq 'map(select(.body | contains("<!-- kollektiv-preview -->")))[0].id // empty')
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -f body="$body" >/dev/null
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$body" >/dev/null
+          fi
 
   github-pages:
     name: GitHub Pages (fallback)
     runs-on: ubuntu-latest
-    if: ${{ vars.CF_PAGES_PROJECT == '' }}
+    # Main only, and only when Cloudflare is not configured.
+    if: ${{ vars.CF_PAGES_PROJECT == '' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

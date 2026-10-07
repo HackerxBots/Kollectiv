@@ -18,7 +18,7 @@
   <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollektiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="https://github.com/HackerxBots/Kollektiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-354%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-454%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Documentation"></a>
 </div>
 
@@ -64,7 +64,7 @@ that makes the effort compound.
 | [**Free by construction**](docs/deployment.md#run-it-for-free) | Every default is the zero-cost path (SQLite, local workspace, no auth, log-only notifications); each free tier upgrades the same code in place. |
 | [**Many accounts, one drive**](docs/deployment.md#one-storage-layer-two-providers-and-the-9drive-trick) | Cloudflare R2 buckets or TeraBox accounts are pooled into one logical volume, routed by free space and health. |
 | [**Many agents, one team**](docs/agent-runtimes.md) | Worker endpoints are pooled and scheduled in dependency order; a failing worker is cooled down and routed around, not retried into the ground. |
-| [**Your tools, not ours**](docs/connectors.md) | Gmail, Calendar, Drive, Notion, GitHub, outbound webhooks and *any* JSON API become callable tools for the agents and your MCP client. |
+| [**Your tools, not ours**](docs/connectors.md) | Gmail, Calendar, Drive, Notion, GitHub, Telegram, Discord, Slack, Linear, WhatsApp, outbound webhooks and *any* JSON API become callable tools for the agents and your MCP client. |
 | [**Nothing lost between sessions**](docs/architecture.md#session-continuity-never-lose-the-good-part) | `kollektiv resume`, `GET /projects/{id}/handoff` and `HANDOFF.md`: what is done, what is next, which blockers, and the exact next commands. |
 | [**No telemetry, ever**](docs/privacy.md) | No analytics, no accounts, no identifiers, nothing to opt out of. The only traffic is to endpoints you configure. |
 
@@ -103,13 +103,16 @@ kollektiv run "Build a URL shortener: FastAPI service, SQLite storage, CLI and p
     --name shortener --agents 3
 kollektiv status --project-id prj_…     # the shared state document
 kollektiv resume --project-id prj_…     # continue it in a new session
+kollektiv estimate --project-id prj_…   # what a run will cost, before it runs
 python scripts/smoke.py                 # 10 checks: is this deployment actually working?
 ```
 
 **Dashboards and clients.** `http://localhost:8000/ui` serves the bundled static
 dashboard (four views, live SSE updates, ⌘K palette — see [`web/`](web/README.md));
 deploying it on Cloudflare Pages is a three-click job. The same API is exposed to
-MCP clients with `python -m src.api.mcp_server`.
+MCP clients with `python -m src.api.mcp_server`, and — when you want one URL for
+a whole team — `kollektiv gateway serve` gives every client its own token, its
+own policy and its own audit trail ([gateway docs](docs/gateway.md)).
 
 <details>
 <summary>Where do the keys go? (one line each)</summary>
@@ -123,6 +126,7 @@ MCP clients with `python -m src.api.mcp_server`.
 | Auth | `CLERK_*` + `AUTH_REQUIRED` | Clerk free tier (optional; the API is open by default on localhost) |
 | Email | `RESEND_API_KEY` + `NOTIFY_EMAILS` | Resend free tier (optional) |
 | GitHub sync | `GITHUB_TOKEN`, `GITHUB_REPO` | your own repository |
+| Optional extras | `TELEGRAM_*`, `DISCORD_*`, `SLACK_*`, `LINEAR_*`, `WA_*`, `GATEWAY_*` | chat connectors and a shared MCP endpoint; all off until configured |
 
 Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 </details>
@@ -132,11 +136,13 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 - [Why Kollektiv](docs/why-kollektiv.md) — the idea, and what it is not
 - [Architecture](docs/architecture.md) — a run end to end, the shared state, the layout
 - [Configuration](docs/configuration.md) — every setting, with examples
+- [Budgets and `.kollektiv.yml`](docs/budget.md) — estimate a run, cap it, see what it cost
 - [Deploy checklist](docs/deploy-checklist.md) — accounts, CLIs, hosts that actually fit, and `scripts/smoke.py`
 - [Deployment and the free stack](docs/deployment.md) — Compose, bare metal, free hosting, self-hosting checklist
 - [Agent runtimes](docs/agent-runtimes.md) — Arena by default, and the whole free menu
-- [Connectors](docs/connectors.md) — Google, Notion, GitHub, webhooks, any REST API
+- [Connectors](docs/connectors.md) — Google, Notion, GitHub, Telegram, Discord, Slack, Linear, WhatsApp, any REST API
 - [API, MCP and CLI](docs/api.md) — endpoints, tools and commands
+- [MCP gateway](docs/gateway.md) — one MCP URL for a team: per-client tokens, policies, audit
 - [Operations](docs/operations.md) — releases, health, sync, scaling, maintainer settings
 - [Extending Kollektiv](docs/extending.md) · [Development](docs/development.md) · [Troubleshooting and FAQ](docs/faq.md)
 - [Performance and roadmap](docs/roadmap.md) · [Privacy](docs/privacy.md) · [Legal](docs/legal.md)

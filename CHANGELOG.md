@@ -69,7 +69,100 @@ on GitHub links to the section below for its version.
   third-party origin may appear. `tests/test_api.py` adds two SSE tests
   (state frame + faithful copy of `/status`, and an `event: error` frame for an
   unknown project). `tests/test_path_safety.py` covers the path rules end to end,
-  from the helpers to the API's `400`. 354 tests total.
+  from the helpers to the API's `400`.
+
+- **Five optional chat/work connectors** — `telegram`, `discord`, `slack`,
+  `linear` and `whatsapp`, taking the registry to **9 connectors / 41 actions**.
+  Each is registered but inert until credentials exist, so nothing that worked
+  before needs a new variable:
+  - **Telegram** (`get_me`, `get_updates`, `send_message`, `send_document`) —
+    Bot API with `{ok, result}` unwrapping, so an HTTP 200 error is still an
+    error.
+  - **Discord** (`get_me`, `list_channels`, `send_message`, `send_webhook`) —
+    bot token *or* an incoming webhook alone; messages are chunked at Discord's
+    2000-character limit.
+  - **Slack** (`auth_test`, `list_channels`, `post_message`, `send_webhook`) —
+    bot token *or* a webhook; the `{"ok": false, "error": …}` envelope Slack
+    returns with HTTP 200 is treated as a failure, and long messages are chunked
+    at 3000 characters.
+  - **Linear** (`viewer`, `list_teams`, `list_issues`, `create_issue`,
+    `comment_issue`) — GraphQL with errors surfaced instead of dropped, and an
+    out-of-range `priority` refused rather than silently clamped.
+  - **WhatsApp** (`status`, `send_message`) with **two backends**: Meta's
+    official Business Cloud API, and the **OpenClaw-style linked-device bridge**
+    (Baileys / `whatsapp-web.js`, paired once by QR) that the project asked for.
+    The bridge is **opt-in** (`WA_ALLOW_UNOFFICIAL=true`), because automating a
+    personal number breaks Meta's terms and can get it banned — until the flag
+    is set the connector reports `not configured` and says exactly why. Long
+    messages are chunked rather than truncated. Gmail and Drive stay covered by
+    the existing `google` connector.
+- **The MCP gateway** (`src/gateway/`, `docs/gateway.md`) — the thing
+  `docs/monetization.md` §3 promised: `kollektiv gateway serve` publishes one MCP
+  endpoint (`GATEWAY_MCP_PATH`) plus a small REST surface (`GET /toolkits`,
+  `POST /call`, `GET /audit`, `GET /health`) with
+  - **per-client tokens** (`kgw_…`, generated with `secrets.token_urlsafe`,
+    encrypted at rest in `TokenStore`, shown once, rotated or revoked by the
+    CLI) — `kollektiv gateway init|clients|revoke`;
+  - **per-client policies** — `read-only`, `dashboard`, `worker`, `messenger`,
+    `admin` presets plus `allow`/`deny`/`confirm` globs, overridable from a JSON
+    file (`GATEWAY_POLICY_PATH`) so permissions can be reviewed in git. Empty
+    `allow` denies everything: a policy that fails open is not a policy;
+  - a **namespaced catalogue** (`projects.*`, `storage.*`, `agents.*`,
+    `sync.*`, `connectors.<service>.<action>`, `gateway.*`), with dangerous
+    tools marked so `read_only` and `confirm` mean something;
+  - a **local audit log** — client, tool, duration, result, argument **names**
+    only, never values, never uploaded — readable with `kollektiv gateway audit`
+    and clearable with `--clear`;
+  - a new **`kollektiv gateway` CLI** (`status|init|serve|token|clients|revoke|
+    policy|presets|tools|audit`) and the `kollektiv-gateway` entry point.
+  `GATEWAY_ENABLED=false` by default: `kollektiv-mcp` and the HTTP API stay
+  first-class, and the gateway is an addition, never a requirement.
+- **`/health` and `kollektiv check` now describe the new surface** — the health
+  report gained a `gateway` block, and `kollektiv check` reports the connector
+  count, which connectors are configured, and where the gateway would listen.
+  `build_check_report()` returns that report as data instead of a terminal
+  scrape.
+- **Tests** — `tests/test_gateway.py` (49 tests: policy precedence and fail-closed
+  behaviour, token issue/rotate/revoke and the encrypted-store path, the audit
+  log's argument-name guarantee, the catalogue, every REST route, the real MCP
+  handshake behind the token wrapper, and the CLI lifecycle) plus 37 new
+  connector tests (envelope failures, chunking, retries, the WhatsApp bridge
+  gate), and `tests/test_budget.py` (21 tests: both config parsers, the
+  estimate's arithmetic and verdicts, caps, the ledger's totals and its
+  failure-is-a-warning behaviour, the CLI, and a real offline orchestrator
+  refusing an over-budget run). **454 tests total.**
+
+- **Budgets: estimate, cap, and record.** A run can no longer cost more than you
+  expected without saying so first.
+  - **`.kollektiv.yml`** (`kollektiv init-config`) carries per-project settings —
+    `project.n_agents`, `project.max_concurrency`, `budget.max_usd`,
+    `budget.warn_at`, `brain.provider`, `storage.backend` — read by the CLI, the
+    API, the MCP server and the gateway. Parsed with PyYAML when installed and
+    with a new **strict built-in subset reader** (`src/utils/yaml_subset.py`)
+    otherwise; anchors, tags, block scalars and flow mappings are refused with a
+    line number instead of guessed at, and a broken file is ignored *loudly*
+    (`ProjectConfig.problems`) rather than stopping a run.
+  - **`kollektiv estimate --project-id`**, **`kollektiv run --dry-run`** and
+    **`GET /projects/{id}/estimate`** return a cost estimate — tasks, waves,
+    brain/worker calls, tokens and dollars — computed from the plan, your
+    configured prices (`BUDGET_PRICE_*`, workers free by default) and what the
+    project has already spent. Every response says `estimate_only: true`.
+  - **Caps that refuse before anything is dispatched**: `budget.max_usd` (per
+    project, the file wins), `BUDGET_MAX_USD` and `BUDGET_DAILY_MAX_USD`
+    (deployment-wide). Over a cap → `BudgetError` → CLI exit 3 with the three
+    ways forward, API `402 Payment Required` with the numbers, or
+    `--allow-over-budget` / `allow_over_budget` for an explicit override.
+    `budget.warn_at` warns without blocking, because a warning that blocks is a
+    cap.
+  - **A local spend ledger** (`budget_ledger`, one row per project per day) with
+    `kollektiv budget`, `GET /budget` and the `budget_report` MCP tool. Brain
+    tokens are **measured** from the provider's `usage` block (now accumulated in
+    `OrchestratorBrain`); worker tokens are estimates and the row says so.
+    Tokens and dollars only — never prompts, files or identifiers.
+  - `OrchestratorBrain.stats()` gained `tokens_in`/`tokens_out`; `/health` gained
+    a `budget` block that reports configuration *without* querying (health must
+    answer instantly); the MCP server gained `estimate_cost` and
+    `budget_report`.
 
 ### Changed
 

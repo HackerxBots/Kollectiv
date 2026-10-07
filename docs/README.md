@@ -9,11 +9,13 @@ then come here for depth. Every page is self-contained and links back.
 | [Quickstart](../README.md#quickstart) | Install, first project, dashboard. (In the README, so a newcomer reads one page.) |
 | [Architecture](architecture.md) | How a run works, the shared `PROJECT_STATE.md`, session continuity (handoff), and the full project layout. |
 | [Configuration](configuration.md) | Every setting: workers, storage, GitHub, brain, runtime, with examples. |
+| [Budgets and `.kollektiv.yml`](budget.md) | Cost estimates before a run, per-project caps, and the local ledger of tokens and dollars. |
 | [Deployment and the free stack](deployment.md) | Docker Compose, bare metal, the free-hosted path (R2 + Neon + Clerk + Resend + Pages) and the self-hosting checklist. |
 | [Deploy checklist](deploy-checklist.md) | The order of operations: which accounts to create (and which have a CLI), which host actually fits in 2026, the first real project, and `scripts/smoke.py`. |
 | [Agent runtimes](agent-runtimes.md) | Arena accounts as the default, plus the full free menu (Groq, Ollama, CLI agents) and how to wire one in. |
-| [Connectors](connectors.md) | GitHub, Google, Notion, webhooks, declarative REST, calling them from MCP, and the safety rules. |
+| [Connectors](connectors.md) | GitHub, Google, Notion, Telegram, Discord, Slack, Linear, WhatsApp, webhooks, declarative REST, and the safety rules. |
 | [API, MCP and CLI](api.md) | HTTP endpoints, the MCP tool server, and every CLI command. |
+| [MCP gateway](gateway.md) | One MCP URL for a whole team: per-client tokens, policies, a namespaced tool catalogue and a local audit log. |
 | [Operations](operations.md) | Releases and versioning, health and observability, background sync, storage hygiene, scaling, and the maintainer repository checklist. |
 | [Extending Kollektiv](extending.md) | New worker shapes, brain providers, storage backends and tools. |
 | [Development](development.md) | Dev setup, design decisions and testing notes. |

@@ -120,7 +120,77 @@ design and the reasoning are in [Monetization](monetization.md).
 | `SPONSOR_MIN_INTERVAL_SECONDS` | `90` | Attention budget: at most one line per interval |
 | `SPONSOR_REQUEST_TIMEOUT` | `15.0` | Catalogue HTTP timeout |
 
-### 6. Runtime
+### 6. Connectors (`TELEGRAM_*`, `DISCORD_*`, `SLACK_*`, `LINEAR_*`, `WA_*`)
+
+All optional, all inert until filled in — see [Connectors](connectors.md) for
+what each one can do and which actions are dangerous.
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | — | Bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | — | Default destination chat id (per-call `chat_id` still wins) |
+| `TELEGRAM_BASE_URL` | `https://api.telegram.org` | Self-hosted Bot API server |
+| `DISCORD_BOT_TOKEN` | — | Bot token (Developer Portal → Bot) |
+| `DISCORD_DEFAULT_CHANNEL` | — | Default channel id for `send_message` |
+| `DISCORD_WEBHOOK_URL` | — | Incoming webhook; works without a bot token |
+| `DISCORD_API_VERSION` | `v10` | Pinned Discord API version |
+| `SLACK_BOT_TOKEN` | — | `xoxb-…` with `chat:write` |
+| `SLACK_DEFAULT_CHANNEL` | — | Default channel (`#general` or an id) |
+| `SLACK_WEBHOOK_URL` | — | Incoming webhook; works without a bot token |
+| `LINEAR_API_KEY` | — | Personal API key (`lin_api_…`) |
+| `LINEAR_TEAM_ID` | — | Default team for `create_issue` |
+| `WA_BACKEND` | inferred | `cloud` (official) or `bridge` (unofficial) |
+| `WA_DEFAULT_TO` | — | Default recipient number (digits, country code first) |
+| `WA_CLOUD_TOKEN`, `WA_PHONE_NUMBER_ID` | — | Cloud API credentials |
+| `WA_GRAPH_VERSION` | `v21.0` | Pinned Graph API version |
+| `WA_BRIDGE_URL`, `WA_BRIDGE_TOKEN` | — | The local linked-device bridge |
+| `WA_ALLOW_UNOFFICIAL` | `false` | **Required** for the bridge route: automating a personal number breaks Meta's terms and can get it banned |
+| `<SERVICE>_REQUEST_TIMEOUT` | `30.0` | Per-service HTTP timeout |
+
+### 7. MCP gateway (`GATEWAY_*`, optional)
+
+One MCP URL, per-client tokens, per-client policy and a local audit log; the
+full walkthrough is in [MCP gateway](gateway.md). Off unless you turn it on —
+`kollektiv-mcp` and the HTTP API stay first-class either way.
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `GATEWAY_ENABLED` | `false` | Master switch (or just run `kollektiv gateway serve`) |
+| `GATEWAY_HOST` / `GATEWAY_PORT` | `0.0.0.0` / `8010` | Bind address |
+| `GATEWAY_MCP_PATH` | `/mcp` | Where the MCP endpoint is mounted |
+| `GATEWAY_REQUIRE_TOKENS` | `true` | Refuse anonymous calls; `false` is development only |
+| `GATEWAY_POLICY_PATH` | — | JSON file overriding per-client policies (keep it in git) |
+| `GATEWAY_DEFAULT_CLIENT` | `dashboard` | The name `kollektiv gateway init` uses |
+| `GATEWAY_AUDIT_LIMIT` | `200` | Default rows for `GET /audit` |
+| `GATEWAY_ALLOWED_HOSTS` | — | Host-header allowlist; empty disables the MCP SDK's DNS-rebinding check (right for a bearer-token endpoint) |
+| `GATEWAY_ALLOWED_ORIGINS` | — | Origin allowlist; defaults to the hosts above |
+| `GATEWAY_MAX_BODY_BYTES` | `4194304` | Largest MCP request body |
+
+### 8. Budget (`BUDGET_*`, `PROJECT_CONFIG_PATH`, optional)
+
+Estimate a run before it happens, refuse to exceed a cap, and keep a local tally
+of tokens and dollars. The full page is [Budgets and `.kollektiv.yml`](budget.md);
+a project can also carry its own `budget.max_usd` in `.kollektiv.yml`.
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `BUDGET_ENABLED` | `true` | Estimation and the ledger; set `false` to ignore caps entirely |
+| `BUDGET_MAX_USD` | `0` | Refuse a project whose estimate is above this (0 = no cap) |
+| `BUDGET_DAILY_MAX_USD` | `0` | Refuse any run once today's recorded spend reaches this |
+| `BUDGET_WARN_AT` | `0.8` | Warn from this fraction of a cap |
+| `BUDGET_PRICE_IN_PER_MTOK` | `0.30` | Brain input price used by the estimate |
+| `BUDGET_PRICE_OUT_PER_MTOK` | `1.20` | Brain output price |
+| `BUDGET_WORKER_PRICE_IN_PER_MTOK` | `0` | Worker input price (free by default) |
+| `BUDGET_WORKER_PRICE_OUT_PER_MTOK` | `0` | Worker output price |
+| `BUDGET_PROMPT_OVERHEAD_TOKENS` | `900` | Per-task prompt overhead in the estimate |
+| `BUDGET_OUTPUT_TOKENS_PER_TASK` | `700` | Expected answer size per task |
+| `PROJECT_CONFIG_PATH` | — | Explicit `.kollektiv.yml` path (otherwise auto-found) |
+
+**Prices are yours, not ours.** The defaults are one cheap model's published
+rates; the estimate is only as honest as the numbers you put in, so check your
+provider's current pricing page and override them.
+
+### 9. Runtime
 
 | Key | Default | Purpose |
 | --- | --- | --- |

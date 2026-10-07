@@ -17,12 +17,17 @@ import pytest
 
 from config.settings import Settings
 from src.connectors.base import Connector, ConnectorAction, ConnectorRegistry
+from src.connectors.discord import DiscordConnector
 from src.connectors.github import GitHubConnector
 from src.connectors.google_workspace import GoogleWorkspaceConnector
+from src.connectors.linear import LinearConnector
 from src.connectors.notion import NotionConnector
 from src.connectors.rest import RestConnector, build_rest_connectors
+from src.connectors.slack import SlackConnector
+from src.connectors.telegram import TelegramConnector
 from src.connectors.webhook import WebhookConnector
-from src.utils.errors import ConfigurationError, ConnectorError
+from src.connectors.whatsapp import WhatsAppConnector
+from src.utils.errors import AuthenticationError, ConfigurationError, ConnectorError
 
 
 class FakeTokenStore:
@@ -59,13 +64,23 @@ def run(coro: Any) -> Any:
 def test_registry_registers_every_connector_even_unconfigured(settings: Settings) -> None:
     """All four built-ins exist so the UI can explain what is missing."""
     registry = ConnectorRegistry.from_settings(bare(settings), token_store=FakeTokenStore())
-    assert registry.names == ["github", "google", "notion", "webhook"]
+    assert registry.names == [
+            "discord",
+            "github",
+            "google",
+            "linear",
+            "notion",
+            "slack",
+            "telegram",
+            "webhook",
+            "whatsapp",
+        ]
     statuses = {status["name"]: status for status in registry.statuses()}
     assert statuses["google"]["configured"] is False
     assert "GOOGLE_CLIENT_ID" in statuses["google"]["detail"]
     assert "gmail_search" in statuses["google"]["actions"]
     assert "gmail_send" in statuses["google"]["dangerous_actions"]
-    assert registry.summary()["count"] == 4
+    assert registry.summary()["count"] == 9
 
 
 def test_registry_reports_configured_connectors(settings: Settings) -> None:
@@ -500,7 +515,17 @@ def test_invalid_custom_connectors_never_break_startup(settings: Settings) -> No
     resolved = settings.model_copy(update={"CUSTOM_CONNECTORS": "not-json"})
     assert build_rest_connectors(resolved) == []
     registry = ConnectorRegistry.from_settings(resolved, token_store=FakeTokenStore())
-    assert registry.names == ["github", "google", "notion", "webhook"]
+    assert registry.names == [
+            "discord",
+            "github",
+            "google",
+            "linear",
+            "notion",
+            "slack",
+            "telegram",
+            "webhook",
+            "whatsapp",
+        ]
 
 
 # ----------------------------------------------------------------------
@@ -546,7 +571,7 @@ def test_api_lists_and_calls_connectors(settings: Settings) -> None:
             listing = await client.get("/connectors")
             assert listing.status_code == 200
             body = listing.json()
-            assert body["count"] == 4 and "webhook" in body["configured"]
+            assert body["count"] == 9 and "webhook" in body["configured"]
             called = await client.post("/connectors/webhook/call", json={"action": "notify", "params": {"text": "hi"}})
             assert called.status_code == 200
             assert called.json()["result"][0]["status"] == 200
@@ -576,9 +601,9 @@ def test_cli_lists_connectors(settings: Settings, capsys: Any) -> None:
         settings_module.get_settings = original  # type: ignore[assignment]
     assert code == 0
     output = capsys.readouterr().out
-    for name in ("github", "google", "notion", "webhook"):
+    for name in ("discord", "github", "google", "linear", "notion", "slack", "telegram", "webhook", "whatsapp"):
         assert name in output
-    assert "0/4 ready" in output
+    assert "0/9 ready" in output
 
 
 def test_cli_call_reports_errors_without_a_traceback(settings: Settings, capsys: Any) -> None:
@@ -624,3 +649,511 @@ def test_connector_base_defaults() -> None:
     assert dummy.detail() == "ready"
     assert dummy.catalog()[0]["connector"] == "dummy"
     assert run(dummy.call("ping", {})) == {"pong": True}
+
+
+# ----------------------------------------------------------------------
+# Telegram
+# ----------------------------------------------------------------------
+def telegram(settings: Settings, handler: Any, **extra: Any) -> TelegramConnector:
+    """Build a Telegram connector with a mocked Bot API."""
+    resolved = bare(settings, **{"TELEGRAM_BOT_TOKEN": "123:ABC", "TELEGRAM_CHAT_ID": "4242", **extra})
+    return TelegramConnector(resolved, token_store=FakeTokenStore(), client=transport(handler, "https://api.telegram.org"))
+
+
+def test_telegram_unwraps_the_ok_envelope(settings: Settings) -> None:
+    """``{"ok": true, "result": ...}`` becomes just the result."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/bot123:ABC/getMe")
+        return httpx.Response(200, json={"ok": True, "result": {"id": 7, "username": "kollektiv_bot"}})
+
+    connector = telegram(settings, handler)
+    assert run(connector.call("get_me", {}))["username"] == "kollektiv_bot"
+    assert connector.is_configured is True
+
+
+def test_telegram_reports_an_api_error_instead_of_swallowing_it(settings: Settings) -> None:
+    """HTTP 200 with ``ok: false`` is still a failure."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": False, "description": "chat not found"})
+
+    connector = telegram(settings, handler)
+    with pytest.raises(ConnectorError, match="chat not found"):
+        run(connector.call("send_message", {"text": "hello"}))
+
+
+def test_telegram_send_message_uses_the_default_chat_and_validates(settings: Settings) -> None:
+    """The configured chat id is the default; empty text and missing ids are refused."""
+    seen: List[Dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 11, "chat": {"id": 4242}}})
+
+    connector = telegram(settings, handler)
+    result = run(connector.call("send_message", {"text": "deploy finished", "parse_mode": "Markdown"}))
+    assert result == {"sent": True, "message_id": 11, "chat": 4242}
+    assert seen[0]["chat_id"] == "4242" and seen[0]["parse_mode"] == "Markdown"
+
+    with pytest.raises(ConnectorError, match="needs some text"):
+        run(connector.call("send_message", {"text": "   "}))
+
+    no_chat = telegram(settings, handler, TELEGRAM_CHAT_ID="")
+    with pytest.raises(ConnectorError, match="chat_id"):
+        run(no_chat.call("send_message", {"text": "hi"}))
+
+
+def test_telegram_get_updates_clamps_the_limit(settings: Settings) -> None:
+    """A caller cannot ask for more than Telegram allows."""
+    seen: Dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"ok": True, "result": [{"update_id": 1}]})
+
+    connector = telegram(settings, handler)
+    assert run(connector.call("get_updates", {"limit": 5000}))["count"] == 1
+    assert seen["limit"] == 100
+
+
+def test_telegram_send_document_needs_a_target(settings: Settings) -> None:
+    """A document requires a URL or file id."""
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    connector = telegram(settings, handler)
+    with pytest.raises(ConnectorError, match="document"):
+        run(connector.call("send_document", {}))
+
+
+def test_telegram_unknown_action_is_a_connector_error(settings: Settings) -> None:
+    """An unknown action fails loudly and cheaply."""
+    connector = telegram(settings, lambda request: httpx.Response(200, json={"ok": True, "result": {}}))
+    with pytest.raises(ConnectorError, match="Unhandled Telegram action"):
+        run(connector.call("delete_everything", {}))
+
+
+# ----------------------------------------------------------------------
+# Discord
+# ----------------------------------------------------------------------
+def discord(settings: Settings, handler: Any, **extra: Any) -> DiscordConnector:
+    """Build a Discord connector with a mocked API."""
+    resolved = bare(settings, **{"DISCORD_BOT_TOKEN": "bot-token", "DISCORD_DEFAULT_CHANNEL": "555", **extra})
+    return DiscordConnector(
+        resolved,
+        token_store=FakeTokenStore(),
+        client=transport(handler, "https://discord.com/api/v10"),
+    )
+
+
+def test_discord_webhook_only_is_configured_and_honest_about_it(settings: Settings) -> None:
+    """A webhook alone is a usable route; the detail says what will not work."""
+    connector = DiscordConnector(
+        bare(settings, DISCORD_BOT_TOKEN="", DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1/abc"),
+        token_store=FakeTokenStore(),
+    )
+    assert connector.is_configured is True
+    assert "webhook only" in connector.detail()
+
+    empty = bare(settings, DISCORD_BOT_TOKEN="", DISCORD_WEBHOOK_URL="")
+    assert DiscordConnector(empty, token_store=FakeTokenStore()).is_configured is False
+
+
+def test_discord_uses_the_bot_prefix_and_default_channel(settings: Settings) -> None:
+    """Discord wants ``Authorization: Bot …`` and the channel defaults to settings."""
+    seen: List[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path.endswith("/users/@me"):
+            return httpx.Response(200, json={"id": "9", "username": "kollektiv"})
+        return httpx.Response(200, json={"id": "msg-1"})
+
+    connector = discord(settings, handler)
+    assert run(connector.call("get_me", {}))["username"] == "kollektiv"
+    assert seen[0].headers["authorization"] == "Bot bot-token"
+
+    result = run(connector.call("send_message", {"content": "build failed"}))
+    assert result["channel_id"] == "555" and result["ids"] == ["msg-1"]
+    assert json.loads(seen[1].content.decode()) == {"content": "build failed"}
+
+
+def test_discord_chunks_long_messages(settings: Settings) -> None:
+    """A 4500-character message becomes three posts, not a 400."""
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content.decode())["content"])
+        return httpx.Response(200, json={"id": f"m{len(seen)}"})
+
+    connector = discord(settings, handler)
+    result = run(connector.call("send_message", {"content": "x" * 4500}))
+    assert result["messages"] == 3
+    assert all(len(chunk) <= 2000 for chunk in seen)
+
+
+def test_discord_rate_limits_are_retried(settings: Settings) -> None:
+    """429 is transient, so the retry wrapper replays it and then succeeds."""
+    attempts = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return httpx.Response(429, json={"message": "You are being rate limited."})
+        return httpx.Response(200, json={"id": "1", "username": "kollektiv"})
+
+    connector = discord(settings, handler)
+    assert run(connector.call("get_me", {}))["id"] == "1"
+    assert attempts["n"] == 2
+
+
+def test_discord_rejects_a_message_without_a_channel(settings: Settings) -> None:
+    """No channel, no post — and no request is made."""
+    connector = discord(
+        settings,
+        lambda request: httpx.Response(200, json={}),  # pragma: no cover
+        DISCORD_DEFAULT_CHANNEL="",
+    )
+    with pytest.raises(ConnectorError, match="channel_id"):
+        run(connector.call("send_message", {"content": "hello"}))
+
+
+def test_discord_webhook_route_posts_to_the_url(settings: Settings) -> None:
+    """``send_webhook`` posts to the configured URL, not to the API host."""
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(204)
+
+    connector = DiscordConnector(
+        bare(settings, DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1/abc"),
+        token_store=FakeTokenStore(),
+        client=transport(handler, "https://discord.com/api/v10"),
+    )
+    assert run(connector.call("send_webhook", {"content": "ping"}))["sent"] is True
+    assert seen == ["https://discord.com/api/webhooks/1/abc"]
+
+
+def test_discord_bot_actions_require_a_token(settings: Settings) -> None:
+    """Bot actions without a token fail with an explanation, not a 401 storm."""
+    connector = DiscordConnector(
+        bare(settings, DISCORD_BOT_TOKEN="", DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/1/abc"),
+        token_store=FakeTokenStore(),
+        client=transport(lambda request: httpx.Response(200, json={}), "https://discord.com/api/v10"),
+    )
+    with pytest.raises(AuthenticationError, match="DISCORD_BOT_TOKEN"):
+        run(connector.call("get_me", {}))
+
+
+# ----------------------------------------------------------------------
+# Slack
+# ----------------------------------------------------------------------
+def slack(settings: Settings, handler: Any, **extra: Any) -> SlackConnector:
+    """Build a Slack connector with a mocked API."""
+    resolved = bare(settings, **{"SLACK_BOT_TOKEN": "xoxb-test", "SLACK_DEFAULT_CHANNEL": "#general", **extra})
+    return SlackConnector(
+        resolved,
+        token_store=FakeTokenStore(),
+        client=transport(handler, "https://slack.com/api"),
+    )
+
+
+def test_slack_treats_ok_false_as_a_failure(settings: Settings) -> None:
+    """Slack answers HTTP 200 with ``ok: false``; that is an error, not a result."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": False, "error": "channel_not_found"})
+
+    connector = slack(settings, handler)
+    with pytest.raises(ConnectorError, match="channel_not_found"):
+        run(connector.call("post_message", {"text": "hello"}))
+
+
+def test_slack_auth_test_and_channel_listing(settings: Settings) -> None:
+    """``auth_test`` proves the token; channels are trimmed to id/name/privacy."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/auth.test"):
+            return httpx.Response(200, json={"ok": True, "team": "Kollektiv", "user": "bot", "url": "https://x.slack.com"})
+        return httpx.Response(
+            200,
+            json={"ok": True, "channels": [{"id": "C1", "name": "general", "is_private": False}, {"id": "C2"}]},
+        )
+
+    connector = slack(settings, handler)
+    assert run(connector.call("auth_test", {}))["team"] == "Kollektiv"
+    assert run(connector.call("list_channels", {})) == [
+        {"id": "C1", "name": "general", "members": None},
+        {"id": "C2", "name": None, "members": None},
+    ]
+
+
+def test_slack_post_message_reports_each_chunk(settings: Settings) -> None:
+    """Long text is chunked and every ``ts`` is returned."""
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content.decode())["text"])
+        return httpx.Response(200, json={"ok": True, "ts": f"t{len(seen)}"})
+
+    connector = slack(settings, handler)
+    result = run(connector.call("post_message", {"text": "y" * 4000}))
+    assert result["messages"] == 2 and result["ts"] == ["t1", "t2"]
+    assert all(len(chunk) <= 3000 for chunk in seen)
+    assert result["channel"] == "#general"
+
+
+def test_slack_webhook_route_works_without_a_bot_token(settings: Settings) -> None:
+    """An incoming webhook needs only the URL."""
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, text="ok")
+
+    connector = SlackConnector(
+        bare(settings, SLACK_BOT_TOKEN="", SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T/B/X"),
+        token_store=FakeTokenStore(),
+        client=transport(handler, "https://slack.com/api"),
+    )
+    assert connector.is_configured is True
+    assert "webhook only" in connector.detail()
+    assert run(connector.call("send_webhook", {"text": "deploy done"}))["sent"] is True
+    assert seen == ["https://hooks.slack.com/services/T/B/X"]
+
+    with pytest.raises(ConnectorError, match="some text"):
+        run(connector.call("send_webhook", {"text": "   "}))
+
+    no_url = SlackConnector(
+        bare(settings, SLACK_BOT_TOKEN="", SLACK_WEBHOOK_URL=""),
+        token_store=FakeTokenStore(),
+        client=transport(handler, "https://slack.com/api"),
+    )
+    with pytest.raises(ConnectorError, match="SLACK_WEBHOOK_URL"):
+        run(no_url.call("send_webhook", {"text": "hi"}))
+
+
+# ----------------------------------------------------------------------
+# Linear
+# ----------------------------------------------------------------------
+def linear(settings: Settings, handler: Any, **extra: Any) -> LinearConnector:
+    """Build a Linear connector with a mocked GraphQL endpoint."""
+    resolved = bare(settings, **{"LINEAR_API_KEY": "lin_api_test", "LINEAR_TEAM_ID": "team-1", **extra})
+    return LinearConnector(resolved, token_store=FakeTokenStore(), client=transport(handler, "https://api.linear.app"))
+
+
+def test_linear_viewer_and_teams(settings: Settings) -> None:
+    """GraphQL responses are unwrapped into plain dicts."""
+    queries: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        queries.append(body["query"])
+        if "viewer" in body["query"]:
+            return httpx.Response(200, json={"data": {"viewer": {"id": "u1", "name": "Ada", "email": "ada@x.io"}}})
+        return httpx.Response(200, json={"data": {"teams": {"nodes": [{"id": "t1", "name": "Core", "key": "CORE"}]}}})
+
+    connector = linear(settings, handler)
+    assert run(connector.call("viewer", {}))["user"]["name"] == "Ada"
+    assert run(connector.call("list_teams", {}))[0]["key"] == "CORE"
+    assert len(queries) == 2
+
+
+def test_linear_surfaces_graphql_errors(settings: Settings) -> None:
+    """A 200 response carrying ``errors`` is still a failure."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"errors": [{"message": "Entity not found"}]})
+
+    connector = linear(settings, handler)
+    with pytest.raises(ConnectorError, match="Entity not found"):
+        run(connector.call("viewer", {}))
+
+
+def test_linear_create_issue_requires_title_and_team(settings: Settings) -> None:
+    """Missing fields are refused before any request goes out."""
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
+        return httpx.Response(200, json={"data": {}})
+
+    connector = linear(settings, handler)
+    with pytest.raises(ConnectorError, match="title"):
+        run(connector.call("create_issue", {"team_id": "t1"}))
+
+    no_team = linear(settings, handler, LINEAR_TEAM_ID="")
+    with pytest.raises(ConnectorError, match="team"):
+        run(no_team.call("create_issue", {"title": "Ship it"}))
+
+
+def test_linear_create_issue_and_comment(settings: Settings) -> None:
+    """The mutation payload is sent as declared and the result is trimmed."""
+    sent: List[Dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        sent.append(body)
+        if "commentCreate" in body["query"]:
+            return httpx.Response(200, json={"data": {"commentCreate": {"success": True, "comment": {"id": "c1", "url": "https://linear.app/c/1"}}}})
+        return httpx.Response(200, json={"data": {"issueCreate": {"success": True, "issue": {"id": "i1", "identifier": "CORE-1", "url": "https://linear.app/i/1"}}}})
+
+    connector = linear(settings, handler)
+    issue = run(connector.call("create_issue", {"title": "Ship it", "description": "soon", "priority": 2}))
+    assert issue["identifier"] == "CORE-1"
+    assert sent[0]["variables"]["input"]["teamId"] == "team-1"
+    assert sent[0]["variables"]["input"]["priority"] == 2
+
+    comment = run(connector.call("comment_issue", {"issue_id": "i1", "body": "done"}))
+    assert comment["created"] is True and sent[1]["variables"]["input"]["issueId"] == "i1"
+
+    with pytest.raises(ConnectorError, match="priority"):
+        run(connector.call("create_issue", {"title": "x", "priority": 9}))
+
+
+def test_linear_list_issues_filters(settings: Settings) -> None:
+    """Only the filters that were passed reach the query variables."""
+    seen: Dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content.decode())["variables"])
+        return httpx.Response(200, json={"data": {"issues": {"nodes": []}}})
+
+    connector = linear(settings, handler)
+    run(connector.call("list_issues", {"limit": 5, "team_id": "t9", "state": "In Progress"}))
+    assert seen == {"first": 5, "teamId": "t9", "state": "In Progress"}
+
+
+# ----------------------------------------------------------------------
+# WhatsApp (official Cloud API + the opt-in OpenClaw-style bridge)
+# ----------------------------------------------------------------------
+def test_whatsapp_cloud_route_posts_an_official_message(settings: Settings) -> None:
+    """The Cloud API is the default when its credentials exist."""
+    sent: List[Dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/v21.0/12345/messages")
+        sent.append(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"messages": [{"id": "wamid.1"}]})
+
+    resolved = bare(settings, WA_BACKEND="cloud", WA_CLOUD_TOKEN="eaag", WA_PHONE_NUMBER_ID="12345", WA_DEFAULT_TO="2348000000000")
+    connector = WhatsAppConnector(resolved, token_store=FakeTokenStore(), client=transport(handler, "https://graph.facebook.com"))
+    result = run(connector.call("send_message", {"text": "hi", "to": "+2348000000000"}))
+    assert result["sent"] is True and result["to"] == "2348000000000"
+    assert sent[0]["text"] == {"preview_url": False, "body": "hi"}
+    assert run(connector.call("status", {}))["backend"] == "cloud"
+
+
+def test_whatsapp_cloud_route_requires_credentials(settings: Settings) -> None:
+    """Complete credentials are required before the cloud route is usable."""
+    resolved = bare(settings, WA_BACKEND="cloud", WA_CLOUD_TOKEN="", WA_PHONE_NUMBER_ID="")
+    connector = WhatsAppConnector(resolved, token_store=FakeTokenStore())
+    assert connector.is_configured is False
+    assert "WA_CLOUD_TOKEN" in connector.detail()
+    with pytest.raises(ConnectorError, match="not usable"):
+        run(connector.call("send_message", {"text": "hi", "to": "123"}))
+
+
+def test_whatsapp_bridge_is_inert_until_the_unofficial_flag_is_set(settings: Settings) -> None:
+    """The OpenClaw-style linked-device route is opt-in, and says why."""
+    resolved = bare(settings, WA_BACKEND="bridge", WA_BRIDGE_URL="http://127.0.0.1:8090", WA_ALLOW_UNOFFICIAL=False)
+    connector = WhatsAppConnector(resolved, token_store=FakeTokenStore())
+    assert connector.is_configured is False
+    detail = connector.detail()
+    assert "terms" in detail and "banned" in detail
+    assert run(connector.call("status", {}))["configured"] is False
+    with pytest.raises(ConnectorError, match="WA_ALLOW_UNOFFICIAL|not usable"):
+        run(connector.call("send_message", {"text": "hi", "to": "123"}))
+
+
+def test_whatsapp_bridge_pairs_and_sends_when_enabled(settings: Settings) -> None:
+    """With the flag set, the bridge contract is used exactly as documented."""
+    calls: List[tuple] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, str(request.url), request.headers.get("authorization")))
+        if request.url.path.endswith("/status"):
+            return httpx.Response(200, json={"connected": True, "me": "2348000000000"})
+        return httpx.Response(200, json={"sent": True, "id": "3EB0"})
+
+    resolved = bare(
+        settings,
+        WA_BACKEND="bridge",
+        WA_BRIDGE_URL="http://127.0.0.1:8090",
+        WA_BRIDGE_TOKEN="bridge-secret",
+        WA_ALLOW_UNOFFICIAL=True,
+        WA_DEFAULT_TO="2348000000000",
+    )
+    connector = WhatsAppConnector(resolved, token_store=FakeTokenStore(), client=transport(handler, "http://127.0.0.1:8090"))
+    status = run(connector.call("status", {}))
+    assert status["connected"] is True and "unofficial" in status["warning"]
+
+    result = run(connector.call("send_message", {"text": "ping"}))
+    assert result["sent"] is True and result["backend"] == "bridge"
+    assert calls[1][:2] == ("POST", "http://127.0.0.1:8090/send")
+    assert calls[1][2] == "Bearer bridge-secret"
+
+
+def test_whatsapp_unknown_backend_is_unconfigured(settings: Settings) -> None:
+    """A typo in WA_BACKEND never guesses."""
+    connector = WhatsAppConnector(bare(settings, WA_BACKEND="carrier-pigeon"), token_store=FakeTokenStore())
+    assert connector.backend == ""
+    assert connector.is_configured is False
+    assert "WA_BACKEND=cloud" in connector.detail() or "not configured" in connector.detail()
+
+
+def test_whatsapp_rejects_an_empty_message_and_target(settings: Settings) -> None:
+    """Both halves of a message are validated before dialling out."""
+    resolved = bare(settings, WA_BACKEND="cloud", WA_CLOUD_TOKEN="t", WA_PHONE_NUMBER_ID="1", WA_DEFAULT_TO="")
+    connector = WhatsAppConnector(resolved, token_store=FakeTokenStore(), client=transport(lambda request: httpx.Response(200, json={}), "https://graph.facebook.com"))
+    with pytest.raises(ConnectorError, match="'to' number"):
+        run(connector.call("send_message", {"text": "hi"}))
+    with pytest.raises(ConnectorError, match="some text"):
+        run(connector.call("send_message", {"to": "123", "text": "  "}))
+
+
+# ----------------------------------------------------------------------
+# The five new connectors inside the registry
+# ----------------------------------------------------------------------
+def test_new_connectors_are_optional_and_never_break_startup(settings: Settings) -> None:
+    """None of them is required for the registry to exist or to report state."""
+    registry = ConnectorRegistry.from_settings(bare(settings), token_store=FakeTokenStore())
+    statuses = {status["name"]: status for status in registry.statuses()}
+    for name in ("telegram", "discord", "slack", "linear", "whatsapp"):
+        assert statuses[name]["configured"] is False
+        assert statuses[name]["detail"]
+        assert statuses[name]["actions"]
+    assert "send_message" in statuses["telegram"]["dangerous_actions"]
+    assert "create_issue" in statuses["linear"]["dangerous_actions"]
+
+
+def test_new_connectors_appear_in_the_catalog_with_their_actions(settings: Settings) -> None:
+    """The catalog is what the dashboard and the gateway both read."""
+    registry = ConnectorRegistry.from_settings(bare(settings), token_store=FakeTokenStore())
+    catalog = registry.catalog()
+    by_connector: Dict[str, set] = {}
+    for entry in catalog:
+        by_connector.setdefault(entry["connector"], set()).add(entry["name"])
+    assert by_connector["telegram"] == {"get_me", "get_updates", "send_message", "send_document"}
+    assert by_connector["discord"] == {"get_me", "list_channels", "send_message", "send_webhook"}
+    assert by_connector["slack"] == {"auth_test", "list_channels", "post_message", "send_webhook"}
+    assert by_connector["linear"] == {"viewer", "list_teams", "list_issues", "create_issue", "comment_issue"}
+    assert by_connector["whatsapp"] == {"status", "send_message"}
+    assert all(entry["configured"] is False for entry in catalog)
+
+
+def test_whatsapp_chunks_a_long_message(settings: Settings) -> None:
+    """A 5000-character message is split, not truncated."""
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content.decode())["text"]["body"])
+        return httpx.Response(200, json={"messages": [{"id": f"wamid.{len(seen)}"}]})
+
+    resolved = bare(settings, WA_BACKEND="cloud", WA_CLOUD_TOKEN="t", WA_PHONE_NUMBER_ID="1", WA_DEFAULT_TO="234")
+    connector = WhatsAppConnector(resolved, token_store=FakeTokenStore(), client=transport(handler, "https://graph.facebook.com"))
+    result = run(connector.call("send_message", {"text": "z" * 5000}))
+    assert result["messages"] == 2 and result["message_id"] == "wamid.1"
+    assert all(len(chunk) <= 4096 for chunk in seen)
+    assert "".join(seen) == "z" * 5000

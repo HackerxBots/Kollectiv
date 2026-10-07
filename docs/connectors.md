@@ -27,8 +27,44 @@ curl -s -X POST localhost:8000/connectors/github/call \
 | **GitHub** | `GITHUB_TOKEN`, `GITHUB_REPO` | `recent_commits`, `commit_diff`, `open_pull_requests`, `pull_request_diff`, `file`, `repo_tree`, `open_issues`, `comment_on_pull_request`* | the repository the team works on |
 | **Google Workspace** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | `gmail_search`, `gmail_read`, `gmail_send`*, `calendar_events`, `calendar_create_event`*, `drive_search`, `drive_export` | one OAuth token covers Gmail + Calendar + Drive; the refreshed access token is cached in memory and in the encrypted store |
 | **Notion** | `NOTION_TOKEN` | `search`, `get_page`, `query_database`, `create_page`*, `append_text`* | share each page/database with the integration |
+| **Telegram** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `get_me`, `get_updates`, `send_message`*, `send_document`* | talk to [@BotFather](https://t.me/BotFather); the Bot API's `{ok, result}` envelope is unwrapped, so an HTTP 200 that failed is still an error |
+| **Discord** | `DISCORD_BOT_TOKEN` **or** `DISCORD_WEBHOOK_URL` | `get_me`, `list_channels`, `send_message`*, `send_webhook`* | either route works alone; messages are chunked at Discord's 2000-character limit |
+| **Slack** | `SLACK_BOT_TOKEN` **or** `SLACK_WEBHOOK_URL` | `auth_test`, `list_channels`, `post_message`*, `send_webhook`* | needs the `chat:write` scope for `post_message`; Slack answers HTTP 200 with `{"ok": false}`, so the envelope decides |
+| **Linear** | `LINEAR_API_KEY`, `LINEAR_TEAM_ID` | `viewer`, `list_teams`, `list_issues`, `create_issue`*, `comment_issue`* | GraphQL; an out-of-range `priority` is refused rather than clamped |
+| **WhatsApp** | `WA_BACKEND` + Cloud API **or** bridge credentials | `status`, `send_message`* | two backends, one of them unofficial — read [the section below](#whatsapp-two-backends-one-of-them-unofficial) first |
 | **Webhooks** | `EVENT_WEBHOOKS` | `notify`, `list_targets` | run summaries are broadcast after every orchestrated run; point it at Slack, Discord, n8n, Activepieces, Zapier or your own service |
 | **Any REST API** | `CUSTOM_CONNECTORS` | whatever you declare | one JSON entry per service, one action per endpoint — no code |
+
+Nine connectors, 41 actions, and **every one of them is optional**: an
+unconfigured connector is still listed (`kollektiv connectors` says what is
+missing) and never blocks startup.
+
+### WhatsApp: two backends, one of them unofficial
+
+WhatsApp is the one connector where the *route* matters more than the code, so
+Kollektiv ships both and makes you choose:
+
+| | `WA_BACKEND=cloud` | `WA_BACKEND=bridge` |
+| --- | --- | --- |
+| What it is | Meta's official **WhatsApp Business Cloud API** | A **linked-device bridge** (the OpenClaw route: [Baileys](https://github.com/WhiskeySockets/Baileys) or [`whatsapp-web.js`](https://github.com/pedroslopez/whatsapp-web.js)) that pairs *your* number by QR, once |
+| Needs | A Meta business account, a permanent token (`WA_CLOUD_TOKEN`), a phone number id (`WA_PHONE_NUMBER_ID`) | A tiny local Node gateway (`WA_BRIDGE_URL`) holding the session | 
+| Message limits | 24-hour customer-service window; templates for anything outside it | Whatever the linked device can send |
+| Honest downsides | Business verification, per-conversation pricing, template approval | **Unofficial.** It breaks when WhatsApp changes the protocol, the session can expire, and Meta can flag or ban the number |
+| Kollektiv's stance | Supported, documented, default | Supported and **off by default**: `WA_ALLOW_UNOFFICIAL=true` is required, an explicit "my number, my risk" |
+
+The bridge contract is deliberately tiny, so any of the usual Node gateways can
+serve it (the HTTP shape is two endpoints; see `src/connectors/whatsapp.py` for
+the exact payloads and the `TODO` about the wppconnect/wa-automate variants):
+
+```
+GET  {WA_BRIDGE_URL}{WA_BRIDGE_STATUS_PATH}   -> {"connected": true, "me": "2348…"}
+POST {WA_BRIDGE_URL}{WA_BRIDGE_SEND_PATH}     <- {"to": "2348…", "text": "…"}
+                                              -> {"sent": true, "id": "…"}
+Authorization: Bearer {WA_BRIDGE_TOKEN}       (optional)
+```
+
+Until the flag is set, the connector reports `not configured` and
+`detail()` explains the risk in one sentence — nobody enables it by accident.
 
 `*` = **dangerous**: it changes something outside Kollektiv, so it requires an
 explicit confirmation (`--confirm`, `"confirm": true` or `confirm=True` in MCP).
@@ -109,5 +145,9 @@ typo" without reading a log.
   service returns an error for that action, logs it, and leaves the run alone.
 - Read actions are safe by default; anything that sends, creates or comments is
   flagged `dangerous` and gated behind `confirm`.
+- Through the [MCP gateway](gateway.md) a connector can be *narrowed* without
+  touching `.env`: give that client a token whose policy denies
+  `connectors.github.*`, or `read_only: true`, and the tools disappear from its
+  catalogue instead of failing at call time.
 
 ---

@@ -157,6 +157,13 @@ Cloudflare Pages deployment is automatic once you set the repository variable
 `CF_PAGES_PROJECT` (and the `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`
 secrets); without them the workflow publishes the same folder to GitHub Pages.
 
+With Cloudflare configured, **branch previews come for free**: `main` deploys to
+the project's production URL and every other branch (and pull request) deploys to
+`https://<branch>.<project>.pages.dev`, with the link posted as a sticky comment
+on the PR. One project and one shareable link is enough — the previews are just
+that link, per branch. GitHub Pages has a single site per repository, so the
+fallback stays `main`-only on purpose.
+
 ### Self-hosting checklist
 
 Kollektiv is designed to be self-hosted; nothing phones home and no feature is

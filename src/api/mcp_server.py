@@ -316,6 +316,45 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
         return _json(summary)
 
     @server.tool()
+    async def estimate_cost(project_id: str, n_agents: int = 0) -> str:
+        """Estimate what running a project will cost, before running it.
+
+        The number is arithmetic on the plan (task count and description length),
+        the configured prices and what the project has already spent — an
+        estimate, labelled as one. Use it to decide whether a run is worth it,
+        or to check it against the project's ``.kollektiv.yml`` cap.
+
+        Args:
+            project_id: Identifier returned by ``create_project``.
+            n_agents: Estimate a different agent count (0 = the project's own).
+        """
+        instance = await get_orchestrator()
+        try:
+            estimate = await instance.estimate_project_cost(project_id, n_agents=n_agents or None)
+        except KeyError:
+            return _json({"error": f"unknown project: {project_id}"})
+        except Exception as exc:  # noqa: BLE001 - tools report, never raise
+            LOGGER.error("estimate_cost failed: %s", exc)
+            return _json({"error": str(exc)})
+        return _json(estimate.to_dict())
+
+    @server.tool()
+    async def budget_report() -> str:
+        """Return the local spend ledger: tokens, dollars, caps and today's total.
+
+        The tally lives in this deployment's own database. Nothing is uploaded
+        and the ledger stores tokens and dollars — never prompts, files or
+        identifiers.
+        """
+        instance = await get_orchestrator()
+        try:
+            report = await instance.budget_report()
+        except Exception as exc:  # noqa: BLE001 - tools report, never raise
+            LOGGER.error("budget_report failed: %s", exc)
+            return _json({"error": str(exc)})
+        return _json(report)
+
+    @server.tool()
     async def sponsor_line(context: str = "waiting") -> str:
         """Return the opt-in sponsor line for a dead-time moment, if enabled.
 

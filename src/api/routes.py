@@ -53,7 +53,7 @@ from src.orchestrator.app import Orchestrator
 from src.sponsors.catalog import load_catalog, split_categories
 from src.sponsors.ledger import SponsorLedger, verify_claim
 from src.sponsors.line import SponsorLineMux
-from src.utils.errors import ConfigurationError, ConnectorError, KollektivError
+from src.utils.errors import BudgetError, ConfigurationError, ConnectorError, KollektivError
 from src.utils.logger import configure_logging, get_logger
 from src.utils.paths import safe_path_segment, safe_relative_path
 
@@ -318,13 +318,18 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         project_id: str,
         background: bool = Query(default=False, description="Return immediately and run in the background"),
         max_concurrency: Optional[int] = Query(default=None, ge=1, le=32),
+        allow_over_budget: bool = Query(
+            default=False, description="Run even when the estimate exceeds a configured cost cap"
+        ),
         orchestrator: Orchestrator = Depends(get_orchestrator),
     ) -> Any:
         """Dispatch the plan to the agent pool.
 
         With ``background=true`` the request returns as soon as the run is
         scheduled (useful for long projects); otherwise it waits for the
-        results.
+        results. The run is estimated first (``GET /projects/{id}/estimate``)
+        and refused with ``402`` when it would exceed a configured cap, unless
+        ``allow_over_budget=true``.
         """
         try:
             project = await orchestrator.get_project(project_id)
@@ -337,7 +342,9 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         if background:
             import asyncio
 
-            asyncio.create_task(_run_safely(orchestrator, project_id, max_concurrency))
+            asyncio.create_task(
+                _run_safely(orchestrator, project_id, max_concurrency, allow_over_budget=allow_over_budget)
+            )
             return RunResponse(
                 project_id=project_id,
                 status="running",
@@ -345,7 +352,17 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             )
 
         try:
-            summary = await orchestrator.run_project(project_id, max_concurrency=max_concurrency)
+            summary = await orchestrator.run_project(
+                project_id, max_concurrency=max_concurrency, allow_over_budget=allow_over_budget
+            )
+        except BudgetError as exc:
+            # 402 Payment Required is the honest code: the work is fine, the
+            # budget is the problem, and the body carries the numbers.
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=exc.message,
+                headers={"X-Kollektiv-Budget": "exceeded"},
+            ) from exc
         except ConfigurationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except KeyError as exc:
@@ -354,6 +371,29 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             LOGGER.error("Run failed for %s: %s", project_id, exc)
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         return RunResponse(**summary)
+
+    @router.get("/projects/{project_id}/estimate", tags=["projects"])
+    async def estimate_project(
+        project_id: str,
+        n_agents: Optional[int] = Query(default=None, ge=1, le=12, description="Estimate a different agent count"),
+        orchestrator: Orchestrator = Depends(get_orchestrator),
+    ) -> Dict[str, Any]:
+        """Estimate what running this project will cost, before running it.
+
+        The number is arithmetic on the plan (task count and description length),
+        the configured prices and what the project has already spent — never a
+        prediction dressed up as a fact: ``estimate_only`` is in the response.
+        """
+        try:
+            estimate = await orchestrator.estimate_project_cost(project_id, n_agents=n_agents)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return estimate.to_dict()
+
+    @router.get("/budget", tags=["system"])
+    async def budget_report(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
+        """Return the local spend ledger, today's position and the caps in force."""
+        return await orchestrator.budget_report()
 
     @router.post("/projects/{project_id}/replan", tags=["projects"])
     async def replan_project(
@@ -744,10 +784,14 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
     return router
 
 
-async def _run_safely(orchestrator: Orchestrator, project_id: str, max_concurrency: Optional[int]) -> None:
+async def _run_safely(
+    orchestrator: Orchestrator, project_id: str, max_concurrency: Optional[int], *, allow_over_budget: bool = False
+) -> None:
     """Run a project in the background without letting exceptions escape."""
     try:
-        await orchestrator.run_project(project_id, max_concurrency=max_concurrency)
+        await orchestrator.run_project(
+            project_id, max_concurrency=max_concurrency, allow_over_budget=allow_over_budget
+        )
     except Exception as exc:  # noqa: BLE001 - background tasks must not raise
         LOGGER.error("Background run of %s failed: %s", project_id, exc, exc_info=True)
 

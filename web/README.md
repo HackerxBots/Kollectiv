@@ -89,7 +89,9 @@ setups (API behind the same host) are detected automatically.
 | Behind Clerk auth | sign in through your Clerk frontend, then `localStorage.setItem("kollektiv.token", token)` — sent as `Authorization: Bearer …` |
 
 Without `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` the same folder is
-published by `.github/workflows/pages.yml` to GitHub Pages instead.
+published by `.github/workflows/pages.yml` to GitHub Pages instead (main only —
+GitHub Pages has one site per repository). With them set, every branch gets a
+preview at `https://<branch>.<project>.pages.dev` and the PR gets the link.
 
 ## Local preview
 

@@ -153,6 +153,14 @@ class MaxRetriesExceeded(KollektivError):
         self.last_error = last_error
 
 
+class BudgetError(KollektivError):
+    """Raised when a run would exceed a configured cost cap.
+
+    Carries the numbers that produced the decision so the caller (CLI, API, MCP
+    client) can show them instead of a bare "no".
+    """
+
+
 __all__ = [
     "KollektivError",
     "RetryableError",
@@ -172,4 +180,5 @@ __all__ = [
     "StateError",
     "TaskTimeoutError",
     "MaxRetriesExceeded",
+    "BudgetError",
 ]

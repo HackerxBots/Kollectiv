@@ -16,6 +16,7 @@ Usage::
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from sqlmodel import col, select
@@ -40,6 +41,7 @@ from src.db.models import (
 )
 from src.github.github_client import GitHubClient
 from src.orchestrator.brain import OrchestratorBrain
+from src.orchestrator.budget import BudgetLedger, BudgetPlanner, CostEstimate, daily_cap_check, usd_for_tokens
 from src.orchestrator.collector import Collector
 from src.orchestrator.dispatcher import Dispatcher
 from src.orchestrator.handoff import build_handoff, write_handoff_file
@@ -48,9 +50,10 @@ from src.orchestrator.sync_engine import SyncEngine
 from src.sponsors.line import SponsorLineMux
 from src.storage.factory import build_storage
 from src.storage.state_manager import StateManager
-from src.utils.errors import ConfigurationError
+from src.utils.errors import BudgetError, ConfigurationError
 from src.utils.logger import get_logger
 from src.utils.paths import safe_path_segment
+from src.utils.project_config import ProjectConfig, load_project_config
 from src.utils.token_store import TokenStore
 
 LOGGER = get_logger(__name__)
@@ -97,6 +100,9 @@ class Orchestrator:
             settings=self.settings,
         )
         self.planner = Planner(self.brain, settings=self.settings)
+        # Cost estimation, caps and the local spend ledger (.kollektiv.yml aware).
+        self.budget_ledger = BudgetLedger(self.settings)
+        self._project_config: Optional[ProjectConfig] = None
 
         self.started = False
         self.started_at: Optional[datetime] = None
@@ -334,19 +340,33 @@ class Orchestrator:
         LOGGER.info("Created project %s (%s) with %s task(s)", project_id, project.name, len(plan["tasks"]))
         return record
 
-    async def run_project(self, project_id: str, max_concurrency: Optional[int] = None) -> Dict[str, Any]:
+    async def run_project(
+        self,
+        project_id: str,
+        max_concurrency: Optional[int] = None,
+        *,
+        allow_over_budget: bool = False,
+    ) -> Dict[str, Any]:
         """Dispatch a project's plan to the agent pool.
+
+        Before anything is dispatched, the run is *estimated* and checked against
+        the caps in ``.kollektiv.yml`` (``budget.max_usd``), ``BUDGET_MAX_USD``
+        and ``BUDGET_DAILY_MAX_USD``. The estimate is logged either way, so the
+        cost of a run is never a surprise after the fact.
 
         Args:
             project_id: The project to run.
             max_concurrency: Cap on simultaneous agents.
+            allow_over_budget: Proceed even when a cap is exceeded (the operator's
+                explicit override; the refusal is logged as a warning).
 
         Returns:
-            ``{project_id, status, tasks_dispatched, results, artifact}``.
+            ``{project_id, status, tasks_dispatched, results, artifact, cost}``.
 
         Raises:
             KeyError: When the project is unknown.
             ConfigurationError: When there are no workers or nothing to do.
+            BudgetError: When the estimate exceeds a configured cap.
         """
         record = await self.get_project(project_id)
         if record is None:
@@ -364,6 +384,9 @@ class Orchestrator:
             tasks = plan.get("tasks", [])
             record["plan"] = plan
             await self._persist_plan(project_id, plan)
+
+        estimate = await self._enforce_budget(project_id, allow_over_budget=allow_over_budget)
+        usage_before = self.brain.usage()
 
         await self._set_project_status(project_id, "running")
         await self.state.update_fields(
@@ -417,6 +440,16 @@ class Orchestrator:
             },
         }
         summary["storage_backend"] = self.settings.storage_backend
+        if estimate is not None:
+            await self._record_run_spend(project_id, estimate, tasks=len(tasks), before=usage_before)
+            summary["cost"] = {
+                "estimated_usd": estimate.total_usd,
+                "projected_usd": estimate.projected_usd,
+                "cap_usd": estimate.max_usd,
+                "cap_source": estimate.source,
+                "tasks": estimate.tasks,
+                "note": "recorded in the local ledger; `kollektiv budget` shows it",
+            }
         LOGGER.info(
             "Project %s finished with status %s (%s/%s tasks, storage=%s)",
             project_id,
@@ -753,8 +786,187 @@ class Orchestrator:
                     if self.connectors is not None
                     else {"count": 0, "configured": [], "actions": 0}
                 ),
+                "gateway": self.gateway_summary(),
+                "budget": {
+                    "enabled": bool(self.settings.BUDGET_ENABLED),
+                    "max_usd": float(self.settings.BUDGET_MAX_USD),
+                    "daily_max_usd": float(self.settings.BUDGET_DAILY_MAX_USD),
+                    "project_config": (
+                        str(self._project_config.path) if self._project_config and self._project_config.path else None
+                    ),
+                    "ledger": "run `kollektiv budget` for totals (skipped here: /health must not query)",
+                },
             },
             "warnings": self.settings.config_warnings(),
+        }
+
+    # ------------------------------------------------------------------
+    # Project configuration and budget
+    # ------------------------------------------------------------------
+    def project_config(self, *, reload: bool = False) -> ProjectConfig:
+        """Return this deployment's ``.kollektiv.yml`` (loaded once).
+
+        Args:
+            reload: Re-read the file instead of using the cached copy.
+
+        Returns:
+            The :class:`~src.utils.project_config.ProjectConfig`. A missing file
+            yields an empty config, never an error.
+        """
+        if self._project_config is None or reload:
+            explicit = self.settings.PROJECT_CONFIG_PATH or None
+            config = load_project_config(explicit)
+            if not config.found and not explicit:
+                # The orchestrator runs from many places; also look next to the
+                # workspace, which is where a deployed instance keeps the repo.
+                config = load_project_config(None, start=Path(self.settings.WORKSPACE_DIR))
+            self._project_config = config
+        return self._project_config
+
+    def budget_planner(self, *, reload: bool = False) -> BudgetPlanner:
+        """Return a :class:`~src.orchestrator.budget.BudgetPlanner` for this run.
+
+        Args:
+            reload: Re-read the project config first.
+
+        Returns:
+            A planner bound to the current settings and project config.
+        """
+        return BudgetPlanner(self.settings, config=self.project_config(reload=reload))
+
+    async def estimate_project_cost(
+        self, project_id: str, *, n_agents: Optional[int] = None
+    ) -> CostEstimate:
+        """Estimate what running ``project_id`` will cost.
+
+        Args:
+            project_id: The project to estimate.
+            n_agents: Override the agent count (defaults to the project's own).
+
+        Returns:
+            The :class:`~src.orchestrator.budget.CostEstimate`. A project that
+            has not been planned yet is estimated as "plan, then this many
+            tasks", which is exactly what running it will do.
+
+        Raises:
+            KeyError: When the project is unknown.
+        """
+        record = await self.get_project(project_id)
+        if record is None:
+            raise KeyError(f"Unknown project: {project_id}")
+        plan = record.get("plan") or {}
+        wanted = int(n_agents or record.get("n_agents") or self.settings.DEFAULT_AGENT_COUNT)
+        if not plan.get("tasks"):
+            plan = {
+                "tasks": [{"title": f"pending task {index + 1}", "description": ""} for index in range(max(1, wanted))],
+                "waves": [[f"t{index + 1}"] for index in range(max(1, wanted))],
+                "n_agents": wanted,
+            }
+        spent = float((await self.budget_ledger.project(project_id)).get("usd") or 0.0)
+        return self.budget_planner().estimate(
+            plan, project_id=project_id, n_agents=wanted, spent_usd=spent
+        )
+
+    async def budget_report(self) -> Dict[str, Any]:
+        """Return the ledger plus today's position against the daily cap.
+
+        Returns:
+            The ledger summary with a ``daily_cap`` block.
+        """
+        summary = await self.budget_ledger.summary()
+        allowed, reason = daily_cap_check(
+            self.settings, self.budget_ledger, float(summary["today"]["usd"])
+        )
+        summary["daily_cap"] = {"allowed": allowed, "detail": reason}
+        config = self.project_config()
+        summary["project_config"] = config.to_dict()
+        return summary
+
+    async def _enforce_budget(self, project_id: str, *, allow_over_budget: bool) -> Optional[CostEstimate]:
+        """Check the caps before a run dispatches anything.
+
+        Args:
+            project_id: The project about to run.
+            allow_over_budget: The operator's explicit override.
+
+        Returns:
+            The estimate (for the ledger and the summary), or ``None`` when
+            budgeting is disabled.
+
+        Raises:
+            BudgetError: When a cap is exceeded and no override was given.
+        """
+        if not self.settings.BUDGET_ENABLED:
+            return None
+        estimate = await self.estimate_project_cost(project_id)
+        LOGGER.info("Project %s: %s", project_id, estimate.message)
+        today = await self.budget_ledger.today_total()
+        allowed, reason = daily_cap_check(self.settings, self.budget_ledger, float(today["usd"]))
+        if not allowed and not allow_over_budget:
+            raise BudgetError(
+                f"Refusing to run {project_id}: {reason}. Raise BUDGET_DAILY_MAX_USD or pass allow_over_budget.",
+                spent_today_usd=today["usd"],
+                daily_max_usd=float(self.settings.BUDGET_DAILY_MAX_USD),
+            )
+        self.budget_planner().enforce(estimate, allow_over_budget=allow_over_budget)
+        return estimate
+
+    async def _record_run_spend(self, project_id: str, estimate: CostEstimate, *, tasks: int, before: Dict[str, Any]) -> None:
+        """Add one finished run to the local ledger.
+
+        Brain tokens come from the provider's ``usage`` block when it reported
+        one during the run (delta), otherwise the estimate stands in and the row
+        is flagged ``estimated``. Worker tokens are always estimates: the worker
+        endpoints are OpenAI-compatible chat calls that do not return usage.
+
+        Args:
+            project_id: The project that ran.
+            estimate: The pre-run estimate (used as the fallback).
+            tasks: How many tasks were dispatched.
+            before: :meth:`OrchestratorBrain.usage` sampled before the run.
+        """
+        after = self.brain.usage()
+        reported = after["reported"] - int(before.get("reported", 0))
+        measured = reported > 0
+        brain_in = after["tokens_in"] - int(before.get("tokens_in", 0)) if measured else estimate.brain_tokens_in
+        brain_out = after["tokens_out"] - int(before.get("tokens_out", 0)) if measured else estimate.brain_tokens_out
+        prices = estimate.prices or self.budget_planner().prices()
+        usd = usd_for_tokens(
+            prices,
+            brain_tokens_in=max(0, brain_in),
+            brain_tokens_out=max(0, brain_out),
+            worker_tokens_in=estimate.worker_tokens_in,
+            worker_tokens_out=estimate.worker_tokens_out,
+        )
+        await self.budget_ledger.record(
+            project_id,
+            tasks=int(tasks),
+            brain_calls=max(0, after["calls"] - int(before.get("calls", 0))),
+            brain_tokens_in=max(0, brain_in),
+            brain_tokens_out=max(0, brain_out),
+            worker_tokens_in=estimate.worker_tokens_in,
+            worker_tokens_out=estimate.worker_tokens_out,
+            usd=usd,
+            estimated=not measured,
+        )
+
+    def gateway_summary(self) -> Dict[str, Any]:
+        """Describe the MCP gateway's state without touching the database.
+
+        ``/health`` must answer instantly and never fail, so this reports the
+        configuration only; ``kollektiv gateway status`` adds the client count
+        and the audit totals, which need a query.
+
+        Returns:
+            ``{enabled, url, mcp_path, require_tokens, policy_file}``.
+        """
+        settings = self.settings
+        return {
+            "enabled": bool(settings.GATEWAY_ENABLED),
+            "url": f"http://{settings.GATEWAY_HOST}:{settings.GATEWAY_PORT}",
+            "mcp_path": settings.GATEWAY_MCP_PATH,
+            "require_tokens": bool(settings.GATEWAY_REQUIRE_TOKENS),
+            "policy_file": settings.GATEWAY_POLICY_PATH or None,
         }
 
     # ------------------------------------------------------------------

@@ -99,6 +99,12 @@ class OrchestratorBrain:
         self.calls = 0
         self.failures = 0
         self.last_error: str = ""
+        #: Real token usage as reported by the provider's ``usage`` block. It is
+        #: zero until a provider answers with one, and the budget ledger says so
+        #: honestly rather than inventing numbers.
+        self.tokens_in = 0
+        self.tokens_out = 0
+        self.usage_reported = 0
 
     # ------------------------------------------------------------------
     # Client management
@@ -232,8 +238,14 @@ class OrchestratorBrain:
             raise _classify_brain_error(f"{self.provider} completion failed: {exc}", exc) from exc
 
     async def _chat(self, client: Any, kwargs: Dict[str, Any]) -> str:
-        """Call the client's chat completion endpoint and extract the text."""
+        """Call the client's chat completion endpoint and extract the text.
+
+        Token usage is accumulated when the provider reports it (every
+        OpenAI-compatible API does), which is what makes the budget ledger's
+        numbers real instead of estimated for brain calls.
+        """
         response = await client.chat.completions.create(**kwargs)
+        self._record_usage(getattr(response, "usage", None))
         choices = getattr(response, "choices", None) or []
         if not choices:
             raise BrainError("The LLM returned no choices")
@@ -754,6 +766,44 @@ class OrchestratorBrain:
             "risks": [],
         }
 
+    def _record_usage(self, usage: Any) -> None:
+        """Accumulate the provider's reported token usage.
+
+        Args:
+            usage: The ``usage`` object (or dict) from a completion response.
+                Anything unreadable is ignored: usage accounting must never
+                break a completion that already succeeded.
+        """
+        if usage is None:
+            return
+        prompt = getattr(usage, "prompt_tokens", None)
+        completion = getattr(usage, "completion_tokens", None)
+        if prompt is None and isinstance(usage, dict):
+            prompt = usage.get("prompt_tokens")
+            completion = usage.get("completion_tokens")
+        try:
+            self.tokens_in += int(prompt or 0)
+            self.tokens_out += int(completion or 0)
+            self.usage_reported += 1
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            LOGGER.debug("Ignoring an unreadable usage block: %r", usage)
+
+    def usage(self) -> Dict[str, Any]:
+        """Return the accumulated token usage.
+
+        Returns:
+            ``{calls, tokens_in, tokens_out, reported, estimated}`` — where
+            ``estimated`` is true when at least one call returned no usage block,
+            so a ledger entry can be labelled honestly.
+        """
+        return {
+            "calls": self.calls,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "reported": self.usage_reported,
+            "estimated": self.usage_reported < self.calls,
+        }
+
     def stats(self) -> Dict[str, Any]:
         """Return brain usage statistics."""
         return {
@@ -763,6 +813,8 @@ class OrchestratorBrain:
             "fallback_provider": self.fallback_provider if self.fallback_api_key else "",
             "calls": self.calls,
             "failures": self.failures,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
             "last_error": self.last_error,
         }
 

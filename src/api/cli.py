@@ -35,8 +35,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config.settings import get_settings
+from config.settings import Settings, get_settings
 from src.utils.crypto import generate_secret_key
+from src.utils.errors import BudgetError
 from src.utils.logger import configure_logging, get_logger
 
 LOGGER = get_logger(__name__)
@@ -61,10 +62,23 @@ def _print(payload: Any, as_json: bool = False) -> None:
 # ----------------------------------------------------------------------
 # Commands
 # ----------------------------------------------------------------------
-async def cmd_check(args: argparse.Namespace) -> int:
-    """Validate configuration and report subsystem readiness."""
-    settings = get_settings()
-    report: Dict[str, Any] = {
+def build_check_report(settings: Settings) -> Dict[str, Any]:
+    """Describe what is configured, without contacting anything.
+
+    Kept separate from :func:`cmd_check` so tests (and the dashboard) can read
+    the report as data instead of parsing a terminal.
+
+    Args:
+        settings: The resolved settings.
+
+    Returns:
+        One block per subsystem: storage, agents, brain, GitHub, connectors and
+        the MCP gateway.
+    """
+    from src.connectors.base import ConnectorRegistry
+
+    registry = ConnectorRegistry.from_settings(settings)
+    return {
         "environment": settings.ENVIRONMENT,
         "warnings": settings.config_warnings(),
         "storage": {
@@ -77,7 +91,22 @@ async def cmd_check(args: argparse.Namespace) -> int:
         },
         "brain": {"configured": settings.is_brain_configured, "provider": settings.BRAIN_PROVIDER},
         "github": {"configured": settings.is_github_configured, "repo": settings.GITHUB_REPO},
+        "connectors": {
+            "count": len(registry.names),
+            "configured": registry.configured_names(),
+        },
+        "gateway": {
+            "enabled": bool(settings.GATEWAY_ENABLED),
+            "url": f"http://{settings.GATEWAY_HOST}:{settings.GATEWAY_PORT}{settings.GATEWAY_MCP_PATH}",
+            "require_tokens": bool(settings.GATEWAY_REQUIRE_TOKENS),
+        },
     }
+
+
+async def cmd_check(args: argparse.Namespace) -> int:
+    """Validate configuration and report subsystem readiness."""
+    settings = get_settings()
+    report = build_check_report(settings)
 
     if args.live:
         from src.orchestrator.app import Orchestrator
@@ -103,6 +132,47 @@ async def cmd_check(args: argparse.Namespace) -> int:
     print()
     print("Result:", "OK" if ok else "INCOMPLETE (see warnings above)")
     return 0 if ok else 1
+
+
+def _print_estimate(estimate: Any) -> None:
+    """Print a cost estimate the way an operator reads it.
+
+    Args:
+        estimate: A :class:`~src.orchestrator.budget.CostEstimate`.
+    """
+    tokens = estimate.total_tokens
+    print(f"tasks    : {estimate.tasks} in {estimate.waves} wave(s), {estimate.agents} agent(s)")
+    print(f"calls    : {estimate.brain_calls} brain, {estimate.worker_calls} worker")
+    print(f"tokens   : ~{tokens:,} (brain {estimate.brain_tokens_in:,} in / {estimate.brain_tokens_out:,} out,")
+    print(f"           worker {estimate.worker_tokens_in:,} in / {estimate.worker_tokens_out:,} out)")
+    print(f"cost     : ${estimate.brain_usd:.4f} brain + ${estimate.worker_usd:.4f} workers = ${estimate.total_usd:.4f}")
+    if estimate.spent_usd:
+        print(f"spent    : ${estimate.spent_usd:.4f} already recorded → projected ${estimate.projected_usd:.4f}")
+    cap = f"${estimate.max_usd:.2f}" if estimate.max_usd else "none"
+    brain_in = estimate.prices.get("brain_in")
+    brain_out = estimate.prices.get("brain_out")
+    print(f"cap      : {cap} ({estimate.source}) · verdict {estimate.verdict}")
+    print(f"prices   : brain ${brain_in}/M in, ${brain_out}/M out")
+    print("Estimate only: arithmetic on the plan and your configured prices, not a quote.")
+
+
+def _policy_line(policy: Any) -> str:
+    """Render a policy as one readable line plus its confirm rules.
+
+    Args:
+        policy: A :class:`~src.gateway.policy.Policy`.
+
+    Returns:
+        A two-line string: what is allowed, and what needs a second yes.
+    """
+    sentence = (
+        f"policy : {policy.name} · allow {', '.join(policy.allow) or 'nothing'}"
+        f" · deny {', '.join(policy.deny) or 'nothing'}"
+        f" · {'read-only' if policy.read_only else 'read-write'}"
+    )
+    for glob in policy.confirm:
+        sentence += f"\n         confirm=true for {glob}"
+    return sentence
 
 
 async def cmd_bootstrap(args: argparse.Namespace) -> int:
@@ -708,6 +778,232 @@ async def cmd_sponsors(args: argparse.Namespace) -> int:
     return 0
 
 
+async def cmd_gateway(args: argparse.Namespace) -> int:
+    """Manage the MCP gateway: clients, tokens, policies, audit, serve.
+
+    Args:
+        args: Parsed arguments; ``action`` selects the sub-behaviour.
+
+    Returns:
+        A process exit code.
+    """
+    from src.db.models import init_db
+    from src.gateway.app import create_gateway_app
+    from src.gateway.audit import GatewayAudit
+    from src.gateway.auth import GatewayAuth
+    from src.gateway.policy import POLICY_PRESETS, Policy
+    from src.gateway.tools import build_catalogue, toolkit_view
+
+    settings = get_settings()
+    action = args.action
+    try:
+        init_db()
+    except Exception as exc:  # noqa: BLE001 - report, do not traceback
+        LOGGER.warning("Could not initialise the database schema: %s", exc)
+
+    if action == "serve":
+        import uvicorn
+
+        app = create_gateway_app(
+            settings.model_copy(update={"GATEWAY_ENABLED": True}, deep=True)
+            if not settings.GATEWAY_ENABLED
+            else settings
+        )
+        host = args.host or settings.GATEWAY_HOST
+        port = args.port or settings.GATEWAY_PORT
+        print(f"Kollektiv gateway on http://{host}:{port}  (MCP at {settings.GATEWAY_MCP_PATH})")
+        if not settings.GATEWAY_REQUIRE_TOKENS:
+            print("warning: GATEWAY_REQUIRE_TOKENS=false — every call is anonymous")
+        elif not await GatewayAuth(settings).clients():
+            print("warning: no clients yet — run `kollektiv gateway init` first")
+        uvicorn.run(app, host=host, port=port, log_level=settings.LOG_LEVEL.lower())
+        return 0
+
+    auth = GatewayAuth(settings)
+    audit = GatewayAudit(settings)
+
+    if action in {"init", "token"}:
+        name = args.name or settings.GATEWAY_DEFAULT_CLIENT
+        role = args.role or "dashboard"
+        try:
+            issued = await auth.issue(name, label=args.label or name, role=role, rotate=args.rotate)
+        except Exception as exc:  # noqa: BLE001 - a duplicate name is a normal answer
+            _print({"error": str(exc)}, args.json)
+            return 1
+        mcp_url = f"http://<your-host>:{settings.GATEWAY_PORT}{settings.GATEWAY_MCP_PATH}"
+        payload = {
+            "client": issued["name"],
+            "role": issued["role"],
+            "token": issued["token"],
+            "policy": issued["policy"],
+            "mcp_url": mcp_url,
+            "claude_code": f"claude mcp add kollektiv --transport http {mcp_url} --header \"Authorization: Bearer {issued['token']}\"",
+            "note": "This token is shown once. Store it in the client, not in git.",
+        }
+        if args.json:
+            _print(payload, True)
+            return 0
+        policy = payload["policy"]
+        print(f"client   : {payload['client']} (role {payload['role']})")
+        print(f"token    : {payload['token']}")
+        print()
+        print("This token is shown once. Point a client at the gateway:")
+        print(f"  MCP URL      : {mcp_url}")
+        print(f"  Claude Code  : {payload['claude_code']}")
+        print('  Generic MCP  : {"headers": {"Authorization": "Bearer <token>"}}')
+        print()
+        print(
+            f"Policy ({policy['name']}): allow {' , '.join(policy['allow']) or 'nothing'}"
+            f" · deny {', '.join(policy['deny']) or 'nothing'}"
+            f" · {'read-only' if policy['read_only'] else 'read-write'}"
+        )
+        for glob in policy["confirm"]:
+            print(f"  confirm=true required for {glob}")
+        print()
+        print("Start it with: kollektiv gateway serve")
+        return 0
+
+    if action == "clients":
+        rows = await auth.clients()
+        if args.json:
+            _print({"count": len(rows), "clients": rows}, True)
+            return 0
+        if not rows:
+            print("no gateway clients yet — `kollektiv gateway init`")
+            return 0
+        for row in rows:
+            seen = (row["last_seen"] or "never")[:19]
+            print(f"  {row['name']:<16} {row['role']:<10} {row['calls']:>5} calls  last {seen}  policy {row['policy']['name']}")
+        return 0
+
+    if action == "revoke":
+        name = args.name or settings.GATEWAY_DEFAULT_CLIENT
+        removed = await auth.revoke(name)
+        _print({"client": name, "revoked": removed}, args.json)
+        return 0 if removed else 1
+
+    if action == "policy":
+        name = args.name or settings.GATEWAY_DEFAULT_CLIENT
+        client_row = await auth.get(name)
+        if client_row is None:
+            _print({"error": f"unknown client {name!r}"}, args.json)
+            return 1
+        if args.preset or args.allow or args.deny or args.confirm or args.read_only:
+            current = auth.policy_for(client_row)
+            preset = Policy.preset(args.preset) if args.preset else None
+            chosen = Policy(
+                allow=tuple(args.allow.split(",")) if args.allow else (preset.allow if preset else current.allow),
+                deny=tuple(args.deny.split(",")) if args.deny else (preset.deny if preset else current.deny),
+                confirm=tuple(args.confirm.split(",")) if args.confirm else (preset.confirm if preset else current.confirm),
+                read_only=bool(args.read_only) or bool(preset and preset.read_only),
+                name=args.preset or "custom",
+            )
+            from src.db.models import GatewayClientRecord, session_scope
+
+            with session_scope() as session:
+                stored = session.get(GatewayClientRecord, name)
+                if stored is None:
+                    _print({"error": f"unknown client {name!r}"}, args.json)
+                    return 1
+                stored.policy = chosen.to_json()
+                stored.role = args.preset or stored.role
+                session.add(stored)
+                session.commit()
+            if args.json:
+                _print({"client": name, "policy": chosen.to_dict(), "applied": True}, True)
+                return 0
+            print(f"applied: {chosen.name} → {name}")
+            _print(_policy_line(chosen), False)
+            return 0
+
+        current = auth.policy_for(client_row)
+        if args.json:
+            _print({"client": name, "role": client_row.role, "policy": current.to_dict()}, True)
+            return 0
+        print(f"client : {name} (role {client_row.role})")
+        print(_policy_line(current))
+        return 0
+
+    if action == "presets":
+        presets = {key: Policy.from_dict(value, name=key).to_dict() for key, value in POLICY_PRESETS.items()}
+        if args.json:
+            _print({"presets": presets}, True)
+            return 0
+        for name, policy in presets.items():
+            flags = "read-only" if policy["read_only"] else "read-write"
+            print(f"  {name:<11} allow {', '.join(policy['allow']) or 'nothing':<22} {flags}")
+            for glob in policy["confirm"]:
+                print(f"  {'':<11} confirm=true for {glob}")
+        print()
+        print("Apply one with: kollektiv gateway policy --preset read-only")
+        return 0
+
+    if action == "tools":
+        from src.orchestrator.app import Orchestrator
+
+        orchestrator = Orchestrator(settings)
+        try:
+            await orchestrator.start()
+            catalogue = build_catalogue(orchestrator, settings=settings)
+        finally:
+            await orchestrator.stop()
+        if args.json:
+            _print({"count": len(catalogue), "toolkits": toolkit_view(catalogue)}, True)
+            return 0
+        for group in toolkit_view(catalogue):
+            print(f"{group['namespace']} ({group['count']})")
+            for tool in group["tools"]:
+                flag = " ⚠" if tool["dangerous"] else ""
+                print(f"  {tool['tool']:<44}{flag}")
+        return 0
+
+    if action == "audit":
+        if args.clear:
+            purged = await audit.clear()
+            _print({"cleared": purged}, args.json)
+            return 0
+        rows = await audit.recent(limit=args.limit or settings.GATEWAY_AUDIT_LIMIT, client=args.name or None)
+        stats = await audit.stats(args.name or None)
+        if args.json:
+            _print({"stats": stats, "rows": rows}, True)
+            return 0
+        print(f"{stats['calls']} call(s) · {stats['failures']} failure(s) · {stats['denied']} denied")
+        for row in rows[: args.limit or 25]:
+            when = (row["at"] or "")[11:19]
+            verdict = "denied" if row["denied"] else ("ok" if row["ok"] else "failed")
+            print(f"  {when}  {row['client']:<14} {row['tool']:<40} {verdict:<7} {row['ms']:>5}ms")
+        return 0
+
+    if action == "status":
+        clients = await auth.clients()
+        stats = await audit.stats()
+        payload = {
+            "enabled": bool(settings.GATEWAY_ENABLED),
+            "host": settings.GATEWAY_HOST,
+            "port": settings.GATEWAY_PORT,
+            "mcp_path": settings.GATEWAY_MCP_PATH,
+            "require_tokens": bool(settings.GATEWAY_REQUIRE_TOKENS),
+            "policy_file": settings.GATEWAY_POLICY_PATH or None,
+            "clients": [{"name": row["name"], "role": row["role"], "calls": row["calls"]} for row in clients],
+            "audit": stats,
+            "note": "tokens live encrypted in your own database; the audit log never stores call arguments",
+        }
+        if args.json:
+            _print(payload, True)
+            return 0
+        print(f"gateway   : {'enabled' if payload['enabled'] else 'disabled'} ({payload['host']}:{payload['port']})")
+        print(f"MCP path  : {payload['mcp_path']}   tokens required: {payload['require_tokens']}")
+        print(f"clients   : {len(payload['clients'])}")
+        for row in payload["clients"]:
+            print(f"  {row['name']:<16} {row['role']:<10} {row['calls']:>5} calls")
+        print(f"audit     : {stats['calls']} call(s), {stats['denied']} denied")
+        print("start it  : kollektiv gateway serve")
+        return 0
+
+    _print({"error": f"unknown gateway action {action!r}"}, args.json)
+    return 2
+
+
 async def cmd_resume(args: argparse.Namespace) -> int:
     """Print the resume briefing for a project (see GET /projects/{id}/handoff)."""
     from src.orchestrator.app import Orchestrator
@@ -775,7 +1071,11 @@ async def cmd_plan(args: argparse.Namespace) -> int:
 
 
 async def cmd_run(args: argparse.Namespace) -> int:
-    """Plan (optionally) and execute a project."""
+    """Plan (optionally) and execute a project.
+
+    With ``--dry-run`` nothing is dispatched: the project is planned (when it is
+    new), estimated against the configured caps, and the numbers are printed.
+    """
     from src.orchestrator.app import Orchestrator
 
     orchestrator = Orchestrator()
@@ -788,12 +1088,24 @@ async def cmd_run(args: argparse.Namespace) -> int:
         if args.project_id:
             project_id = args.project_id
         else:
-            record = await orchestrator.create_project(args.name or "", args.description, args.agents)
+            agents = args.agents or orchestrator.project_config().n_agents or 3
+            record = await orchestrator.create_project(args.name or "", args.description, agents)
             project_id = record["project_id"]
             if not args.json:
                 print(f"Project {project_id} planned with {len(record['plan'].get('tasks', []))} task(s)")
 
-        summary = await orchestrator.run_project(project_id, max_concurrency=args.concurrency)
+        if args.dry_run:
+            estimate = await orchestrator.estimate_project_cost(project_id)
+            if args.json:
+                _print(estimate.to_dict(), True)
+            else:
+                print("Dry run — nothing was dispatched.")
+                _print_estimate(estimate)
+            return 0 if estimate.verdict != "over" else 3
+
+        summary = await orchestrator.run_project(
+            project_id, max_concurrency=args.concurrency, allow_over_budget=args.allow_over_budget
+        )
         _print(summary, args.json)
 
         if args.export_state:
@@ -801,8 +1113,91 @@ async def cmd_run(args: argparse.Namespace) -> int:
             if not args.json:
                 print(f"State written to {path}")
         return 0 if summary.get("status") == "completed" else 2
+    except BudgetError as exc:
+        print(f"budget: {exc.message}", file=sys.stderr)
+        print("Raise the cap in .kollektiv.yml (budget.max_usd), or pass --allow-over-budget.", file=sys.stderr)
+        return 3
     finally:
         await orchestrator.stop()
+
+
+async def cmd_estimate(args: argparse.Namespace) -> int:
+    """Estimate a project's cost without running it."""
+    from src.orchestrator.app import Orchestrator
+
+    orchestrator = Orchestrator()
+    try:
+        estimate = await orchestrator.estimate_project_cost(args.project_id, n_agents=args.agents or None)
+    except KeyError:
+        print(f"Unknown project: {args.project_id}", file=sys.stderr)
+        return 1
+    finally:
+        await orchestrator.stop()
+    if args.json:
+        _print(estimate.to_dict(), True)
+    else:
+        _print_estimate(estimate)
+    return 0 if estimate.verdict != "over" else 3
+
+
+async def cmd_budget(args: argparse.Namespace) -> int:
+    """Show the local spend ledger: tokens and dollars, per project and today."""
+    from src.orchestrator.app import Orchestrator
+
+    orchestrator = Orchestrator()
+    try:
+        report = await orchestrator.budget_report()
+    finally:
+        await orchestrator.stop()
+    if args.json:
+        _print(report, True)
+        return 0
+    cap = report["max_usd"] or "none"
+    daily = report["daily_max_usd"] or "none"
+    today = report["today"]
+    print(f"budget   : {'on' if report['enabled'] else 'off'}  ·  cap per project: {cap} USD  ·  daily cap: {daily} USD")
+    print(
+        f"today    : ${today['usd']:.4f}  ·  {today['runs']} run(s)  ·  "
+        f"{today['tokens_in']:,} in / {today['tokens_out']:,} out tokens"
+    )
+    print(f"all time : ${report['total']['usd']:.4f}  ·  {report['total']['runs']} run(s)  ·  {report['total']['days']} day(s)")
+    if report["projects"]:
+        print("projects :")
+        for name in report["projects"]:
+            print(f"  {name}")
+    prices = report["prices_per_mtok"]
+    print(
+        f"prices   : brain ${prices['brain_in']}/M in, ${prices['brain_out']}/M out"
+        f"  ·  workers ${prices['worker_in']}/M in, ${prices['worker_out']}/M out"
+    )
+    print(f"daily cap: {report['daily_cap']['detail']}")
+    config = report.get("project_config") or {}
+    if config.get("path"):
+        print(f"config   : {config['path']}")
+    print(f"ledger   : {report['note']}")
+    return 0
+
+
+async def cmd_init_config(args: argparse.Namespace) -> int:
+    """Write a commented ``.kollektiv.yml`` starter file."""
+    from src.utils.project_config import CONFIG_NAMES, STARTER_TEMPLATE, load_project_config
+
+    target = Path(args.path or CONFIG_NAMES[0])
+    if target.exists() and not args.force:
+        print(f"{target} already exists (use --force to overwrite)", file=sys.stderr)
+        return 1
+    try:
+        target.write_text(STARTER_TEMPLATE, encoding="utf-8")
+    except OSError as exc:
+        print(f"could not write {target}: {exc}", file=sys.stderr)
+        return 1
+    config = load_project_config(str(target))
+    if config.problems:
+        print(f"{target} was written but does not parse: {'; '.join(config.problems)}", file=sys.stderr)
+        return 1
+    print(f"wrote {target} ({len(STARTER_TEMPLATE.splitlines())} lines)")
+    print("Edit it, then `kollektiv estimate --project-id prj_…` to see the effect.")
+    return 0
 
 
 async def cmd_status(args: argparse.Namespace) -> int:
@@ -915,10 +1310,24 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("description", nargs="?", default="", help="What to build")
     run.add_argument("--project-id", default="", help="Run an existing project instead")
     run.add_argument("--name", default="", help="Project name")
-    run.add_argument("--agents", type=int, default=3, help="Number of worker agents")
+    run.add_argument("--agents", type=int, default=0, help="Number of worker agents (0 = .kollektiv.yml or 3)")
     run.add_argument("--concurrency", type=int, default=None, help="Max simultaneous agents")
     run.add_argument("--export-state", default="", help="Write PROJECT_STATE.md to this path")
+    run.add_argument("--dry-run", action="store_true", help="Plan and estimate, dispatch nothing")
+    run.add_argument("--allow-over-budget", action="store_true", help="Run even above a configured cost cap")
     run.add_argument("--json", action="store_true")
+
+    estimate = sub.add_parser("estimate", help="Estimate a project's cost before running it")
+    estimate.add_argument("--project-id", required=True)
+    estimate.add_argument("--agents", type=int, default=0, help="Estimate a different agent count")
+    estimate.add_argument("--json", action="store_true")
+
+    budget = sub.add_parser("budget", help="Local spend ledger: tokens, dollars, caps")
+    budget.add_argument("--json", action="store_true")
+
+    init_config = sub.add_parser("init-config", help="Write a commented .kollektiv.yml")
+    init_config.add_argument("--path", default="", help="Where to write it (default ./.kollektiv.yml)")
+    init_config.add_argument("--force", action="store_true", help="Overwrite an existing file")
 
     status = sub.add_parser("status", help="Print a project's shared state")
     status.add_argument("project_id")
@@ -952,6 +1361,34 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--json", action="store_true", help="Structured output (no markdown)")
     resume.add_argument("--no-write", action="store_true", help="Do not refresh HANDOFF.md")
     sub.add_parser("secret", help="Print a new SECRET_KEY")
+
+    gateway = sub.add_parser("gateway", help="MCP gateway: clients, tokens, policies, audit")
+    gateway.add_argument(
+        "action",
+        nargs="?",
+        default="status",
+        choices=["status", "init", "serve", "token", "clients", "revoke", "policy", "presets", "tools", "audit"],
+        help="What to do (default: status)",
+    )
+    gateway.add_argument("--name", default="", help="Client name (default: GATEWAY_DEFAULT_CLIENT)")
+    gateway.add_argument("--label", default="", help="Human label for the client")
+    gateway.add_argument(
+        "--role",
+        default="",
+        choices=["admin", "dashboard", "worker", "messenger", "read-only", "client"],
+        help="Policy preset for a new client",
+    )
+    gateway.add_argument("--rotate", action="store_true", help="Re-key an existing client instead of failing")
+    gateway.add_argument("--preset", default="", help="Apply a policy preset (policy action)")
+    gateway.add_argument("--allow", default="", help="Comma-separated allow globs")
+    gateway.add_argument("--deny", default="", help="Comma-separated deny globs")
+    gateway.add_argument("--confirm", default="", help="Comma-separated globs that need confirm=true")
+    gateway.add_argument("--read-only", action="store_true", help="Refuse every tool that changes data")
+    gateway.add_argument("--limit", type=int, default=0, help="How many audit rows to show")
+    gateway.add_argument("--clear", action="store_true", help="With 'audit': delete the log")
+    gateway.add_argument("--json", action="store_true", help="Machine-readable output")
+    gateway.add_argument("--host", default=None, help="Serve host (default: GATEWAY_HOST)")
+    gateway.add_argument("--port", type=int, default=None, help="Serve port (default: GATEWAY_PORT)")
 
     sponsors = sub.add_parser("sponsors", help="Opt-in sponsor line, local ledger and claims")
     sponsors.add_argument(
@@ -990,6 +1427,10 @@ COMMANDS = {
     "login": cmd_login,
     "logout": cmd_logout,
     "accounts": cmd_accounts,
+    "gateway": cmd_gateway,
+    "estimate": cmd_estimate,
+    "budget": cmd_budget,
+    "init-config": cmd_init_config,
     "sponsors": cmd_sponsors,
     "resume": cmd_resume,
     "call": cmd_call,

@@ -146,8 +146,18 @@ src/connectors/base.py         connector + action registry (one tool catalogue)
 src/connectors/github.py       repository actions (commits, PRs, issues, files)
 src/connectors/google_workspace.py  Gmail + Calendar + Drive over one OAuth token
 src/connectors/notion.py       Notion pages and databases
+src/connectors/telegram.py     Telegram bot API (send, read updates)
+src/connectors/discord.py      Discord bot + incoming webhooks (2000-char chunking)
+src/connectors/slack.py        Slack bot + incoming webhooks (ok-envelope aware)
+src/connectors/linear.py       Linear GraphQL (issues, teams, comments)
+src/connectors/whatsapp.py     WhatsApp: official Cloud API or the opt-in bridge
 src/connectors/webhook.py      outbound events (Slack/Discord/n8n/Zapier/webhooks)
 src/connectors/rest.py         declarative REST connectors (CUSTOM_CONNECTORS)
+src/gateway/app.py             MCP gateway: one URL, many clients (optional)
+src/gateway/auth.py            per-client kgw_ tokens, encrypted at rest
+src/gateway/policy.py          allow/deny/confirm globs + named presets
+src/gateway/tools.py           namespaced catalogue (projects.*, connectors.*, gateway.*)
+src/gateway/audit.py           local audit log: tool names and argument NAMES only
 src/api/cli.py                 the `kollektiv` command line interface
 examples/aider_shim.py         wrap any CLI coding agent as a worker endpoint
 examples/freebuff_shim.py      run the free, ad-supported Freebuff agent as a worker
@@ -162,7 +172,7 @@ CONTRIBUTING.md                gates, non-negotiables, connector + release recip
 CODE_OF_CONDUCT.md             Contributor Covenant 2.1
 .github/ISSUE_TEMPLATE/         bug, feature and question forms
 .github/workflows/codeql.yml   CodeQL scanning (PRs + weekly)
-tests/                         354 hermetic tests (no network, no credentials)
+tests/                         454 hermetic tests (no network, no credentials)
 ```
 
 ---

@@ -21,7 +21,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 354 hermetic tests, ~11 s
+pytest -q                      # 454 hermetic tests, ~26 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config examples       # types (clean)
@@ -31,6 +31,10 @@ kollektiv connectors           # services the agents can call (+ what is missing
 kollektiv check                # what is configured / degraded
 kollektiv serve-api            # uvicorn src.api.routes:app --port 8000
 python -m src.api.mcp_server   # MCP tools, port 8001
+kollektiv gateway init         # one token per AI client (prints it once)
+kollektiv gateway serve        # the optional gateway, port 8010
+kollektiv init-config          # commented .kollektiv.yml (agents, budget, brain)
+kollektiv budget               # local ledger: tokens, dollars, caps
 ```
 
 Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
@@ -53,7 +57,9 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 | `src/github/` | `GitHubClient` (REST) + `webhook_handler` (HMAC-verified, background work). |
 | `src/orchestrator/` | `brain` → `planner` → `dispatcher` → `collector` → `sync_engine`, wired by `app.Orchestrator`. |
 | `src/orchestrator/handoff.py` | Resume briefings: dependency-aware next actions, blockers and rendered Markdown, written to `HANDOFF.md` after every run and served by `GET /projects/{id}/handoff` + the `get_handoff` MCP tool. |
-| `src/connectors/` | `base.py` (Connector/ConnectorAction/ConnectorRegistry) + one module per service (GitHub, Google, Notion, webhooks, declarative REST). Every connector is always registered; `configured` decides what runs, and `dangerous` actions require `confirm`. |
+| `src/connectors/` | `base.py` (Connector/ConnectorAction/ConnectorRegistry) + one module per service (GitHub, Google, Notion, Telegram, Discord, Slack, Linear, WhatsApp, webhooks, declarative REST). Every connector is always registered; `configured` decides what runs, and `dangerous` actions require `confirm`. Nine connectors, 41 actions. |
+| `src/orchestrator/budget.py` | Cost estimates (`BudgetPlanner`), caps (`BUDGET_MAX_USD`, `.kollektiv.yml`), and the local spend ledger (`BudgetLedger`, one row per project per day). Brain tokens come from the provider's `usage` block; worker tokens are labelled estimates. `src/utils/project_config.py` reads `.kollektiv.yml` (PyYAML when present, `src/utils/yaml_subset.py` otherwise) and never raises. |
+| `src/gateway/` | The optional MCP gateway: `app.py` (REST + the token-wrapped MCP mount), `auth.py` (per-client `kgw_` tokens in `TokenStore`), `policy.py` (allow/deny/confirm globs + five presets), `tools.py` (namespaced catalogue), `audit.py` (local log, argument *names* only). Off unless `GATEWAY_ENABLED=true`; `kollektiv-mcp` stays the single-user path. `docs/gateway.md` is the user-facing page. |
 | `src/sponsors/` | The only advertising surface: `catalog.py` (rules + signed catalogues), `line.py` (dead-time line, off unless `SPONSORS_ENABLED`), `ledger.py` (local tally + HMAC-signed claims). No prompt, code or identity is ever an input; see `docs/monetization.md`. |
 | `src/api/` | `routes.py` (FastAPI), `mcp_server.py` (MCP tools), `cli.py` (`kollektiv`). |
 | `web/` | The static dashboard (`index.html` + `assets/`): no build step, no CDN, no telemetry. Served by the API at `/ui`, published by Cloudflare Pages or `pages.yml`. |
@@ -98,10 +104,26 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 - The CLI must stay runnable from inside a running event loop (notebooks,
   embedders): async commands go through `cli._run_async()`, never raw
   `asyncio.run()`.
+- The budget check runs **before** dispatch in `Orchestrator.run_project`
+  (`_enforce_budget`): over a cap → `BudgetError` → CLI exit 3 / API `402`.
+  `run_project` gained `allow_over_budget`; keep any stub orchestrator's
+  signature in sync (`tests/test_api.py::StubOrchestrator`).
+- `.kollektiv.yml` is parsed leniently on purpose: PyYAML if installed, else the
+  strict subset reader, and a broken file is *ignored with a logged problem*
+  rather than raised. `tests/test_budget.py` pins both parsers against the same
+  starter file, so the two cannot drift.
 - New free-stack interfaces are covered in `tests/test_integrations.py` (Clerk
   RS256/JWKS/Svix, Resend, settings helpers, bootstrap, dashboard); R2 in
   `tests/test_r2.py`; connectors in `tests/test_connectors.py` (MockTransport
-  clients + a dict token store). Keep them hermetic — no real accounts in CI.
+  clients + a dict token store); the gateway in `tests/test_gateway.py` (stub
+  orchestrator, the real encrypted `TokenStore`, `Starlette.TestClient` for the
+  MCP mount). Keep them hermetic — no real accounts in CI.
+- The gateway mounts the MCP SDK's streamable-HTTP app with
+  `streamable_http_path="/"` (see `src/gateway/app.py::build_mcp_app`); the SDK
+  otherwise serves its own `/mcp` *inside* the mount and the URL becomes
+  `/mcp/mcp`. One gateway token = one client = one policy; a denied call is
+  audited with the rule that decided, and audit rows store argument **names**,
+  never values.
 - The dashboard is a static multi-file site (`web/index.html` +
   `web/assets/{styles.css,app.js,favicon.svg}`) — **never collapse it back into
   a single HTML file**, and keep hover/focus/reduced-motion states in the CSS.
