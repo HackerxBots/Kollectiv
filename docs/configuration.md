@@ -102,7 +102,25 @@ BRAIN_FALLBACK_MODEL=llama-3.3-70b-versatile
 Without `BRAIN_API_KEY` the heuristic planner, reviewer and summariser take
 over, which is what makes the test suite and offline runs possible.
 
-### 5. Runtime
+### 5. Sponsor line (`SPONSOR_*`, optional)
+
+The only advertising surface Kollektiv has, off unless you turn it on; the full
+design and the reasoning are in [Monetization](monetization.md).
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `SPONSORS_ENABLED` | `false` | Master switch. `kollektiv sponsors enable` writes it for you. |
+| `SPONSOR_CATALOG_PATH` | — | JSON file with the sponsor entries (`docs/sponsors.example.json`) |
+| `SPONSOR_CATALOG_URL` | — | Or an HTTPS endpoint returning the same JSON (fetched lazily) |
+| `SPONSOR_CATALOG_PUBLIC_KEY` | — | Ed25519 public key (base64); set it to refuse unsigned catalogues |
+| `SPONSOR_SHARE_BP` | `7500` | Your share of the gross in basis points (75%) |
+| `SPONSOR_CPM_CENTS` | `100` | Fallback rate per 1000 lines when an entry omits one |
+| `SPONSOR_MIN_PAYOUT_CENTS` | `1000` | A claim is only offered above this |
+| `SPONSOR_CATEGORIES` | — | Self-declared interests — the only targeting that exists |
+| `SPONSOR_MIN_INTERVAL_SECONDS` | `90` | Attention budget: at most one line per interval |
+| `SPONSOR_REQUEST_TIMEOUT` | `15.0` | Catalogue HTTP timeout |
+
+### 6. Runtime
 
 | Key | Default | Purpose |
 | --- | --- | --- |

@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "updated_at": "2026-10-07T00:00:00Z",
+  "cpm_cents": 100,
+  "entries": [
+    {
+      "id": "example-managed-postgres",
+      "advertiser": "Example: Branchy",
+      "text": "Postgres branches for every preview environment, seconds to spin up",
+      "url": "https://example.com/branchy",
+      "categories": [],
+      "cpm_cents": 120,
+      "weight": 1
+    },
+    {
+      "id": "example-object-storage",
+      "advertiser": "Example: Coldstore",
+      "text": "Cheap object storage with free egress, S3 compatible",
+      "url": "https://example.com/coldstore",
+      "categories": ["storage", "infrastructure"],
+      "cpm_cents": 90,
+      "weight": 2
+    },
+    {
+      "id": "example-own-project",
+      "advertiser": "Example: your own project",
+      "text": "Somebody funded this line to reach developers while their agents think",
+      "url": "https://example.com/sponsor-slot",
+      "categories": ["ai", "databases", "devops"],
+      "cpm_cents": 60,
+      "weight": 1
+    }
+  ]
+}

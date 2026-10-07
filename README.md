@@ -18,7 +18,7 @@
   <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollektiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="https://github.com/HackerxBots/Kollektiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-303%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-351%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Documentation"></a>
 </div>
 
@@ -140,6 +140,7 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 - [Operations](docs/operations.md) — releases, health, sync, scaling, maintainer settings
 - [Extending Kollektiv](docs/extending.md) · [Development](docs/development.md) · [Troubleshooting and FAQ](docs/faq.md)
 - [Performance and roadmap](docs/roadmap.md) · [Privacy](docs/privacy.md) · [Legal](docs/legal.md)
+- [Monetization](docs/monetization.md) — how this stays free, honestly (and the opt-in sponsor line)
 
 ## Contributing
 

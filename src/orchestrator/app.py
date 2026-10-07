@@ -45,6 +45,7 @@ from src.orchestrator.dispatcher import Dispatcher
 from src.orchestrator.handoff import build_handoff, write_handoff_file
 from src.orchestrator.planner import Planner
 from src.orchestrator.sync_engine import SyncEngine
+from src.sponsors.line import SponsorLineMux
 from src.storage.factory import build_storage
 from src.storage.state_manager import StateManager
 from src.utils.errors import ConfigurationError
@@ -102,6 +103,7 @@ class Orchestrator:
         self._projects: Dict[str, Dict[str, Any]] = {}
         self._collectors: Dict[str, Collector] = {}
         self._dispatcher: Optional[Dispatcher] = None
+        self._sponsor_mux: Optional[SponsorLineMux] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -209,6 +211,30 @@ class Orchestrator:
             except Exception as exc:  # noqa: BLE001 - shutdown is best effort
                 LOGGER.debug("Shutdown step raised: %s", exc)
         self.started = False
+
+    def get_sponsor_mux(self) -> SponsorLineMux:
+        """Return the sponsor-line mux, creating it on first use."""
+        if self._sponsor_mux is None:
+            self._sponsor_mux = SponsorLineMux(settings=self.settings)
+        return self._sponsor_mux
+
+    async def sponsor_interlude(self, context: str = "waiting") -> Optional[Dict[str, Any]]:
+        """Draw an opt-in sponsor line during dead time, and accrue it.
+
+        This is the only place agent work meets advertising. It runs *before* a
+        dispatch blocks on the pool, never inside an agent's answer or a file,
+        and it is a no-op unless ``SPONSORS_ENABLED`` is set -- the mux owns
+        both rules. Failures are logged and swallowed by the mux: an ad must
+        never cost a task.
+
+        Args:
+            context: Dead-time context; see
+                :data:`src.sponsors.line.ALLOWED_CONTEXTS`.
+
+        Returns:
+            The rendered line dict, or ``None`` when nothing was drawn.
+        """
+        return await self.get_sponsor_mux().next_line(context=context)
 
     def get_dispatcher(self) -> Dispatcher:
         """Return the dispatcher, creating it on first use."""
@@ -346,6 +372,8 @@ class Orchestrator:
 
         dispatcher = self.get_dispatcher()
         dispatcher.max_concurrency = max_concurrency or dispatcher.max_concurrency
+        # Dead time: the pool is about to block for minutes on agent work.
+        await self.sponsor_interlude("waiting")
         results = await dispatcher.dispatch(plan, project_id=project_id)
 
         collector = self.get_collector(project_id)

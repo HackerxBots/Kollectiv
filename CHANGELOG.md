@@ -69,7 +69,29 @@ on GitHub links to the section below for its version.
   third-party origin may appear. `tests/test_api.py` adds two SSE tests
   (state frame + faithful copy of `/status`, and an `event: error` frame for an
   unknown project). `tests/test_path_safety.py` covers the path rules end to end,
-  from the helpers to the API's `400`. 303 tests total.
+  from the helpers to the API's `400`. 351 tests total.
+
+### Added
+
+- **The opt-in sponsor line, and the honest money page behind it.**
+  `docs/monetization.md` is the full strategy: why there is no affiliate deal
+  to chase with Claude Code or Codex, why we ship our own MCP server (and,
+  next, a gateway) instead, exactly how Freebuff and the Claude Code spinner-ad
+  networks earn (75% of the revenue to the developer, always-on versus
+  installed), and which half of that we copy. In code:
+  `src/sponsors/catalog.py` (a catalogue from a file or a signed HTTPS URL, with
+  a validator that refuses copy impersonating the tool, the model or an error),
+  `src/sponsors/line.py` (one labelled line, only in dead time -- `waiting`,
+  `between-tasks`, `rate-limit` -- at most once per `SPONSOR_MIN_INTERVAL_SECONDS`,
+  and `None` before any network call unless `SPONSORS_ENABLED=true`),
+  `src/sponsors/ledger.py` (a local per-sponsor tally in millicents with a
+  7500-bp default share, plus HMAC-SHA256 *claims* that the operator sends by
+  choice). New surfaces: `GET/POST /sponsors/*`, the `sponsor_line` and
+  `sponsor_ledger` MCP tools, and `kollektiv sponsors
+  status|catalog|line|ledger|claim|verify|enable|disable|forget`. No prompt, no
+  code, no project and no identity is ever an input; nothing leaves the machine
+  unless a human sends a claim. 48 tests in `tests/test_sponsors.py`.
+  This is off by default and unrelated to running Kollektiv.
 
 ### Changed
 

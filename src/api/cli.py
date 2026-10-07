@@ -32,6 +32,7 @@ import asyncio
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from config.settings import get_settings
@@ -466,6 +467,247 @@ async def cmd_accounts(args: argparse.Namespace) -> int:
     return 0
 
 
+def set_env_value(path: str, key: str, value: str) -> bool:
+    """Create or update ``KEY=value`` in an env file.
+
+    Rewrites the file in place, preserving comments and ordering, and appends
+    the key when it is absent. Nothing else in the file is touched.
+
+    Args:
+        path: Path of the env file (usually ``.env``).
+        key: Variable name.
+        value: New value.
+
+    Returns:
+        ``True`` when the file changed, ``False`` when it already said exactly
+        that.
+
+    Raises:
+        OSError: When the file cannot be read or written.
+    """
+    target = Path(path)
+    line = f"{key}={value}"
+    if target.exists():
+        original = target.read_text(encoding="utf-8")
+    else:
+        original = ""
+    out: List[str] = []
+    replaced = False
+    for existing in original.splitlines():
+        stripped = existing.strip()
+        if stripped.startswith(f"{key}=") and not stripped.startswith("#"):
+            if not replaced:
+                out.append(line)
+                replaced = True
+            continue
+        out.append(existing)
+    if not replaced:
+        if out and out[-1].strip():
+            out.append("")
+        out.append("# Added by the Kollektiv CLI")
+        out.append(line)
+    updated = "\n".join(out).rstrip("\n") + "\n"
+    if updated == original:
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(updated, encoding="utf-8")
+    return True
+
+
+def read_env_flag(path: str, key: str, default: bool = False) -> bool:
+    """Read a boolean flag from an env file without importing the settings cache.
+
+    Args:
+        path: Path of the env file.
+        key: Variable name.
+        default: Returned when the file or the key is missing.
+
+    Returns:
+        The parsed boolean.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return default
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, _, value = stripped.partition("=")
+        if name.strip() == key:
+            return value.strip().strip('"').lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+async def cmd_sponsors(args: argparse.Namespace) -> int:
+    """Inspect, enable, claim from -- or forget -- the opt-in sponsor line.
+
+    Args:
+        args: Parsed arguments; ``action`` selects the sub-behaviour.
+
+    Returns:
+        A process exit code.
+    """
+    from src.db.models import init_db
+    from src.sponsors.catalog import load_catalog, normalise_url, split_categories
+    from src.sponsors.ledger import SponsorLedger, verify_claim
+    from src.sponsors.line import SponsorLineMux
+
+    settings = get_settings()
+    action = args.action
+    try:
+        init_db()
+    except Exception as exc:  # noqa: BLE001 - a missing schema must not hide the report
+        LOGGER.warning("Could not initialise the database schema: %s", exc)
+
+    if action in {"enable", "disable"}:
+        wanted = action == "enable"
+        path = args.env_file
+        try:
+            changed = set_env_value(path, "SPONSORS_ENABLED", "true" if wanted else "false")
+        except OSError as exc:
+            _print({"error": f"could not write {path}: {exc}"}, args.json)
+            return 1
+        payload = {
+            "env_file": path,
+            "SPONSORS_ENABLED": wanted,
+            "changed": changed,
+            "note": (
+                "Restart the API/CLI process, then point SPONSOR_CATALOG_PATH at your catalogue JSON."
+                if wanted
+                else "The line is off again; the ledger keeps its totals until you forget them."
+            ),
+        }
+        if args.json:
+            _print(payload, True)
+        else:
+            state = "enabled" if wanted else "disabled"
+            print(f"sponsor line {state} in {path}" + ("" if changed else " (already set)"))
+            print(payload["note"])
+        return 0
+
+    if action == "forget":
+        count = await SponsorLedger(settings).forget()
+        _print({"forgotten": count, "note": "the local tally no longer exists"}, args.json)
+        return 0
+
+    if action == "ledger":
+        summary = await SponsorLedger(settings).summary()
+        if args.json:
+            _print(summary, True)
+            return 0
+        print(
+            f"{summary['impressions']} line(s) shown, {summary['net_cents']} cents to you "
+            f"({summary['gross_cents']} gross, {summary['share_bp'] / 100:.0f}% share)"
+        )
+        for row in summary["rows"]:
+            print(
+                f"  {row['sponsor_id']:<16} {row['impressions']:>6} lines  "
+                f"{row['net_cents']:>5} cents  {row['advertiser']}"
+            )
+        if summary.get("error"):
+            print(f"  (ledger unreadable: {summary['error']})")
+        return 0
+
+    if action == "claim":
+        try:
+            result = await SponsorLedger(settings).claim(payout_to=args.payout_to, note=args.note)
+        except ValueError as exc:
+            _print({"error": str(exc)}, args.json)
+            return 1
+        if args.json:
+            _print(result, True)
+        else:
+            print(f"claim token ({result['payload']['net_cents']} cents, {result['payload']['total_impressions']} lines):")
+            print()
+            print(result["claim"])
+            print()
+            for step in result["redeem"]:
+                print(f"- {step}")
+        return 0
+
+    if action == "verify":
+        token = args.claim or sys.stdin.read().strip()
+        try:
+            payload = verify_claim(token, settings.SECRET_KEY)
+        except ValueError as exc:
+            _print({"valid": False, "reason": str(exc)}, args.json)
+            return 1
+        _print({"valid": True, "payload": payload}, args.json)
+        return 0
+
+    if action == "line":
+        line = await SponsorLineMux(settings=settings).next_line(
+            context=args.context, categories=split_categories(args.categories) or None
+        )
+        if args.json:
+            _print({"line": line}, True)
+            return 0 if line else 2
+        if line is None:
+            print("no line: disabled, not due, context not dead time, or empty catalogue")
+            return 2
+        print(line["rendered"])
+        return 0
+
+    if action == "catalog":
+        catalog = await load_catalog(settings)
+        if args.set_url:
+            try:
+                normalised = normalise_url(args.set_url)
+            except ValueError as exc:
+                _print({"error": str(exc)}, args.json)
+                return 1
+            try:
+                changed = set_env_value(args.env_file, "SPONSOR_CATALOG_URL", normalised)
+            except OSError as exc:
+                _print({"error": f"could not write {args.env_file}: {exc}"}, args.json)
+                return 1
+            _print(
+                {
+                    "env_file": args.env_file,
+                    "SPONSOR_CATALOG_URL": normalised,
+                    "changed": changed,
+                    "current_catalog_source": catalog.source,
+                },
+                args.json,
+            )
+            return 0
+        _print(catalog.to_dict(), args.json)
+        return 0
+
+    # default: status
+    catalog = await load_catalog(settings)
+    summary = await SponsorLedger(settings).summary()
+    payload = {
+        "enabled": bool(settings.SPONSORS_ENABLED),
+        "catalog_source": catalog.source,
+        "catalog_entries": len(catalog.entries),
+        "catalog_error": catalog.error,
+        "categories": split_categories(settings.SPONSOR_CATEGORIES),
+        "share_bp": int(settings.SPONSOR_SHARE_BP),
+        "impressions": summary["impressions"],
+        "net_cents": summary["net_cents"],
+        "min_payout_cents": summary["min_payout_cents"],
+        "claimable": summary["claimable"],
+        "ledger_error": summary.get("error", ""),
+    }
+    if args.json:
+        _print(payload, True)
+        return 0
+    print("Sponsor line" + (" (enabled)" if payload["enabled"] else " (disabled -- this is the default)"))
+    print(f"  catalogue : {payload['catalog_source']} ({payload['catalog_entries']} entries)")
+    if payload["catalog_error"]:
+        print(f"  refused   : {payload['catalog_error']}")
+    print(f"  share     : {payload['share_bp'] / 100:.0f}% to you")
+    print(f"  accrued   : {payload['impressions']} lines, {payload['net_cents']} cents")
+    print(f"  payout at : {payload['min_payout_cents']} cents" + ("  (ready: kollektiv sponsors claim)" if payload["claimable"] else ""))
+    if payload["ledger_error"]:
+        print(f"  ledger    : {payload['ledger_error']}")
+    if not payload["enabled"]:
+        print("  enable it : kollektiv sponsors enable")
+    return 0
+
+
 async def cmd_resume(args: argparse.Namespace) -> int:
     """Print the resume briefing for a project (see GET /projects/{id}/handoff)."""
     from src.orchestrator.app import Orchestrator
@@ -711,6 +953,23 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--no-write", action="store_true", help="Do not refresh HANDOFF.md")
     sub.add_parser("secret", help="Print a new SECRET_KEY")
 
+    sponsors = sub.add_parser("sponsors", help="Opt-in sponsor line, local ledger and claims")
+    sponsors.add_argument(
+        "action",
+        nargs="?",
+        default="status",
+        choices=["status", "catalog", "line", "ledger", "claim", "verify", "enable", "disable", "forget"],
+        help="What to do (default: status)",
+    )
+    sponsors.add_argument("--json", action="store_true", help="Machine-readable report")
+    sponsors.add_argument("--context", default="waiting", help="Dead-time context for 'line'")
+    sponsors.add_argument("--categories", default="", help="Self-declared interests, comma separated")
+    sponsors.add_argument("--payout-to", default="", help="Payout handle to embed in a claim (email, ...)")
+    sponsors.add_argument("--note", default="", help="Free-text note to embed in a claim")
+    sponsors.add_argument("--claim", default="", help="Claim token to verify (or pipe it on stdin)")
+    sponsors.add_argument("--set-url", default="", help="With 'catalog': write SPONSOR_CATALOG_URL to the env file")
+    sponsors.add_argument("--env-file", default=".env", help="Env file to read/write (default: .env)")
+
     serve_api = sub.add_parser("serve-api", help="Run the FastAPI app")
     serve_api.add_argument("--host", default=None)
     serve_api.add_argument("--port", type=int, default=None)
@@ -731,6 +990,7 @@ COMMANDS = {
     "login": cmd_login,
     "logout": cmd_logout,
     "accounts": cmd_accounts,
+    "sponsors": cmd_sponsors,
     "resume": cmd_resume,
     "call": cmd_call,
     "bootstrap": cmd_bootstrap,

@@ -19,6 +19,7 @@ then come here for depth. Every page is self-contained and links back.
 | [Development](development.md) | Dev setup, design decisions and testing notes. |
 | [Troubleshooting and FAQ](faq.md) | Symptom → cause → fix, and the answers to the questions people actually ask. |
 | [Performance and roadmap](roadmap.md) | The honest bottlenecks and what ships next. |
+| [Monetization](monetization.md) | The honest money page: why there is no affiliate deal to chase, our MCP server + gateway stance, how Freebuff and the spinner-ad networks actually earn, and the opt-in sponsor line with a local ledger and a signed claim. |
 | [Privacy](privacy.md) | No telemetry, no accounts, no data collection — and how to verify it. |
 | [Legal and responsible use](legal.md) | What Kollektiv deliberately does not do. |
 | [Repository settings](repo-settings.md) | Maintainer pass: description, topics, security toggles, rulesets. |

@@ -50,6 +50,9 @@ from src.github.webhook_handler import get_orchestrator as get_webhook_orchestra
 from src.github.webhook_handler import router as webhook_router
 from src.github.webhook_handler import set_orchestrator as set_webhook_orchestrator
 from src.orchestrator.app import Orchestrator
+from src.sponsors.catalog import load_catalog, split_categories
+from src.sponsors.ledger import SponsorLedger, verify_claim
+from src.sponsors.line import SponsorLineMux
 from src.utils.errors import ConfigurationError, ConnectorError, KollektivError
 from src.utils.logger import configure_logging, get_logger
 from src.utils.paths import safe_path_segment, safe_relative_path
@@ -96,6 +99,25 @@ class RunResponse(BaseModel):
     failed: int = 0
     artifact: Dict[str, Any] = Field(default_factory=dict)
     results: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class SponsorImpressionRequest(BaseModel):
+    """Body for ``POST /sponsors/impressions``.
+
+    Only a catalogue ``sponsor_id`` crosses the wire. There is no field for a
+    user, a session, a project or a prompt, because the ledger does not want
+    them and the API will not accept them.
+    """
+
+    sponsor_id: str = Field(..., description="Entry id from the loaded catalogue")
+    impressions: int = Field(default=1, ge=1, le=100, description="How many lines were shown")
+
+
+class SponsorClaimRequest(BaseModel):
+    """Body for ``POST /sponsors/claim``."""
+
+    payout_to: str = Field(default="", description="Optional payout handle (email, lightning address, ...)")
+    note: str = Field(default="", description="Optional note for the sponsor")
 
 
 class UploadRequest(BaseModel):
@@ -593,6 +615,122 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             data.get("email_addresses", [{}])[0].get("email_address", data.get("id", "?")),
         )
         return {"received": True, "verified": True, "type": event_type}
+
+    # ------------------------------------------------------------------
+    # Sponsor line (opt-in; see docs/monetization.md)
+    # ------------------------------------------------------------------
+    @router.get("/sponsors/status", tags=["sponsors"])
+    async def sponsor_status() -> Dict[str, Any]:
+        """Report whether the sponsor line is on and what it would draw.
+
+        Answers with the switch, the catalogue's provenance, the payout
+        threshold and the local balance. Nothing here talks to a third party:
+        the catalogue is only fetched when ``SPONSOR_CATALOG_URL`` is set.
+        """
+        catalog = await load_catalog(resolved)
+        ledger = SponsorLedger(resolved)
+        summary = await ledger.summary()
+        return {
+            "enabled": bool(resolved.SPONSORS_ENABLED),
+            "share_bp": int(resolved.SPONSOR_SHARE_BP),
+            "min_interval_seconds": int(resolved.SPONSOR_MIN_INTERVAL_SECONDS),
+            "categories": split_categories(resolved.SPONSOR_CATEGORIES),
+            "catalog": {
+                "source": catalog.source,
+                "count": len(catalog.entries),
+                "categories": catalog.categories(),
+                "error": catalog.error,
+            },
+            "ledger": {
+                "impressions": summary["impressions"],
+                "net_cents": summary["net_cents"],
+                "claimable": summary["claimable"],
+                "min_payout_cents": summary["min_payout_cents"],
+            },
+            "note": "Kollektiv collects no telemetry; the ledger in this response lives in your own database.",
+        }
+
+    @router.get("/sponsors/line", tags=["sponsors"])
+    async def sponsor_line(
+        request: Request,
+        context: str = Query(default="waiting", description="Dead-time context (waiting, between-tasks, rate-limit)"),
+        categories: str = Query(default="", description="Self-declared interests, comma separated"),
+    ) -> Dict[str, Any]:
+        """Return the line the sponsor mux would show right now.
+
+        The response is ``{"line": null}`` whenever the feature is off, the
+        context is not dead time, the attention budget is spent, or the
+        catalogue is empty. Drawing a line also accrues it in the local ledger.
+
+        The mux lives on the app state so the 90-second attention budget is a
+        property of the process, not of one request.
+        """
+        mux = getattr(request.app.state, "sponsor_mux", None)
+        if mux is None:
+            mux = SponsorLineMux(settings=resolved)
+            request.app.state.sponsor_mux = mux
+        line = await mux.next_line(context=context, categories=split_categories(categories) or None)
+        return {"line": line}
+
+    @router.get("/sponsors/ledger", tags=["sponsors"])
+    async def sponsor_ledger() -> Dict[str, Any]:
+        """Return the local ledger: totals per sponsor, in cents."""
+        return await SponsorLedger(resolved).summary()
+
+    @router.post("/sponsors/impressions", tags=["sponsors"])
+    async def record_sponsor_impression(body: SponsorImpressionRequest) -> Dict[str, Any]:
+        """Accrue lines the caller actually displayed.
+
+        This is for embedding Kollektiv's line in your own terminal or UI. The
+        entry must exist in the loaded catalogue, so the endpoint cannot be used
+        to invent sponsors.
+
+        Raises:
+            HTTPException: 400 when the feature is off or the sponsor is unknown.
+        """
+        if not resolved.SPONSORS_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="the sponsor line is disabled; set SPONSORS_ENABLED=true to use it",
+            )
+        catalog = await load_catalog(resolved)
+        entry = catalog.by_id(body.sponsor_id)
+        if entry is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"sponsor {body.sponsor_id!r} is not in the catalogue loaded from {catalog.source}",
+            )
+        return await SponsorLedger(resolved).record(entry, impressions=body.impressions)
+
+    @router.post("/sponsors/claim", tags=["sponsors"])
+    async def sponsor_claim(body: SponsorClaimRequest) -> Dict[str, Any]:
+        """Build a signed claim token for everything accrued so far.
+
+        The token is signed with your ``SECRET_KEY`` and travels nowhere by
+        itself: this route returns it and the operator decides who sees it.
+
+        Raises:
+            HTTPException: 400 when the balance is below the payout threshold.
+        """
+        try:
+            return await SponsorLedger(resolved).claim(payout_to=body.payout_to, note=body.note)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @router.post("/sponsors/claim/verify", tags=["sponsors"])
+    async def sponsor_claim_verify(body: Dict[str, Any]) -> Dict[str, Any]:
+        """Verify a claim token against this deployment's ``SECRET_KEY``.
+
+        Sponsors run this to confirm a token before paying. A mismatch is
+        reported as ``{"valid": false}`` rather than an error.
+        """
+        token = str(body.get("claim") or "")
+        try:
+            payload = verify_claim(token, resolved.SECRET_KEY)
+        except Exception as exc:  # noqa: BLE001 - an invalid token is a normal answer here
+            LOGGER.warning("Rejected a sponsor claim: %s", exc)
+            return {"valid": False, "reason": str(exc)}
+        return {"valid": True, "payload": payload}
 
     @router.post("/sync", tags=["sync"])
     async def trigger_sync(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:

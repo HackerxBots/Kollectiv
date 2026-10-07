@@ -24,6 +24,25 @@ out of, because nothing is collected.
   request can be made; the connector catalogue (`GET /connectors`) shows every
   service currently configured.
 
+## The sponsor line does not change any of this
+
+The opt-in advertising surface ([Monetization](monetization.md)) was built to be
+compatible with this page rather than an exception to it:
+
+- It is **off by default** (`SPONSORS_ENABLED=false`) and nothing is fetched,
+  shown or recorded until you turn it on.
+- **No prompt, no code, no repository, no project and no identity** is ever an
+  input to choosing a line. The only targeting is category checkboxes you tick
+  yourself, and the selection is a local HMAC over the minute and those
+  categories.
+- Impression counts live in **your** database, in aggregate per sponsor -- there
+  is no per-event trail. `kollektiv sponsors forget` deletes the tally.
+- A payout is a **token you send**, not a request Kollektiv makes: the signed
+  claim contains the totals, the payout handle you typed, and nothing else.
+- If you configure `SPONSOR_CATALOG_URL`, the only request is a fetch of the
+  sponsor list; the hosted relay design (which would count impressions) sees a
+  random per-install token, never content, and it is documented but not built.
+
 There is no paid tier, no data resale and no business model that needs your
 data. That is a promise the licence (MIT) lets anyone verify and fork.
 

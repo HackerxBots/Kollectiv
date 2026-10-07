@@ -21,7 +21,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 303 hermetic tests, ~11 s
+pytest -q                      # 351 hermetic tests, ~11 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config examples       # types (clean)
@@ -54,6 +54,7 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 | `src/orchestrator/` | `brain` → `planner` → `dispatcher` → `collector` → `sync_engine`, wired by `app.Orchestrator`. |
 | `src/orchestrator/handoff.py` | Resume briefings: dependency-aware next actions, blockers and rendered Markdown, written to `HANDOFF.md` after every run and served by `GET /projects/{id}/handoff` + the `get_handoff` MCP tool. |
 | `src/connectors/` | `base.py` (Connector/ConnectorAction/ConnectorRegistry) + one module per service (GitHub, Google, Notion, webhooks, declarative REST). Every connector is always registered; `configured` decides what runs, and `dangerous` actions require `confirm`. |
+| `src/sponsors/` | The only advertising surface: `catalog.py` (rules + signed catalogues), `line.py` (dead-time line, off unless `SPONSORS_ENABLED`), `ledger.py` (local tally + HMAC-signed claims). No prompt, code or identity is ever an input; see `docs/monetization.md`. |
 | `src/api/` | `routes.py` (FastAPI), `mcp_server.py` (MCP tools), `cli.py` (`kollektiv`). |
 | `web/` | The static dashboard (`index.html` + `assets/`): no build step, no CDN, no telemetry. Served by the API at `/ui`, published by Cloudflare Pages or `pages.yml`. |
 | `docs/` | The documentation set. `README.md` is a **front page**: pitch, features, quickstart, links — `tests/test_docs.py` enforces the budget and checks every local link and `file.md#anchor` in `README.md` and `docs/`. Depth goes in the matching page (`architecture`, `configuration`, `connectors`, `deployment`, `agent-runtimes`, `api`, `operations`, `faq`, …). |

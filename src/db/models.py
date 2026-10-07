@@ -232,6 +232,29 @@ class ProjectStateRecord(SQLModel, table=True):
         return _json_loads(self.state, {})
 
 
+class SponsorLedgerRecord(SQLModel, table=True):
+    """Rolling per-sponsor tally for the opt-in sponsor line.
+
+    Deliberately aggregate-only: there is no per-impression log, no timestamped
+    trail of what the user was doing and no user identifier. The row says "this
+    deployment has seen N lines from sponsor X", which is all a claim needs and
+    all that is worth keeping on disk.
+    """
+
+    __tablename__ = "sponsor_ledger"
+
+    sponsor_id: str = Field(primary_key=True, max_length=128)
+    advertiser: str = Field(default="", max_length=200)
+    impressions: int = Field(default=0)
+    #: Gross at the catalogue rate: impressions x cpm_cents, so 1/1000 cent units.
+    gross_millicents: int = Field(default=0)
+    #: Developer share of ``gross_millicents``, frozen at the rate it accrued at.
+    net_millicents: int = Field(default=0)
+    share_bp: int = Field(default=7500)
+    first_seen: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 # ----------------------------------------------------------------------
 # Engine / session management
 # ----------------------------------------------------------------------
@@ -432,6 +455,7 @@ __all__ = [
     "EventLog",
     "AgentRecord",
     "ProjectStateRecord",
+    "SponsorLedgerRecord",
     "get_engine",
     "set_engine",
     "init_db",

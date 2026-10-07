@@ -330,6 +330,35 @@ class Settings(BaseSettings):
     MCP_TRANSPORT: str = "sse"
 
     # ------------------------------------------------------------------
+    # Sponsor line (optional, off by default, ledger stays on your machine)
+    # ------------------------------------------------------------------
+    #: Master switch. Kollektiv shows nothing -- and earns nothing -- until you
+    #: flip this on. Nothing here is required to build, run or deploy.
+    SPONSORS_ENABLED: bool = False
+    #: JSON catalogue on disk; see ``docs/monetization.md`` for the schema.
+    SPONSOR_CATALOG_PATH: str = ""
+    #: Or an HTTPS endpoint returning the same JSON, for catalogues you do not
+    #: want to keep in sync by hand. Fetched only when a line is actually asked
+    #: for, never at import time.
+    SPONSOR_CATALOG_URL: str = ""
+    #: Ed25519 public key (base64, raw 32 bytes) that signs the catalogue. Set
+    #: it to refuse unsigned catalogues; leave empty for a local file you wrote.
+    SPONSOR_CATALOG_PUBLIC_KEY: str = ""
+    #: Developer share of the gross, in basis points (7500 = 75%, the rate the
+    #: CLI spinner ad networks publish).
+    SPONSOR_SHARE_BP: int = 7500
+    #: Fallback rate, in cents per 1000 impressions, when an entry omits one.
+    SPONSOR_CPM_CENTS: int = 100
+    #: A claim is only offered above this many cents.
+    SPONSOR_MIN_PAYOUT_CENTS: int = 1000
+    #: Self-declared interests ("databases,ai") -- the *only* targeting that
+    #: exists. No prompt, no code, no history is ever read to pick a line.
+    SPONSOR_CATEGORIES: str = ""
+    #: Minimum seconds between two lines in one process (attention budget).
+    SPONSOR_MIN_INTERVAL_SECONDS: int = 90
+    SPONSOR_REQUEST_TIMEOUT: float = 15.0
+
+    # ------------------------------------------------------------------
     # Resilience
     # ------------------------------------------------------------------
     MAX_RETRIES: int = 3
