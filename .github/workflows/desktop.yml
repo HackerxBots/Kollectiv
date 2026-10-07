@@ -110,6 +110,7 @@ jobs:
 
       - name: Smoke-test the sidecar (bundle only)
         if: matrix.variant == 'bundle'
+        shell: bash
         run: |
           # A frozen build is the one artifact a unit test cannot check: run it
           # and wait for a real answer from /health before it goes in the bundle.
@@ -128,6 +129,7 @@ jobs:
       # how an unsigned macOS build fails at "SecKeychainItemImport". Export only
       # the variables that actually have a value.
       - name: Configure signing (optional)
+        shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
