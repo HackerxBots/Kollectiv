@@ -78,6 +78,48 @@ sandbox, and it assumes:
 - **No telemetry.** Nothing leaves your deployment except the endpoints you
   configure. There is no phone-home for the maintainers to compromise.
 
+## Static analysis (CodeQL) and the baseline
+
+`.github/workflows/codeql.yml` runs CodeQL with `security-and-quality` on every
+pull request and `security-extended` weekly on `main`, and uploads the results to
+the repository's *Code scanning* tab. Alerts are triaged before a pull request is
+merged: fix it, or dismiss it with a reason. The current baseline, so a new
+contributor knows what has already been decided:
+
+**Fixed**
+
+- *Path injection* (`py/path-injection`) — every project id, account id and file
+  path that becomes part of a filesystem or bucket path goes through
+  `src/utils/paths.py`. `safe_path_segment()` rejects separators, `..`/`.`,
+  control characters, leading dots and over-long values; `safe_relative_path()`
+  additionally rejects absolute paths and empty segments. Callers: the state
+  manager's local and remote paths, artifact uploads, and the project id *and*
+  file path of `GET /projects/{id}/files/{path}/url`. The API answers the
+  resulting `ValueError` with `400` (see the handler in `src/api/routes.py`).
+- *Stack-trace exposure* (`py/stack-trace-exposure`) on `GET /health` and the
+  project event stream — failures are logged with `exc_info=True` and the client
+  receives a generic message plus the exception *class* name, never the message.
+
+**Accepted by design** (dismissed with a reason in the Security tab)
+
+- `py/clear-text-logging-sensitive-data` in `src/api/cli.py` — `kollektiv
+  bootstrap` and `kollektiv secret` print a *newly generated* `SECRET_KEY`, and
+  `kollektiv login` prints a masked preview of the **account id**, to the
+  operator's own terminal. Showing the value once is the entire purpose of those
+  commands; the real token is stored encrypted through `TokenStore` and never
+  printed.
+- `py/command-line-injection` in `examples/aider_shim.py` — the shim runs the
+  command the *operator* set in `AIDER_COMMAND`, by design, exactly like a shell.
+- `py/path-injection` in the storage clients (`src/storage/r2_pool.py`,
+  `src/storage/pool_manager.py`) — those are the storage layer's public API:
+  callers pass the remote key they want, like a filesystem API. Every call site
+  inside Kollektiv composes that key from validated segments.
+- *Overwritten inherited attribute* in `src/utils/errors.py` —
+  `RateLimitError.retry_after` deliberately narrows the optional attribute
+  inherited from `RetryableError` to a float.
+- Import-cycle and unused-name notices (`src/connectors/*`, `src/db/models.py`,
+  `src/utils/logger.py`) are style notes, not security findings.
+
 ## Hardening checklist for operators
 
 - [ ] `SECRET_KEY` set (long, random) and backed up with the database.
@@ -88,3 +130,6 @@ sandbox, and it assumes:
       with object read/write on one bucket, not account-wide).
 - [ ] Backups tested (see issue #18 for the built-in job).
 - [ ] `EVENT_WEBHOOKS` URLs treated as secrets (they usually carry tokens).
+- [ ] Leave the path validation in `src/utils/paths.py` in place: it is what
+      keeps `/projects/{id}/...` and artifact keys inside your workspace and
+      bucket when the API is exposed.

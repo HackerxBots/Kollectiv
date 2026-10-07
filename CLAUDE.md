@@ -21,7 +21,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 223 hermetic tests, ~11 s
+pytest -q                      # 262 hermetic tests, ~11 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config examples       # types (clean)
@@ -106,6 +106,11 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   endpoint that is not in the OpenAPI schema, when an inline `<style>`/`<script>`
   appears, or when a tracker/CDN origin shows up. `docs/ui-prompt.md` is the
   prompt of record; update it with the assets.
+- Every value that becomes part of a filesystem or bucket path (`project_id`,
+  account id, `file_path`) goes through `src/utils/paths.py` — never join a raw
+  request value onto a directory or a bucket prefix. `ValueError` from those
+  helpers is a client error: the API answers `400` (global handler in
+  `src/api/routes.py`), and `tests/test_path_safety.py` pins the rules.
 - Live updates use Server-Sent Events (`GET /projects/{id}/events/stream`,
   `event: state` when the project's state digest changes, `: keep-alive`
   otherwise). Note for tests: `httpx.ASGITransport` buffers whole responses, so

@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&label=release)](https://github.com/HackerxBots/Kollektiv/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Tests: 223](https://img.shields.io/badge/tests-223%20passing-brightgreen.svg)](tests/)
+[![Tests: 262](https://img.shields.io/badge/tests-262%20passing-brightgreen.svg)](tests/)
 
 **A multi-agent collaborative dev team orchestrator — free to run, self-hosted, open source (MIT).**
 
@@ -1014,7 +1014,7 @@ CONTRIBUTING.md                gates, non-negotiables, connector + release recip
 CODE_OF_CONDUCT.md             Contributor Covenant 2.1
 .github/ISSUE_TEMPLATE/         bug, feature and question forms
 .github/workflows/codeql.yml   CodeQL scanning (PRs + weekly)
-tests/                         223 hermetic tests (no network, no credentials)
+tests/                         262 hermetic tests (no network, no credentials)
 ```
 
 ---
@@ -1024,7 +1024,7 @@ tests/                         223 hermetic tests (no network, no credentials)
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 223 tests, ~10 s, fully mocked
+pytest -q                 # 262 tests, ~10 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
 mypy src config examples  # types (clean)

@@ -45,7 +45,27 @@ on GitHub links to the section below for its version.
   must define hover/focus/reduced-motion states, and no tracker, CDN or
   third-party origin may appear. `tests/test_api.py` adds two SSE tests
   (state frame + faithful copy of `/status`, and an `event: error` frame for an
-  unknown project). 223 tests total.
+  unknown project). `tests/test_path_safety.py` covers the path rules end to end,
+  from the helpers to the API's `400`. 262 tests total.
+
+### Security
+
+- **Path validation for every identifier that becomes a path** — new
+  `src/utils/paths.py` (`safe_path_segment`, `safe_relative_path`) validates
+  project ids in the state manager and the artifact uploader, plus the project id
+  *and* file path of `GET /projects/{id}/files/{path}/url`. Traversal segments,
+  absolute paths, separators, control characters and over-long values raise
+  `ValueError`, and a new API-level handler answers those with `400` instead of a
+  `500`. 39 tests in `tests/test_path_safety.py`.
+- **No internal messages reach clients** — `GET /health` and unexpected failures
+  in the project event stream now log with `exc_info=True` and return a generic
+  message plus the exception class name, so a stack trace or an internal path
+  cannot leak through a degraded response.
+- **CodeQL baseline documented** in `SECURITY.md`: first run reports 44 findings,
+  the code-scanning-relevant ones are fixed as above, and the intentional ones
+  (the CLI printing a freshly generated `SECRET_KEY` to the operator's own
+  terminal; the example shim running the command the operator configured) are
+  listed with the reason to dismiss them.
 
 ### Changed
 
@@ -56,9 +76,9 @@ on GitHub links to the section below for its version.
   now links to the release policy with an absolute URL, so it works from forks
   too.
 - `README.md`, `CLAUDE.md` and `CONTRIBUTING.md` document the new dashboard file
-  split, the SSE endpoint, the CI gates (`mypy src config examples`) and the
-  current test count; the duplicated "Health and observability" heading in the
-  README is gone.
+  split, the SSE endpoint, the path validation, the CI gates
+  (`mypy src config examples`) and the current test count; the duplicated
+  "Health and observability" heading in the README is gone.
 
 ## [0.4.0] — 2026-10-06 — “continuity”
 
