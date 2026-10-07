@@ -7,10 +7,12 @@ and call the registered tools directly.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List
 
 import httpx
 import pytest
+from starlette.requests import Request as StarletteRequest
 
 from src.api.mcp_server import create_server
 from src.api.routes import create_app
@@ -353,3 +355,86 @@ async def test_replan_endpoint(api_client: Any) -> None:
 
     missing = await api_client.post("/projects/prj_missing/replan")
     assert missing.status_code == 404
+
+
+# ----------------------------------------------------------------------
+# Server-Sent Events
+# ----------------------------------------------------------------------
+async def test_project_event_stream_emits_state(api_client: Any, api_app: Any, settings: Any) -> None:
+    """``GET /projects/{id}/events/stream`` frames state as Server-Sent Events.
+
+    The endpoint is driven directly rather than through ``httpx.ASGITransport``:
+    the transport buffers the whole body before returning, which never happens
+    for a stream that stays open on purpose. Every other assertion still goes
+    through the real route function and the real orchestrator call.
+    """
+    created = await api_client.post(
+        "/projects",
+        json={"name": "stream", "description": "Stream a demo project with tests", "n_agents": 2},
+    )
+    project_id = created.json()["project_id"]
+
+    from src.api.routes import build_router
+
+    route = next(
+        route
+        for route in build_router(settings, serve_dashboard=False).routes
+        if getattr(route, "path", "") == "/projects/{project_id}/events/stream"
+    )
+
+    async def receive() -> Dict[str, Any]:
+        """Only ever reached if ``is_disconnected()`` does not cancel the wait."""
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = StarletteRequest(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": f"/projects/{project_id}/events/stream",
+            "raw_path": f"/projects/{project_id}/events/stream".encode(),
+            "query_string": b"",
+            "headers": [],
+            "client": ("test", 1),
+            "server": ("test", 80),
+        },
+        receive,
+    )
+    response = await route.endpoint(
+        project_id=project_id, request=request, interval=0.5, orchestrator=api_app.state.orchestrator
+    )
+
+    # Proxies (nginx, Cloudflare) must not buffer the stream.
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-accel-buffering"] == "no"
+    assert response.media_type == "text/event-stream"
+
+    iterator = response.body_iterator
+    try:
+        first = await anext(iterator)
+        assert first.startswith("event: state\ndata: ")
+        payload = json.loads(first.split("data: ", 1)[1].strip())
+        keys = {"status", "tasks", "files", "history", "last_commit", "queued_tasks"}
+        assert set(payload) == keys
+        # The frame is a faithful copy of what GET /projects/{id}/status returns.
+        status = await api_app.state.orchestrator.get_project_status(project_id)
+        assert payload == {key: status.get(key) for key in keys}
+
+        # An unchanged project sends a heartbeat comment instead of the state.
+        heartbeat = await anext(iterator)
+        assert heartbeat.strip() == ": keep-alive"
+    finally:
+        await iterator.aclose()
+
+
+async def test_project_event_stream_reports_missing_projects(api_client: Any) -> None:
+    """An unknown project yields one ``event: error`` frame and then closes."""
+    async with api_client.stream(
+        "GET", "/projects/prj_missing/events/stream", params={"interval": 0.5}
+    ) as response:
+        assert response.status_code == 200
+        frames = "".join([chunk async for chunk in response.aiter_text()])
+
+    assert "event: error" in frames
+    assert "prj_missing" in frames

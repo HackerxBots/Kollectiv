@@ -25,6 +25,8 @@ both rely on that).
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -32,7 +34,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -348,6 +350,51 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             ) from exc
         except KollektivError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    @router.get("/projects/{project_id}/events/stream", tags=["projects"])
+    async def project_event_stream(
+        project_id: str,
+        request: Request,
+        interval: float = Query(3.0, ge=0.5, le=30.0, description="Poll interval in seconds"),
+        orchestrator: Orchestrator = Depends(get_orchestrator),
+    ) -> StreamingResponse:
+        """Stream a project's state as Server-Sent Events (live dashboards).
+
+        Emits ``event: state`` whenever the project's tasks, files, status or
+        history change, and a comment heartbeat otherwise, so a browser can show
+        progress without polling. The stream ends when the client disconnects or
+        the project disappears.
+        """
+
+        async def generator() -> AsyncIterator[str]:
+            last_digest = ""
+            while True:
+                if await request.is_disconnected():
+                    LOGGER.debug("SSE client disconnected from %s", project_id)
+                    return
+                try:
+                    status = await orchestrator.get_project_status(project_id)
+                except KeyError as exc:
+                    yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+                    return
+                except Exception as exc:  # noqa: BLE001 - report, then stop cleanly
+                    LOGGER.error("SSE stream for %s failed: %s", project_id, exc)
+                    yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+                    return
+                payload = {key: status.get(key) for key in ("status", "tasks", "files", "history", "last_commit", "queued_tasks")}
+                digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+                if digest != last_digest:
+                    last_digest = digest
+                    yield f"event: state\ndata: {json.dumps(payload, default=str)}\n\n"
+                else:
+                    yield ": keep-alive\n\n"
+                await asyncio.sleep(interval)
+
+        return StreamingResponse(
+            generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
 
     @router.get("/projects/{project_id}/handoff", tags=["projects"])
     async def project_handoff(
