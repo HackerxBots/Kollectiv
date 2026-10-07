@@ -4,8 +4,22 @@ Two ways to get a native window, in the order they are worth doing.
 
 | Option | What you download | API | Status |
 | --- | --- | --- | --- |
-| **1. Shell** (`desktop/`) | 5–15 MB installer | runs anywhere: your laptop, a VM, a container, the Cloudflare tunnel | **built** — `tauri build` |
-| **2. Bundle** (shell + sidecar) | 60–120 MB installer | starts with the app, on `127.0.0.1`, no terminal, nothing to configure | **wired** — `sidecar/` and `.github/workflows/desktop.yml` |
+| **1. Shell** (`desktop/`) | **1.1–3.2 MB** installer | runs anywhere: your laptop, a VM, a container, the Cloudflare tunnel | **built in CI, all five targets green** |
+| **2. Bundle** (shell + sidecar) | **48.9 MB** installer | starts with the app, on `127.0.0.1`, no terminal, nothing to configure | **built in CI** — the frozen engine answers `/health` before it is bundled |
+
+Measured in the `Desktop installers` workflow (artifact sizes, 2026-10-07):
+
+| Installer | Size |
+| --- | --- |
+| Shell, macOS arm64 (`.dmg`) | 3.0 MB |
+| Shell, macOS x64 (`.dmg`) | 3.2 MB |
+| Shell, Windows x64 (`.exe`) | 1.1 MB |
+| Shell, Linux x64 (`.deb`) | 1.8 MB |
+| Bundle, Linux x64 (`.deb`, Python engine inside) | 48.9 MB |
+
+The bundle job is also the only place a frozen Python build gets checked at all: it
+runs the built sidecar, waits for `/health` (200, `"status":"ok"`), and only then
+hands it to Tauri — a PyInstaller build that cannot serve never reaches a user.
 
 Both use the same `web/` dashboard that Cloudflare Pages publishes: the shell is a
 window, not a second frontend. The difference is only whether the Python engine

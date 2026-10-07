@@ -67,6 +67,7 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 | `src/sponsors/` | The only advertising surface: `catalog.py` (rules + signed catalogues), `line.py` (dead-time line, off unless `SPONSORS_ENABLED`), `ledger.py` (local tally + HMAC-signed claims). No prompt, code or identity is ever an input; see `docs/monetization.md`. |
 | `src/api/` | `routes.py` (FastAPI), `mcp_server.py` (MCP tools), `cli.py` (`kollektiv`). |
 | `web/` | The static dashboard (`index.html` + `assets/`): no build step, no CDN, no telemetry. Served by the API at `/ui`, published by Cloudflare Pages or `pages.yml`. |
+| `desktop/` | Tauri 2 shell (Option 1) + the sidecar build (Option 2); `sidecar/` holds the PyInstaller spec — named that way because `packaging/` shadows a PyPI package |
 | `docs/` | The documentation set. `README.md` is a **front page**: pitch, features, quickstart, links — `tests/test_docs.py` enforces the budget and checks every local link and `file.md#anchor` in `README.md` and `docs/`. Depth goes in the matching page (`architecture`, `configuration`, `connectors`, `deployment`, `agent-runtimes`, `api`, `operations`, `faq`, …). |
 
 ## Conventions

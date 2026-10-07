@@ -130,7 +130,7 @@ installer that starts everything. The honest numbers:
 | Mobile | iOS + Android in v2 | none |
 
   Subtract the romance: the sidecar needs a frozen Python (PyInstaller-ish) of
-  roughly 40–80 MB per platform, so the *real* download is 60–120 MB against
+  roughly 40–80 MB per platform, so the *measured* Linux .deb is 48.9 MB against
   Electron's 150–250 MB — smaller and nicer, not magic, and the OS webview still
   needs the dashboard's CSS checked per platform. The trigger to build it: a user
   who wants a one-click install and no terminal. The cost: a Rust toolchain, three

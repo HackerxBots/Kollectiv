@@ -49,8 +49,8 @@ Two native builds, both embedding the same `web/` dashboard ([desktop/README.md]
 
 | Option | Download | API | When to pick it |
 | --- | --- | --- | --- |
-| **Shell** | 5–15 MB | one you run (laptop, VM, tunnel) | you already have an API, or you want one window onto a server |
-| **Bundle** | 60–120 MB | starts with the app on `127.0.0.1:8765` | you want one double-click and no terminal |
+| **Shell** | 1.1–3.2 MB, measured | one you run (laptop, VM, tunnel) | you already have an API, or you want one window onto a server |
+| **Bundle** | 48.9 MB, measured | starts with the app on `127.0.0.1:8765` | you want one double-click and no terminal |
 
 ```bash
 # Shell (needs Rust once)
