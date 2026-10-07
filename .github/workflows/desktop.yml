@@ -122,11 +122,13 @@ jobs:
           kill %1 2>/dev/null || true
           test "${ok:-}" = "1" || { echo "the sidecar never answered"; exit 1; }
 
-      # --- both variants: build the installers ------------------------------
-      - name: Build installers
-        uses: tauri-apps/tauri-action@v1
+      # --- optional signing -------------------------------------------------
+      # Secrets that are not configured arrive as empty strings, and Tauri takes
+      # a *present* APPLE_CERTIFICATE as an instruction to import it - which is
+      # how an unsigned macOS build fails at "SecKeychainItemImport". Export only
+      # the variables that actually have a value.
+      - name: Configure signing (optional)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -140,6 +142,25 @@ jobs:
           AZURE_KEY_VAULT_CERTIFICATE: ${{ secrets.AZURE_KEY_VAULT_CERTIFICATE }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          imported=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                      APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID AZURE_TENANT_ID AZURE_CLIENT_ID \
+                      AZURE_CLIENT_SECRET AZURE_KEY_VAULT_URI AZURE_KEY_VAULT_CERTIFICATE \
+                      TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            value="${!name:-}"
+            if [ -n "$value" ]; then
+              printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+              imported=$((imported + 1))
+            fi
+          done
+          echo "signing variables in play: $imported (0 = unsigned build, which is fine)"
+
+      # --- both variants: build the installers ------------------------------
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: desktop
           # A release is created only for a real release tag or an explicit
