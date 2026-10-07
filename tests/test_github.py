@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import httpx
 import pytest
@@ -473,7 +473,8 @@ def build_sync_engine(settings: Settings, calls: List[Dict[str, Any]]) -> SyncEn
     )
     github = GitHubClient(settings=settings, client=client)
     brain = OrchestratorBrain(settings)
-    return SyncEngine(github=github, pool=pool, state=state, brain=brain, settings=settings)
+    # ``FakeTeraBoxPool`` is a duck-typed double for the storage pool.
+    return SyncEngine(github=github, pool=cast(Any, pool), state=state, brain=brain, settings=settings)
 
 
 async def test_on_push_updates_state(settings: Any, github_calls: List[Dict[str, Any]]) -> None:
@@ -558,7 +559,13 @@ async def test_cron_sync_survives_github_failure(settings: Any) -> None:
     state = StateManager(pool, settings=settings, project_id="prj_fail")
     client = httpx.AsyncClient(base_url=settings.GITHUB_API_URL, transport=httpx.MockTransport(handler))
     github = GitHubClient(settings=settings, client=client)
-    engine = SyncEngine(github=github, pool=pool, state=state, brain=OrchestratorBrain(settings), settings=settings)
+    engine = SyncEngine(
+        github=github,
+        pool=cast(Any, pool),
+        state=state,
+        brain=OrchestratorBrain(settings),
+        settings=settings,
+    )
 
     summary = await engine.cron_sync()
     assert summary["commits"] == 0

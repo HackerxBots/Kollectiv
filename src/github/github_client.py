@@ -125,7 +125,6 @@ class GitHubClient:
         params: Optional[Dict[str, Any]] = None,
         json_body: Optional[Dict[str, Any]] = None,
         context: str = "request",
-        absolute: bool = False,
         accept: Optional[str] = None,
         follow_redirects: Optional[bool] = None,
     ) -> httpx.Response:
@@ -133,12 +132,11 @@ class GitHubClient:
 
         Args:
             method: HTTP verb.
-            url: Path relative to the API base URL (or absolute when
-                ``absolute`` is true).
+            url: Path relative to the API base URL of the configured
+                GitHub endpoint.
             params: Query parameters.
             json_body: JSON request body.
             context: Description used in logs and errors.
-            absolute: Treat ``url`` as a full URL (used for ``download_url``).
             accept: Override the ``Accept`` header (e.g. raw diffs).
             follow_redirects: Override redirect behaviour.
 

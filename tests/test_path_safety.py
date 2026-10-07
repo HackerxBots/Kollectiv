@@ -10,7 +10,7 @@ leaking an internal message or a stack trace.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Awaitable, List, Optional, cast
 
 import httpx
 import pytest
@@ -128,18 +128,19 @@ async def test_file_url_route_rejects_traversal(settings: Settings) -> None:
         if getattr(route, "path", "") == "/projects/{project_id}/files/{file_path:path}/url"
     )
 
-    remote = await route.endpoint(
+    endpoint = cast(Any, route).endpoint  # BaseRoute types this dynamically
+    remote = await endpoint(
         project_id="prj_ok", file_path="src/app.py", expires=None, orchestrator=orchestrator
     )
     assert remote["path"] == "/Kollektiv/prj_ok/src/app.py"
     assert orchestrator.pool.requested == ["/Kollektiv/prj_ok/src/app.py"]
 
     with pytest.raises(ValueError):
-        await route.endpoint(
+        await endpoint(
             project_id="../../other", file_path="src/app.py", expires=None, orchestrator=orchestrator
         )
     with pytest.raises(ValueError):
-        await route.endpoint(
+        await endpoint(
             project_id="prj_ok", file_path="../../other/secret", expires=None, orchestrator=orchestrator
         )
     assert orchestrator.pool.requested == ["/Kollektiv/prj_ok/src/app.py"]
@@ -147,13 +148,13 @@ async def test_file_url_route_rejects_traversal(settings: Settings) -> None:
 
 async def test_invalid_input_is_a_400_not_a_500(settings: Settings) -> None:
     """A bad identifier is a client error with a readable message."""
-    app = create_app(settings, orchestrator=FakeOrchestrator())
+    app = create_app(settings, orchestrator=cast(Any, FakeOrchestrator()))
     handler = app.exception_handlers[ValueError]
 
     request = StarletteRequest(
         {"type": "http", "method": "GET", "path": "/projects/..%2Fetc/status", "headers": [], "query_string": b""}
     )
-    response = await handler(request, ValueError("project id contains characters that are not allowed in a path"))
+    response = await cast(Awaitable[Any], handler(request, ValueError("project id contains characters that are not allowed in a path")))
 
     assert response.status_code == 400
     assert b"project id" in response.body
@@ -161,7 +162,7 @@ async def test_invalid_input_is_a_400_not_a_500(settings: Settings) -> None:
 
 async def test_traversal_paths_never_crash_the_api(settings: Settings) -> None:
     """Encoded traversal in a URL is rejected (400/404), never a 500."""
-    app = create_app(settings, orchestrator=FakeOrchestrator())
+    app = create_app(settings, orchestrator=cast(Any, FakeOrchestrator()))
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),

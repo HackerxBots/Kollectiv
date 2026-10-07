@@ -63,7 +63,6 @@ class AgentPool:
         self._agents: Dict[str, ArenaClient] = {}
         self._initialized = False
         self._lock = asyncio.Lock()
-        self._dispatch_counter = 0
 
         for account in raw_accounts:
             agent = self._make_client(account)
@@ -297,7 +296,6 @@ class AgentPool:
                 continue
 
             tried.append(candidate.account_id)
-            self._dispatch_counter += 1
             try:
                 LOGGER.info(
                     "Dispatching task %s to agent %s (attempt %s/%s)",

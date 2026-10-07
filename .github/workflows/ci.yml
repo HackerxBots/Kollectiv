@@ -35,7 +35,9 @@ jobs:
         run: ruff check .
 
       - name: Type check
-        run: mypy src config examples scripts
+        # Tests are included on purpose: a test that references an attribute the
+        # code no longer has is rot, and mypy is the cheapest place to catch it.
+        run: mypy src config examples scripts tests
 
       - name: Tests
         run: pytest -q --junitxml=pytest-report.xml -rf

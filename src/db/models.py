@@ -26,7 +26,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
-from sqlalchemy import JSON as SAJSON
 from sqlalchemy import Column, Text, UniqueConstraint
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
@@ -231,10 +230,6 @@ class ProjectStateRecord(SQLModel, table=True):
     def state_dict(self) -> Dict[str, Any]:
         """Return the mirrored state as a dict."""
         return _json_loads(self.state, {})
-
-
-#: Extra SQLAlchemy column type alias kept for readability in annotations.
-JSONColumn = SAJSON
 
 
 # ----------------------------------------------------------------------

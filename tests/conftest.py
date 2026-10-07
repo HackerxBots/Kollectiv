@@ -44,10 +44,19 @@ def fast_retries() -> Any:
 # ----------------------------------------------------------------------
 # Settings
 # ----------------------------------------------------------------------
+def make_settings(**kwargs: Any) -> Settings:
+    """Build :class:`Settings` for tests, ignoring any developer ``.env`` file.
+
+    ``_env_file`` exists at runtime (pydantic-settings) but is not part of the
+    generated signature, hence the single ignore.
+    """
+    return Settings(_env_file=None, **kwargs)  # type: ignore[call-arg]
+
+
 @pytest.fixture()
 def settings(tmp_path: Path) -> Settings:
     """Settings with an in-memory database, a temp workspace and no secrets."""
-    return Settings(
+    return make_settings(
         SECRET_KEY="test-secret-key",
         ENVIRONMENT="development",
         DATABASE_URL="sqlite://",
@@ -61,7 +70,6 @@ def settings(tmp_path: Path) -> Settings:
         BRAIN_PROVIDER="deepseek",
         ARENA_BASE_URL="https://arena.example.com",
         TERABOX_BASE_URL="https://openapi.terabox.com",
-        _env_file=None,
     )
 
 
@@ -281,7 +289,7 @@ class FakeTeraBoxPool:
         self.uploads: List[tuple[str, str]] = []
         self.account_count = 1
         self.accounts: List[Any] = []
-        self.settings = Settings(SECRET_KEY="test", TERABOX_REMOTE_ROOT=root, _env_file=None)
+        self.settings = make_settings(SECRET_KEY="test", TERABOX_REMOTE_ROOT=root)
 
     @property
     def remote_root(self) -> str:
@@ -407,7 +415,7 @@ class FakeAgentPool:
     def __init__(self, agents: Optional[List[FakeAgent]] = None) -> None:
         self._agents = agents or [FakeAgent("agent-1")]
         self.max_concurrency = 2
-        self.settings = Settings(SECRET_KEY="test", _env_file=None)
+        self.settings = make_settings(SECRET_KEY="test")
 
     @property
     def agents(self) -> List[FakeAgent]:

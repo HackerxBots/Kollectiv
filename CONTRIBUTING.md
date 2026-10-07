@@ -22,7 +22,7 @@ Every pull request must be green on all three:
 ```bash
 pytest -q                 # tests (add some with behaviour changes)
 ruff check .              # lint
-mypy src config examples scripts  # types
+mypy src config examples scripts tests tests  # types
 ```
 
 CI runs the same on Python 3.11 and 3.12, plus a packaging job, and posts any

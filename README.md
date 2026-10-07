@@ -144,7 +144,7 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 ## Contributing
 
 Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
-(three gates: `pytest -q`, `ruff check .`, `mypy src config examples scripts`), the
+(three gates: `pytest -q`, `ruff check .`, `mypy src config examples scripts tests`), the
 [code of conduct](CODE_OF_CONDUCT.md), and the [security policy](SECURITY.md) for
 vulnerability reports. `docs/` and `CHANGELOG.md` ship with the change.
 

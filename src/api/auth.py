@@ -102,7 +102,9 @@ def decode_unverified(token: str) -> Tuple[Dict[str, Any], Dict[str, Any], bytes
     parts = token.split(".")
     if len(parts) != 3:
         raise AuthError("Malformed token: expected three dot-separated parts.")
-    header_raw, payload_raw, signature_raw = parts
+    # The signature is not verified here (``ClerkVerifier`` does that); the name
+    # keeps the three-part structure obvious while marking it deliberately unused.
+    header_raw, payload_raw, _signature_raw = parts
     try:
         header = json.loads(_b64url_decode(header_raw))
         payload = json.loads(_b64url_decode(payload_raw))

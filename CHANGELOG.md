@@ -71,6 +71,19 @@ on GitHub links to the section below for its version.
   unknown project). `tests/test_path_safety.py` covers the path rules end to end,
   from the helpers to the API's `400`. 303 tests total.
 
+### Changed
+
+- **Dead code removed, and the type gate widened to the tests.** `vulture` at
+  100 % confidence plus a hand review of every 60 % hit deleted an unused
+  `absolute` parameter from `GitHubClient._request`, the write-only
+  `AgentPool._dispatch_counter` and the unused `JSONColumn = SAJSON` alias;
+  `signature_raw` became `_signature_raw` to say out loud that the unverified
+  decode path ignores it. Deliberately *kept* as live-but-dynamic: FastAPI route
+  handlers, MCP tool functions, pydantic settings fields. `examples/` is now a
+  package so `mypy` can check the tests too — the gate is
+  `mypy src config examples scripts tests` (71 files) and the 24 type errors it
+  found in six test files are fixed.
+
 ### Security
 
 - **Path validation for every identifier that becomes a path** — new

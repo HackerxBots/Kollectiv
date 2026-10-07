@@ -8,7 +8,7 @@ and call the registered tools directly.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import httpx
 import pytest
@@ -171,7 +171,7 @@ class StubOrchestrator:
 def api_app(settings: Any) -> Any:
     """A FastAPI app wired to the stub orchestrator."""
     settings = settings.model_copy(update={"AUTO_INIT_DB": True}, deep=True)
-    return create_app(settings=settings, orchestrator=StubOrchestrator(settings))
+    return create_app(settings=settings, orchestrator=cast(Any, StubOrchestrator(settings)))
 
 
 @pytest.fixture()
@@ -401,7 +401,8 @@ async def test_project_event_stream_emits_state(api_client: Any, api_app: Any, s
         },
         receive,
     )
-    response = await route.endpoint(
+    endpoint = cast(Any, route).endpoint  # BaseRoute types this dynamically
+    response = await endpoint(
         project_id=project_id, request=request, interval=0.5, orchestrator=api_app.state.orchestrator
     )
 

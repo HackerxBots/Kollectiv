@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import httpx
 import pytest
@@ -321,7 +321,7 @@ async def test_pool_falls_back_to_second_agent(settings: Any) -> None:
         email = data.get("email")
 
         def handler(request: httpx.Request) -> httpx.Response:
-            attempts.append(email)
+            attempts.append(str(email))
             if email == "bad@example.com":
                 return httpx.Response(400, json={"error": "cannot help"})
             return httpx.Response(200, json={"choices": [{"message": {"content": "done by good agent"}}]})
@@ -426,7 +426,7 @@ async def test_session_manager_refreshes_unhealthy_agents(db_engine: Any) -> Non
     broken = FakeAgent("broken")
     resets: List[str] = []
 
-    async def fake_status(probe: bool = False) -> Dict[str, Any]:
+    async def fake_status(probe: bool = False) -> List[Dict[str, Any]]:
         return [
             {"account_id": "healthy", "alive": True, "token_valid": True},
             {"account_id": "broken", "alive": False, "token_valid": False},
@@ -440,7 +440,7 @@ async def test_session_manager_refreshes_unhealthy_agents(db_engine: Any) -> Non
     pool = FakeAgentPool([healthy, broken])
     pool.get_pool_status = fake_status  # type: ignore[assignment]
 
-    manager = SessionManager(pool, interval_seconds=1)
+    manager = SessionManager(cast(Any, pool), interval_seconds=1)
     try:
         summary = await manager.check_and_refresh()
         assert summary["agents"] == 2
@@ -455,7 +455,7 @@ async def test_session_manager_start_and_stop(db_engine: Any) -> None:
     """Start/stop toggles the background loop and reports status."""
     from tests.conftest import FakeAgent, FakeAgentPool
 
-    manager = SessionManager(FakeAgentPool([FakeAgent("a")]), interval_seconds=3600)
+    manager = SessionManager(cast(Any, FakeAgentPool([FakeAgent("a")])), interval_seconds=3600)
     assert await manager.start(use_scheduler=False) is True
     assert manager.is_running is True
     status = manager.status()
@@ -490,7 +490,7 @@ async def test_session_manager_ensure_ready_sessions(db_engine: Any) -> None:
 
     pool.get_pool_status = fake_status  # type: ignore[assignment]
 
-    manager = SessionManager(pool, interval_seconds=1)
+    manager = SessionManager(cast(Any, pool), interval_seconds=1)
     try:
         assert await manager.ensure_ready_sessions(minimum=1) == 1
         assert calls["reset"] >= 1

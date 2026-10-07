@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import httpx
 import pytest
@@ -250,7 +250,7 @@ async def test_planner_blocked_and_ready_tasks(settings: Any) -> None:
 async def test_planner_replan_creates_corrective_task(settings: Any) -> None:
     """Replanning keeps existing work and adds a repair task for each failure."""
     planner = Planner(OrchestratorBrain(settings), settings=settings)
-    state = {
+    state: Dict[str, Any] = {
         "project_name": "demo",
         "description": "Build a demo",
         "tasks": [
@@ -404,7 +404,7 @@ async def test_dispatcher_respects_dependencies_and_blocks(settings: Any) -> Non
     pool = FakeAgentPool([FakeAgent("agent-1", ["broken output", "should never run"])])
     brain = OrchestratorBrain(settings)
     state = StateManager(FakeTeraBoxPool(), settings=settings, project_id="prj_test")
-    dispatcher = Dispatcher(pool, brain, state, settings=settings)
+    dispatcher = Dispatcher(cast(Any, pool), brain, state, settings=settings)
     dispatcher.max_concurrency = 2
 
     plan = {
@@ -451,7 +451,7 @@ async def test_dispatcher_retries_when_review_fails(settings: Any) -> None:
     ]
     pool = FakeAgentPool([FakeAgent("agent-1", outputs)])
     state = StateManager(FakeTeraBoxPool(), settings=settings, project_id="prj_retry")
-    dispatcher = Dispatcher(pool, brain, state, settings=settings)
+    dispatcher = Dispatcher(cast(Any, pool), brain, state, settings=settings)
 
     results = await dispatcher.dispatch(
         {"tasks": [{"id": "t1", "title": "Implement", "description": "write it", "dependencies": []}],
@@ -477,7 +477,7 @@ async def test_dispatcher_requires_agents(settings: Any) -> None:
     pool._agents = []  # type: ignore[attr-defined]
     brain = OrchestratorBrain(settings)
     state = StateManager(FakeTeraBoxPool(), settings=settings, project_id="prj_none")
-    dispatcher = Dispatcher(pool, brain, state, settings=settings)
+    dispatcher = Dispatcher(cast(Any, pool), brain, state, settings=settings)
     from src.utils.errors import ConfigurationError
 
     with pytest.raises(ConfigurationError):
@@ -489,7 +489,7 @@ async def test_dispatch_parallel_marks_blocked_tasks(settings: Any) -> None:
     pool = FakeAgentPool([FakeAgent("agent-1")])
     brain = OrchestratorBrain(settings)
     state = StateManager(FakeTeraBoxPool(), settings=settings, project_id="prj_par")
-    dispatcher = Dispatcher(pool, brain, state, settings=settings)
+    dispatcher = Dispatcher(cast(Any, pool), brain, state, settings=settings)
     results = await dispatcher.dispatch_parallel(
         [{"id": "t2", "title": "Needs t1", "dependencies": ["t1"]}],
         project_id="prj_par",
@@ -647,7 +647,8 @@ async def test_replan_project_adds_corrective_tasks(settings: Any) -> None:
     record = await orchestrator.create_project("demo", "Build a tiny service with tests", 2)
 
     # Force a failure, then replan it.
-    orchestrator.agent_pool.agents[0].outputs = ["broken output"]
+    first_agent = cast(Any, orchestrator.agent_pool.agents[0])  # a FakeAgent in tests
+    first_agent.outputs = ["broken output"]
     await orchestrator.run_project(record["project_id"])
     status = await orchestrator.get_project_status(record["project_id"])
     failed = [task for task in status["tasks"] if task["status"] == "failed"]
