@@ -67,6 +67,12 @@ hand-rolled SigV4 signer and `kollektiv bootstrap`.
 - [ ] Additional storage backends (WebDAV, Backblaze B2) behind the pool
 - [x] Cost accounting and caps (`.kollektiv.yml`, `BUDGET_MAX_USD`, dry-run estimate)
 - [ ] Latency accounting per provider in `/health`
+- [ ] A Tauri 2 desktop build (the API as a sidecar) — recipe and honest numbers in
+      [Performance](performance.md#browser-or-desktop-app); waiting for a user who
+      wants one-click installs and a maintainer willing to sign three platforms
+- [x] Installable PWA shell (service worker, install prompt, offline dashboard)
+- [ ] A browser-only *demo* mode against a hosted API — the engine itself cannot
+      run in a browser (128 MB, 10 ms CPU, no threads, no filesystem)
 - [ ] Signed Python wheels + SBOM attached to each release
 
 ---

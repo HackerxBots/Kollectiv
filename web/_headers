@@ -9,11 +9,16 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
-  Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src *
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; worker-src 'self'; font-src 'self'; connect-src *
   Cache-Control: public, max-age=0, must-revalidate
 
 /assets/*
   Cache-Control: public, max-age=604800
+
+# The service worker itself carries the cache version, so it must never be
+# served stale: a browser holding an old worker cannot be told to update.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
 
 # Long-lived, content-addressed-looking assets: bump the query string (or the
 # file) when they change, since Pages serves the newest deploy anyway.

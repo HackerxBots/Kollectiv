@@ -185,11 +185,50 @@ def test_dashboard_is_installable() -> None:
     assert manifest["display"] == "standalone"
     assert manifest["icons"], "an installable app needs at least one icon"
     assert _read("index.html").count("assets/manifest.webmanifest") == 1
+    # Identity and platform hints: without an id a reinstall can duplicate the app.
+    assert manifest["id"] and manifest["start_url"] and manifest["scope"]
+    assert manifest["display_override"], "window-controls-overlay is how it feels native on desktop"
+    shortcuts = {item["name"] for item in manifest["shortcuts"]}
+    assert {"Overview", "Projects", "Connectors"} <= shortcuts, "the app icon should offer shortcuts"
+
+
+def test_dashboard_registers_a_service_worker() -> None:
+    """The shell is installable and offline-capable, and app.js wires it up."""
+    worker = WEB / "sw.js"
+    assert worker.is_file(), "an installable app needs a service worker at /sw.js"
+    source = _read("assets/app.js")
+    assert 'navigator.serviceWorker.register("sw.js")' in source, "app.js should register the worker"
+    assert "function initPwa(" in source and "initPwa();" in source, "boot should call initPwa"
+    # The install path: prompt when offered, hint on iOS (which never offers one).
+    assert "beforeinstallprompt" in source and "appinstalled" in source
+    assert 'id="install-app"' in _read("index.html") and 'id="install-hint"' in _read("index.html")
+    assert "display-mode: standalone" in source, "hide the prompt when already installed"
+
+
+def test_service_worker_never_caches_the_api() -> None:
+    """Offline is for the shell; operator data must always come from the network."""
+    worker = _read("sw.js")
+    assert "caches.open" in worker and "addAll" in worker, "the shell should be pre-cached"
+    assert "skipWaiting" in worker and "clients.claim" in worker, "deploys should take over"
+    # Cross-origin requests (the API you pointed it at) are never cached, and the
+    # worker only answers for its own shell paths.
+    assert "url.origin !== SCOPE.origin" in worker, "another origin must be left to the network"
+    assert "SHELL_PATHS.has" in worker, "only shell files may be served from the cache"
+    assert 'request.mode === "navigate"' in worker, "pages are network-first"
+    # And it carries a cache version to bump, rather than guessing at staleness.
+    assert re.search(r"const VERSION = \"v\d+\"", worker), "the cache needs a version"
+
+
+def test_dashboard_install_prompt_is_quiet_by_default() -> None:
+    """Installing is offered, never demanded: the button starts hidden."""
+    html = _read("index.html")
+    assert re.search(r'id="install-app"[^>]*hidden', html), "the install button starts hidden"
+    assert "<style" not in html.lower(), "no inline styles, even for the button"
 
 
 def test_dashboard_ships_no_trackers_or_remote_assets() -> None:
     """No analytics, no CDN, no third-party origin of any kind."""
-    for name in ("index.html", "assets/styles.css", "assets/app.js"):
+    for name in ("index.html", "assets/styles.css", "assets/app.js", "sw.js"):
         text = _read(name)
         assert not _TRACKERS.search(text), f"{name} references a tracker"
         hosts = set(_ABSOLUTE_URL.findall(text))

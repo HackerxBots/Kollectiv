@@ -26,6 +26,7 @@ then come here for depth. Every page is self-contained and links back.
 | [Legal and responsible use](legal.md) | What Kollektiv deliberately does not do. |
 | [Repository settings](repo-settings.md) | Maintainer pass: description, topics, security toggles, rulesets. |
 | [Frontend prompt](ui-prompt.md) | The prompt that (re)builds `web/`, the dashboard in this repository. |
+| [Performance](performance.md) | Measured numbers, the escalation ladder, and the honest answer to "is Python too slow?" |
 
 **Conventions.** Docs are written for the person who has 10 minutes, not 2 hours:
 the first paragraph of a page says what it is for, tables beat prose, and every

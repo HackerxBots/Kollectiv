@@ -45,6 +45,11 @@
         <span class="kv-status-dot" id="connectors-state" data-state=""><i></i> Connectors</span>
         <button class="kv-btn ghost small" id="tour-start" type="button">Show me around</button>
         <button class="kv-btn ghost small" id="theme-toggle" type="button" title="Toggle light/dark (t)">Theme</button>
+        <!-- Progressive web app: installs as a real window. The button appears
+             only when the browser offers an install prompt; the hint covers
+             iOS Safari, which never fires beforeinstallprompt. -->
+        <button class="kv-btn ghost small" id="install-app" type="button" hidden>Install app</button>
+        <span class="kv-hint" id="install-hint" hidden>On iPhone: Share &rarr; Add to Home Screen</span>
       </div>
     </aside>
 

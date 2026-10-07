@@ -130,7 +130,8 @@ on GitHub links to the section below for its version.
   gate), and `tests/test_budget.py` (21 tests: both config parsers, the
   estimate's arithmetic and verdicts, caps, the ledger's totals and its
   failure-is-a-warning behaviour, the CLI, and a real offline orchestrator
-  refusing an over-budget run). **454 tests total.**
+  refusing an over-budget run), `tests/test_perf.py` (7 performance tripwires)
+  and three more dashboard tests for the PWA. **464 tests total.**
 
 - **Budgets: estimate, cap, and record.** A run can no longer cost more than you
   expected without saying so first.
@@ -163,6 +164,24 @@ on GitHub links to the section below for its version.
     a `budget` block that reports configuration *without* querying (health must
     answer instantly); the MCP server gained `estimate_cost` and
     `budget_report`.
+
+- **Performance, measured instead of guessed.** `scripts/benchmark.py` reports
+  what the Python side of Kollektiv actually costs (estimator, config parsing,
+  the connector registry, the 57-tool gateway catalogue, planning, the ledger,
+  `/health`, CLI cold start), and `tests/test_perf.py` guards the shapes that
+  matter: the estimator stays linear, `/health` never queries the ledger, the
+  config parser stays cheap enough to run on every command. `docs/performance.md`
+  puts the numbers next to the "should this be Rust?" question and answers it
+  with the escalation ladder (concurrency → 3.14 free-threading → PyO3 for one
+  profiler-named function → more processes → never a rewrite).
+- **The dashboard installs as an app.** `web/sw.js` pre-caches the shell, serves
+  navigations network-first and pages offline, and **never caches API
+  responses**; the manifest gained an id, shortcuts and `display_override`; the
+  sidebar shows an install button when the browser offers one and an Add to Home
+  Screen hint on iOS. Tauri (a real desktop build, with the API as a sidecar) is
+  written down as a recipe in `docs/performance.md#browser-or-desktop-app` —
+  deliberately not built yet, because it needs signed builds for three platforms
+  and a frozen Python per OS to be anything other than a toy.
 
 ### Changed
 

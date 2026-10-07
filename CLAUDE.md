@@ -21,7 +21,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 454 hermetic tests, ~26 s
+pytest -q                      # 464 hermetic tests, ~28 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config examples       # types (clean)
@@ -35,6 +35,7 @@ kollektiv gateway init         # one token per AI client (prints it once)
 kollektiv gateway serve        # the optional gateway, port 8010
 kollektiv init-config          # commented .kollektiv.yml (agents, budget, brain)
 kollektiv budget               # local ledger: tokens, dollars, caps
+python scripts/benchmark.py    # measured Python-side cost (see docs/performance.md)
 ```
 
 Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
@@ -124,9 +125,17 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   `/mcp/mcp`. One gateway token = one client = one policy; a denied call is
   audited with the rule that decided, and audit rows store argument **names**,
   never values.
+- Every performance claim lives in `docs/performance.md` and comes from
+  `scripts/benchmark.py`; `tests/test_perf.py` guards the shapes (the estimator
+  stays linear, `/health` never queries the ledger, the config parser stays
+  cheap). The answer to "should this be Rust?" is written down there — do not
+  start a rewrite without a profiler naming a Python function that matters.
 - The dashboard is a static multi-file site (`web/index.html` +
-  `web/assets/{styles.css,app.js,favicon.svg}`) — **never collapse it back into
-  a single HTML file**, and keep hover/focus/reduced-motion states in the CSS.
+  `web/assets/{styles.css,app.js,favicon.svg,manifest.webmanifest}` + `web/sw.js`)
+  — **never collapse it back into a single HTML file**, and keep
+  hover/focus/reduced-motion states in the CSS. The service worker caches the
+  shell only: API responses must always come from the network (a test enforces
+  it).
   `tests/test_dashboard.py` parses the shipped JS and fails when it calls an
   endpoint that is not in the OpenAPI schema, when an inline `<style>`/`<script>`
   appears, or when a tracker/CDN origin shows up. `docs/ui-prompt.md` is the

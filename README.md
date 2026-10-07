@@ -18,7 +18,7 @@
   <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollektiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="https://github.com/HackerxBots/Kollektiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-454%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-464%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Documentation"></a>
 </div>
 
@@ -137,6 +137,7 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 - [Architecture](docs/architecture.md) — a run end to end, the shared state, the layout
 - [Configuration](docs/configuration.md) — every setting, with examples
 - [Budgets and `.kollektiv.yml`](docs/budget.md) — estimate a run, cap it, see what it cost
+- [Performance](docs/performance.md) — measured numbers, and why this is Python (and stays Python)
 - [Deploy checklist](docs/deploy-checklist.md) — accounts, CLIs, hosts that actually fit, and `scripts/smoke.py`
 - [Deployment and the free stack](docs/deployment.md) — Compose, bare metal, free hosting, self-hosting checklist
 - [Agent runtimes](docs/agent-runtimes.md) — Arena by default, and the whole free menu

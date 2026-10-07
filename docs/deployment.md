@@ -81,7 +81,18 @@ logical drive, many free accounts, routed by free space) — see
 
 ## Deployment
 
-### Docker Compose (recommended)
+### Install the dashboard as an app
+
+The dashboard is an installable progressive web app: on Chrome/Edge and Android
+the sidebar grows an **Install app** button (the browser's install prompt), on
+iOS Safari it points at Share → Add to Home Screen, and in both cases the shell
+loads offline and opens as a standalone window. Nothing about it is required —
+the page works fine in a tab — and the service worker never caches API responses,
+only the app's own files. For a *desktop* build (Tauri, with the API as a
+sidecar) and for why the engine cannot run inside a browser at all, see
+[Performance](performance.md#browser-or-desktop-app).
+
+## Docker Compose (recommended)
 
 ```bash
 cp .env.example .env      # fill it in

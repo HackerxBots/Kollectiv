@@ -960,6 +960,63 @@ function closeDrawer() {
 }
 
 /* ------------------------------------------------------------------ *
+ * PWA: the installed-app path
+ * ------------------------------------------------------------------ */
+
+/** The deferred install prompt, when the browser offered one. */
+let installPrompt = null;
+
+/**
+ * Register the service worker and wire up "Install app".
+ *
+ * The shell works offline and installs as a standalone window on desktop
+ * (Chrome/Edge) and Android; iOS Safari has no install prompt, so it gets a
+ * one-line hint instead. Nothing here is required for the dashboard to work.
+ */
+function initPwa() {
+  if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register("sw.js").catch((error) => {
+      console.warn("Service worker registration failed", error);
+    });
+  }
+
+  const button = $("#install-app");
+  const hint = $("#install-hint");
+  if (!button) return;
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    installPrompt = event;
+    button.hidden = false;
+  });
+
+  button.addEventListener("click", async () => {
+    if (!installPrompt) {
+      if (hint) hint.hidden = false;
+      return;
+    }
+    installPrompt.prompt();
+    try {
+      const choice = await installPrompt.userChoice;
+      if (choice && choice.outcome === "accepted") button.hidden = true;
+    } catch (error) {
+      console.warn("Install prompt failed", error);
+    }
+    installPrompt = null;
+  });
+
+  window.addEventListener("appinstalled", () => {
+    button.hidden = true;
+    if (hint) hint.hidden = true;
+    toast("Installed — open Kollektiv from your app list", "ok");
+  });
+
+  const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  if (iOS && !standalone && hint) hint.hidden = false;
+}
+
+/* ------------------------------------------------------------------ *
  * Boot
  * ------------------------------------------------------------------ */
 function boot() {
@@ -970,6 +1027,7 @@ function boot() {
   initTilt();
   initSidebar();
   initOnboarding();
+  initPwa();
   navigate((location.hash || "#/overview").replace("#/", ""));
   refreshAll();
 

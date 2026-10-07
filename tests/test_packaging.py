@@ -48,11 +48,12 @@ def test_dashboard_ships_inside_the_distribution() -> None:
     config = _pyproject()["tool"]["setuptools"]
     assert "web" in config["packages"], "web/ must be installed so the API can serve /ui"
     package_data = config.get("package-data", {}).get("web", [])
-    for entry in ("index.html", "assets/*", "README.md"):
+    for entry in ("index.html", "sw.js", "assets/*", "README.md"):
         assert entry in package_data, f"{entry} is not shipped"
 
     manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
     assert "web/index.html" in manifest, "the sdist needs the dashboard too"
+    assert "web/sw.js" in manifest, "the sdist needs the service worker too"
     assert "recursive-include web/assets" in manifest
 
 

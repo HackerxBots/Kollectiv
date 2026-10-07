@@ -1,7 +1,7 @@
 # The wheel carries the dashboard through [tool.setuptools.package-data] in
 # pyproject.toml; the sdist needs its own list. web/ is a static site (Cloudflare
 # Pages deploys it directly), not a Python package, which is why both lists exist.
-include web/index.html web/_headers web/_redirects web/README.md
+include web/index.html web/_headers web/_redirects web/README.md web/sw.js
 recursive-include web/assets *
 
 # Documentation and community files belong in the sdist so a maintainer can

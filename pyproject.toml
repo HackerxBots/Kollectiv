@@ -90,7 +90,7 @@ packages = [
 # site, not a Python package -- so its files are listed explicitly here (for
 # the wheel) and in MANIFEST.in (for the sdist).
 [tool.setuptools.package-data]
-web = ["index.html", "assets/*", "README.md"]
+web = ["index.html", "sw.js", "_headers", "_redirects", "assets/*", "README.md"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
