@@ -57,15 +57,16 @@ on GitHub links to the section below for its version.
   absolute paths, separators, control characters and over-long values raise
   `ValueError`, and a new API-level handler answers those with `400` instead of a
   `500`. 39 tests in `tests/test_path_safety.py`.
-- **No internal messages reach clients** — `GET /health` and unexpected failures
-  in the project event stream now log with `exc_info=True` and return a generic
-  message plus the exception class name, so a stack trace or an internal path
-  cannot leak through a degraded response.
-- **CodeQL baseline documented** in `SECURITY.md`: first run reports 44 findings,
-  the code-scanning-relevant ones are fixed as above, and the intentional ones
-  (the CLI printing a freshly generated `SECRET_KEY` to the operator's own
-  terminal; the example shim running the command the operator configured) are
-  listed with the reason to dismiss them.
+- **No internal messages reach clients** — `GET /health`, unexpected failures in
+  the project event stream and the presigned-URL route now log with
+  `exc_info=True` and answer with a generic message (plus the exception class
+  name where that is useful), so a stack trace or an internal path cannot leak
+  through an error response.
+- **CodeQL baseline documented** in `SECURITY.md`: the first run reports 43
+  findings, what was fixed is listed, and the rest — a custom validator that
+  CodeQL cannot prove, the CLI printing a freshly generated `SECRET_KEY` to the
+  operator's own terminal, the example shim running the command the operator
+  configured — is written down with the reason to type when dismissing it.
 
 ### Changed
 

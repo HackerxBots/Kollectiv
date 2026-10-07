@@ -111,6 +111,9 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
   request value onto a directory or a bucket prefix. `ValueError` from those
   helpers is a client error: the API answers `400` (global handler in
   `src/api/routes.py`), and `tests/test_path_safety.py` pins the rules.
+- Errors that reach a client are generic: log the exception with
+  `exc_info=True`, answer with a fixed message (an exception *class* name is the
+  most detail that goes out). CodeQL watches for `py/stack-trace-exposure`.
 - Live updates use Server-Sent Events (`GET /projects/{id}/events/stream`,
   `event: state` when the project's state digest changes, `: keep-alive`
   otherwise). Note for tests: `httpx.ASGITransport` buffers whole responses, so

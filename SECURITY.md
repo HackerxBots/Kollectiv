@@ -83,10 +83,14 @@ sandbox, and it assumes:
 `.github/workflows/codeql.yml` runs CodeQL with `security-and-quality` on every
 pull request and `security-extended` weekly on `main`, and uploads the results to
 the repository's *Code scanning* tab. Alerts are triaged before a pull request is
-merged: fix it, or dismiss it with a reason. The current baseline, so a new
-contributor knows what has already been decided:
+merged: fix it, or dismiss it with a reason. The first run on this branch reported 43 findings: 1 critical, 18 high,
+2 medium, 1 warning and 21 notes — mostly one query over the storage layer plus
+notices about import cycles and unused names. The baseline, so a new contributor
+knows what has already been decided:
 
-**Fixed**
+**Addressed in code** (CodeQL's taint analysis does not recognise a custom
+validator, so these alerts stay open until they are dismissed with a reason —
+use *"Mitigated: validated by `src/utils/paths.py`"*)
 
 - *Path injection* (`py/path-injection`) — every project id, account id and file
   path that becomes part of a filesystem or bucket path goes through
@@ -96,9 +100,15 @@ contributor knows what has already been decided:
   manager's local and remote paths, artifact uploads, and the project id *and*
   file path of `GET /projects/{id}/files/{path}/url`. The API answers the
   resulting `ValueError` with `400` (see the handler in `src/api/routes.py`).
-- *Stack-trace exposure* (`py/stack-trace-exposure`) on `GET /health` and the
-  project event stream — failures are logged with `exc_info=True` and the client
-  receives a generic message plus the exception *class* name, never the message.
+- *Stack-trace exposure* (`py/stack-trace-exposure`) on `GET /health`, the
+  project event stream and the presigned-URL route — failures are logged with
+  `exc_info=True` and the client receives a generic message plus the exception
+  *class* name, never the internal message.
+- *Open storage-client findings remain:* the alerts against
+  `src/storage/r2_pool.py`, `src/storage/pool_manager.py` and
+  `examples/aider_shim.py` are the same query and the same reasoning (the storage
+  API takes the remote key it is given, and the shim runs the command the
+  operator configured).
 
 **Accepted by design** (dismissed with a reason in the Security tab)
 

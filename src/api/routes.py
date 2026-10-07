@@ -556,8 +556,11 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         except TypeError:
             url = await orchestrator.pool.get_file_url(remote)
         except Exception as exc:  # noqa: BLE001 - report storage failures as 404/502
-            LOGGER.error("Could not build a URL for %s: %s", remote, exc)
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+            LOGGER.error("Could not build a URL for %s: %s", remote, exc, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="the file is not available in shared storage",
+            ) from exc
         return {"project_id": project_id, "path": remote, "url": url, "expires_in": expires}
 
     @router.post("/webhooks/clerk", tags=["webhooks"])
