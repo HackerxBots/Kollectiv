@@ -1,512 +1,274 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Kollektiv — mission control</title>
-<meta name="description" content="Kollektiv: a multi-agent collaborative dev team orchestrator. Free-tier dashboard for projects, agents and storage." />
-<meta name="color-scheme" content="dark light" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>" />
-<style>
-  :root {
-    --bg: #0b0d12; --panel: #12151d; --panel-2: #171b25; --line: #232838;
-    --text: #e7ecf5; --muted: #98a3b8; --accent: #6ea8fe; --ok: #4ade80;
-    --warn: #fbbf24; --bad: #f87171; --radius: 14px;
-    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  @media (prefers-color-scheme: light) {
-    :root { --bg:#f6f7fb; --panel:#fff; --panel-2:#f0f2f8; --line:#e2e6f0;
-            --text:#111827; --muted:#5b6478; }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  header {
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    padding: 20px 24px; border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, rgba(110,168,254,.08), transparent);
-  }
-  header h1 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
-  header h1 span { color: var(--accent); }
-  .tagline { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
-  .spacer { flex: 1 1 auto; }
-  main { max-width: 1180px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
-  section {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 18px 20px;
-  }
-  section h2 { margin: 0 0 4px; font-size: 15px; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
-  section p.hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-  .card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-  .card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  .card .v { font-size: 22px; font-weight: 650; margin-top: 6px; }
-  .card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  tr:last-child td { border-bottom: 0; }
-  code, .mono { font-family: var(--mono); font-size: 12.5px; }
-  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
-  .pill.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
-  .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
-  .pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
-  input, textarea, select, button {
-    font: inherit; color: var(--text); background: var(--panel-2);
-    border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px;
-  }
-  input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); border-color: var(--accent); }
-  button { cursor: pointer; background: var(--accent); color: #08111f; border: 0; font-weight: 650; }
-  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
-  button:disabled { opacity: .55; cursor: progress; }
-  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .grid-form { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
-  .grid-form .full { grid-column: 1 / -1; }
-  pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow: auto; max-height: 260px; }
-  footer { color: var(--muted); text-align: center; padding: 26px 24px 40px; font-size: 13px; }
-  a { color: var(--accent); }
-  .banner { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
-            background: color-mix(in srgb, var(--warn) 10%, transparent);
-            border-radius: 12px; padding: 12px 14px; font-size: 13.5px; }
-  .hidden { display: none !important; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kollektiv — mission control</title>
+  <meta name="description" content="Kollektiv: a multi-agent collaborative dev team orchestrator. Projects, agents, connectors and pooled storage — free to run, self-hosted, no telemetry." />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#070910" />
+  <!-- No telemetry, no external CDNs: fonts and icons are system/local. -->
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
-<header>
-  <div>
-    <h1>Kollektiv <span>mission control</span></h1>
-    <p class="tagline">A multi-agent collaborative dev team orchestrator — free to run, open source, no telemetry.</p>
+  <div class="kv-shell">
+    <!--
+      Sidebar: primary navigation. The links are hash routes handled by
+      assets/app.js, so the page works from any static host (Cloudflare Pages,
+      GitHub Pages, or the API itself at /ui).
+    -->
+    <aside class="kv-sidebar">
+      <a class="kv-brand" href="#/overview" aria-label="Kollektiv overview">
+        <img src="assets/favicon.svg" alt="" width="30" height="30" />
+        <span><strong>Kollektiv</strong><span>mission control</span></span>
+      </a>
+
+      <nav class="kv-nav" aria-label="Sections">
+        <a href="#/overview" data-route="overview">Overview</a>
+        <a href="#/projects" data-route="projects">Projects <span class="kv-kbd">g p</span></a>
+        <a href="#/connectors" data-route="connectors">Connectors <span class="kv-kbd">g c</span></a>
+        <a href="#/agents" data-route="agents">Agents &amp; storage <span class="kv-kbd">g a</span></a>
+      </nav>
+
+      <div class="kv-sidebar-foot">
+        <span class="kv-status-dot" id="conn-state" data-state=""></span>
+        <span class="kv-status-dot" id="connectors-state" data-state=""></span>
+        <button class="kv-btn ghost small" id="theme-toggle" type="button" title="Toggle light/dark (t)">Theme</button>
+      </div>
+    </aside>
+
+    <main class="kv-main">
+      <!-- Topbar: API target, global search (command palette), refresh -->
+      <div class="kv-topbar">
+        <h1>Mission control <em id="api-label">not connected</em></h1>
+        <div class="kv-spacer"></div>
+
+        <div class="kv-api-field">
+          <label class="kv-hidden" for="api-input">API base URL</label>
+          <input class="kv-input" id="api-input" size="26" placeholder="http://localhost:8000" spellcheck="false" />
+          <button class="kv-btn ghost small" id="api-connect" type="button">Connect</button>
+        </div>
+
+        <button class="kv-search-btn" id="palette-open" type="button" aria-haspopup="dialog">
+          Search or run a command… <span class="kv-kbd">⌘K</span>
+        </button>
+      </div>
+
+      <!-- Health / warnings -->
+      <div id="banner-slot"></div>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Overview                                                          -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="overview">
+        <header>
+          <h2>Overview</h2>
+          <span class="kv-hint">Live subsystem health. Anything degraded names the setting that fixes it.</span>
+          <div class="kv-spacer"></div>
+          <button class="kv-btn ghost small" id="refresh-all" type="button">Refresh</button>
+        </header>
+
+        <div class="kv-grid cols-4">
+          <div class="kv-card kv-stat" data-tip-host>
+            <div class="kv-label">API</div>
+            <div class="kv-value" id="stat-api">—</div>
+            <div class="kv-sub" id="stat-api-sub">connecting…</div>
+          </div>
+          <div class="kv-card kv-stat">
+            <div class="kv-label">Storage</div>
+            <div class="kv-value" id="stat-storage">—</div>
+            <div class="kv-sub" id="stat-storage-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat">
+            <div class="kv-label">Agents</div>
+            <div class="kv-value" id="stat-agents">—</div>
+            <div class="kv-sub" id="stat-agents-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat">
+            <div class="kv-label">Brain</div>
+            <div class="kv-value" id="stat-brain">—</div>
+            <div class="kv-sub" id="stat-brain-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat">
+            <div class="kv-label">GitHub</div>
+            <div class="kv-value" id="stat-github">—</div>
+            <div class="kv-sub" id="stat-github-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat">
+            <div class="kv-label">Connectors</div>
+            <div class="kv-value" id="stat-connectors">—</div>
+            <div class="kv-sub" id="stat-connectors-sub">—</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Projects                                                          -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="projects">
+        <header>
+          <h2>New project</h2>
+          <span class="kv-hint">A brief becomes a dependency-ordered plan, then parallel work.</span>
+        </header>
+
+        <form class="kv-card kv-stack" id="project-form">
+          <div class="kv-grid cols-3">
+            <div class="kv-field">
+              <label for="p-name">Name (optional)</label>
+              <input class="kv-input" id="p-name" placeholder="shortener" autocomplete="off" />
+            </div>
+            <div class="kv-field">
+              <label for="p-agents">Agents</label>
+              <select class="kv-select" id="p-agents">
+                <option>1</option><option>2</option><option selected>3</option>
+                <option>4</option><option>6</option><option>8</option>
+              </select>
+            </div>
+            <div class="kv-field">
+              <label for="p-run">After planning</label>
+              <select class="kv-select" id="p-run">
+                <option value="plan">Just plan it</option>
+                <option value="run">Plan and run</option>
+              </select>
+            </div>
+          </div>
+          <div class="kv-field">
+            <label for="p-desc">What should it build?</label>
+            <textarea class="kv-textarea" id="p-desc" rows="3"
+              placeholder="Build a URL shortener: FastAPI service, SQLite storage, CLI and pytest tests"></textarea>
+          </div>
+          <div class="kv-row end">
+            <span class="kv-hint" id="create-status"></span>
+            <button class="kv-btn" type="submit" id="create-btn">Create</button>
+          </div>
+        </form>
+
+        <header style="margin-top:22px">
+          <h2>Projects</h2>
+          <span class="kv-hint" id="projects-hint">—</span>
+          <div class="kv-spacer"></div>
+          <button class="kv-btn ghost small" id="sync-now" type="button">Run sync now</button>
+        </header>
+
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead>
+              <tr><th>Project</th><th>Status</th><th>Tasks</th><th>Progress</th><th class="kv-nowrap">Actions</th></tr>
+            </thead>
+            <tbody id="projects-body">
+              <tr><td colspan="5"><div class="kv-skel" style="height:16px"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Connectors                                                        -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="connectors">
+        <header>
+          <h2>Connectors</h2>
+          <span class="kv-hint">Services Kollektiv can call. Probing checks reachability without side effects.</span>
+          <div class="kv-spacer"></div>
+          <button class="kv-btn ghost small" id="probe-all" type="button">Probe all</button>
+        </header>
+
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead>
+              <tr><th>Service</th><th>Status</th><th>Actions</th><th class="kv-nowrap">Run</th></tr>
+            </thead>
+            <tbody id="connectors-body">
+              <tr><td colspan="4"><div class="kv-skel" style="height:16px"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Agents & storage                                                  -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="agents">
+        <header>
+          <h2>Worker agents</h2>
+          <span class="kv-hint">Pooled endpoints. Arena accounts are the default; other providers are optional.</span>
+        </header>
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead><tr><th>Agent</th><th>Status</th><th>Done</th><th>Failures</th><th>Last error</th></tr></thead>
+            <tbody id="agents-body"><tr><td colspan="5" class="kv-muted">—</td></tr></tbody>
+          </table>
+        </div>
+
+        <header style="margin-top:22px">
+          <h2>Shared drive</h2>
+          <span class="kv-hint">One logical drive: R2 buckets or TeraBox accounts pooled, routed by free space.</span>
+        </header>
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead><tr><th>Account</th><th>Healthy</th><th>Used</th><th>Free</th><th>Bucket</th></tr></thead>
+            <tbody id="storage-body"><tr><td colspan="5" class="kv-muted">—</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="kv-section">
+        <p class="kv-hint">
+          Kollektiv is MIT licensed · <a href="https://github.com/HackerxBots/Kollektiv" rel="noreferrer">source</a> ·
+          docs at <span class="kv-mono">/docs</span> · deploy this folder free on Cloudflare Pages.
+          <br />
+          <strong>No telemetry, no analytics, no tracking</strong> — this page talks only to your API; nothing is
+          collected, sold or phoned home.
+        </p>
+      </footer>
+    </main>
   </div>
-  <div class="spacer"></div>
-  <label class="mono" for="api">API</label>
-  <input id="api" size="34" placeholder="http://localhost:8000" aria-label="Kollektiv API base URL" />
-  <button class="ghost" id="connect">Connect</button>
-</header>
 
-<main>
-  <div id="banner" class="banner hidden" role="status"></div>
-
-  <section>
-    <h2>Overview</h2>
-    <p class="hint">Live health of every subsystem. Degraded parts are listed with the exact setting that fixes them.</p>
-    <div class="cards" id="health-cards">
-      <div class="card"><div class="k">API</div><div class="v" id="h-status">—</div><div class="sub" id="h-env">not connected</div></div>
-      <div class="card"><div class="k">Storage</div><div class="v" id="h-storage">—</div><div class="sub" id="h-storage-sub">—</div></div>
-      <div class="card"><div class="k">Agents</div><div class="v" id="h-agents">—</div><div class="sub" id="h-agents-sub">—</div></div>
-      <div class="card"><div class="k">Brain</div><div class="v" id="h-brain">—</div><div class="sub" id="h-brain-sub">—</div></div>
-      <div class="card"><div class="k">GitHub</div><div class="v" id="h-github">—</div><div class="sub" id="h-github-sub">—</div></div>
+  <!-- Project detail drawer (opened from the projects table) -->
+  <div class="kv-scrim" id="drawer-scrim" data-open="false"></div>
+  <aside class="kv-drawer" id="drawer" data-open="false" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <header>
+      <h3 id="drawer-title">Project</h3>
+      <span class="kv-pill info" id="drawer-status" data-tip="Live status">—</span>
+      <div class="kv-spacer"></div>
+      <span class="kv-status-dot" id="drawer-live" data-state="" data-tip="Live stream (SSE)"></span>
+      <button class="kv-btn ghost small" id="drawer-run" type="button">Run</button>
+      <button class="kv-btn ghost small" id="drawer-replan" type="button">Replan</button>
+      <button class="kv-btn ghost small" id="drawer-handoff" type="button">Handoff</button>
+      <button class="kv-btn ghost small icon" id="drawer-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <div class="kv-drawer-body" id="drawer-body">
+      <div class="kv-skel" style="height:80px"></div>
     </div>
-    <div id="warnings" class="row" style="margin-top:12px"></div>
-  </section>
+  </aside>
 
-  <section>
-    <h2>New project</h2>
-    <p class="hint">Describe what to build. The brain splits it into subtasks, the pool runs them in dependency order.</p>
-    <div class="grid-form">
-      <input id="p-name" placeholder="name (e.g. shortener)" />
-      <select id="p-agents" aria-label="number of agents">
-        <option value="2">2 agents</option>
-        <option value="3" selected>3 agents</option>
-        <option value="4">4 agents</option>
-        <option value="6">6 agents</option>
-      </select>
-      <textarea id="p-desc" class="full" rows="3" placeholder="Build a URL shortener: FastAPI service, SQLite storage, CLI and pytest tests"></textarea>
-      <div class="full row">
-        <button id="create">Plan project</button>
-        <button id="create-run" class="ghost">Plan and run</button>
-        <span class="hint" id="create-status"></span>
+  <!-- Command palette -->
+  <div class="kv-palette" id="palette" hidden role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="kv-palette-scrim" data-close-palette></div>
+    <div class="kv-palette-box">
+      <input id="palette-input" placeholder="Type a command or project…" autocomplete="off" spellcheck="false" />
+      <div class="kv-palette-list" id="palette-list" role="listbox"></div>
+      <div class="kv-palette-foot">
+        <span><span class="kv-kbd">↑</span> <span class="kv-kbd">↓</span> navigate</span>
+        <span><span class="kv-kbd">↵</span> run</span>
+        <span><span class="kv-kbd">esc</span> close</span>
       </div>
     </div>
-  </section>
+  </div>
 
-  <section>
-    <h2>Projects</h2>
-    <p class="hint">Plans, task status and collected artifacts.</p>
-    <div class="row" style="margin-bottom:10px">
-      <button class="ghost" id="refresh">Refresh</button>
-      <button class="ghost" id="sync">Run sync now</button>
-      <span class="hint" id="sync-status"></span>
+  <!-- Confirmation dialog for dangerous connector actions -->
+  <dialog class="kv-dialog" id="confirm-dialog">
+    <h3 id="confirm-title">Confirm</h3>
+    <p class="kv-soft" id="confirm-message"></p>
+    <div class="kv-row end">
+      <button class="kv-btn ghost" id="confirm-cancel" type="button">Cancel</button>
+      <button class="kv-btn danger" id="confirm-ok" type="button">Run it</button>
     </div>
-    <table>
-      <thead>
-        <tr><th>Project</th><th>Status</th><th>Tasks</th><th>Artifacts</th><th>Actions</th></tr>
-      </thead>
-      <tbody id="projects"><tr><td colspan="5" class="hint">Connect to an API to list projects.</td></tr></tbody>
-    </table>
-  </section>
+  </dialog>
 
-  <section id="detail-section" class="hidden">
-    <h2>Project detail</h2>
-    <p class="hint" id="detail-name"></p>
-    <div class="cards" id="detail-cards"></div>
-    <h3 style="margin:18px 0 6px;font-size:14px">Tasks</h3>
-    <table><thead><tr><th>id</th><th>title</th><th>status</th><th>agent</th><th>score</th></tr></thead>
-      <tbody id="detail-tasks"></tbody></table>
-    <div class="row" style="margin-top:12px">
-      <button class="ghost" id="detail-run">Run / resume</button>
-      <button class="ghost" id="detail-replan">Replan failed tasks</button>
-      <button class="ghost" id="detail-close">Close</button>
-      <span class="hint" id="detail-status"></span>
-    </div>
-    <h3 style="margin:18px 0 6px;font-size:14px">Event history</h3>
-    <pre class="mono" id="detail-history">—</pre>
-  </section>
+  <div class="kv-toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
-  <section>
-    <h2>Connectors</h2>
-    <p class="hint">The services Kollektiv can reach. Each action is a tool the agents (and you) can call.</p>
-    <table>
-      <thead><tr><th>Service</th><th>Status</th><th>Actions</th><th>Call</th></tr></thead>
-      <tbody id="connectors"><tr><td colspan="4" class="hint">Connect to an API to list connectors.</td></tr></tbody>
-    </table>
-  </section>
-
-  <section>
-    <h2>Agents &amp; storage</h2>
-    <p class="hint">Worker endpoints in the pool and the quota of the shared drive.</p>
-    <table>
-      <thead><tr><th>Agent</th><th>Status</th><th>Tasks done</th><th>Last error</th></tr></thead>
-      <tbody id="agents"><tr><td colspan="4" class="hint">—</td></tr></tbody>
-    </table>
-    <table style="margin-top:14px">
-      <thead><tr><th>Storage account</th><th>Healthy</th><th>Used</th><th>Free</th></tr></thead>
-      <tbody id="storage"><tr><td colspan="4" class="hint">—</td></tr></tbody>
-    </table>
-  </section>
-</main>
-
-<footer>
-  Kollektiv is MIT licensed · <a href="https://github.com/HackerxBots/Kollektiv" rel="noreferrer">source</a> ·
-  served by the API at <span class="mono">/ui</span> · docs at <span class="mono">/docs</span> · deploy this page free on Cloudflare Pages
-  <br />
-  <strong>No telemetry, no analytics, no tracking</strong> — this page talks only to your API;
-  nothing is collected, sold or phoned home.
-</footer>
-
-<script>
-(() => {
-  "use strict";
-  const $ = (id) => document.getElementById(id);
-  const state = { base: "", project: null };
-
-  const store = {
-    get api() { try { return localStorage.getItem("kollektiv.api") || ""; } catch { return ""; } },
-    set api(v) { try { localStorage.setItem("kollektiv.api", v); } catch { /* private mode */ } },
-  };
-
-  function guessBase() {
-    const fromQuery = new URLSearchParams(location.search).get("api");
-    if (fromQuery) return fromQuery.replace(/\/$/, "");
-    if (store.api) return store.api;
-    // Served by the API itself (`kollektiv serve-api` -> /ui): same origin.
-    if (location.protocol.startsWith("http") && location.pathname.startsWith("/ui")) {
-      return location.origin;
-    }
-    // A single-origin deployment (reverse proxy or Pages Function on /api).
-    if (location.protocol.startsWith("http") && location.port !== "8088") {
-      return location.origin.replace(/\/$/, "");
-    }
-    return "http://localhost:8000";
-  }
-
-  function banner(message, kind = "warn") {
-    const el = $("banner");
-    if (!message) { el.classList.add("hidden"); return; }
-    el.classList.remove("hidden");
-    el.style.borderColor = kind === "bad" ? "var(--bad)" : "var(--warn)";
-    el.innerHTML = message;
-  }
-
-  function authHeaders() {
-    const headers = { "content-type": "application/json" };
-    try {
-      const token = localStorage.getItem("kollektiv.token");
-      if (token) headers["authorization"] = `Bearer ${token}`;
-    } catch { /* private mode */ }
-    return headers;
-  }
-
-  async function api(path, options = {}) {
-    const url = `${state.base}${path}`;
-    const response = await fetch(url, { headers: authHeaders(), ...options });
-    const text = await response.text();
-    let body = null;
-    try { body = text ? JSON.parse(text) : null; } catch { body = { detail: text }; }
-    if (!response.ok) {
-      const detail = (body && (body.detail || body.error)) || response.statusText;
-      throw new Error(`${response.status} ${detail}`);
-    }
-    return body;
-  }
-
-  const pill = (value, ok, warn) => {
-    const kind = ok.includes(value) ? "ok" : (warn.includes(value) ? "warn" : "bad");
-    return `<span class="pill ${kind}">${value || "unknown"}</span>`;
-  };
-  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-  async function loadHealth() {
-    try {
-      const health = await api("/health");
-      $("h-status").textContent = health.status || "ok";
-      $("h-env").textContent = health.environment || "";
-      const s = (health.subsystems || {}).storage || {};
-      $("h-storage").textContent = s.backend || (s.configured ? "ready" : "local");
-      $("h-storage-sub").textContent = `${s.accounts ?? 0} account(s), ${s.healthy ?? 0} healthy`;
-      const a = (health.subsystems || {}).agents || {};
-      $("h-agents").textContent = `${a.agents ?? 0}`;
-      $("h-agents-sub").textContent = `${a.busy ?? 0} busy`;
-      const b = (health.subsystems || {}).brain || {};
-      $("h-brain").textContent = b.configured ? (b.provider || "LLM") : "heuristic";
-      $("h-brain-sub").textContent = `${b.calls ?? 0} calls, ${b.failures ?? 0} failures`;
-      const g = (health.subsystems || {}).github || {};
-      $("h-github").textContent = g.configured ? "connected" : "off";
-      $("h-github-sub").textContent = g.repo || "";
-      const warnings = health.warnings || [];
-      $("warnings").innerHTML = warnings.length
-        ? `<span class="pill warn">${warnings.length} warning(s)</span><span class="hint">${esc(warnings[0])}${warnings.length > 1 ? " …" : ""}</span>`
-        : `<span class="pill ok">all subsystems configured</span>`;
-      banner(warnings.length && !warnings.some((w) => w.includes("storage"))
-        ? "" : "");
-      if (g.configured === false && (g.repo || "").includes("owner/repo")) { /* nothing to warn about */ }
-    } catch (error) {
-      banner(`Cannot reach the API at <span class="mono">${esc(state.base)}</span> — ${esc(error.message)}. Start it with <span class="mono">kollektiv serve-api</span>, then press Connect.`, "bad");
-      ["h-status", "h-storage", "h-agents", "h-brain", "h-github"].forEach((id) => { $(id).textContent = "—"; });
-    }
-  }
-
-  async function loadProjects() {
-    const tbody = $("projects");
-    try {
-      const data = await api("/projects");
-      const projects = data.projects || [];
-      if (!projects.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="hint">No projects yet — create one above.</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = projects.map((p) => `
-        <tr>
-          <td><strong>${esc(p.name || p.project_id)}</strong><div class="hint mono">${esc(p.project_id)}</div></td>
-          <td>${pill(p.status, ["completed"], ["planned", "running"])}</td>
-          <td class="mono">${esc(p.tasks ?? "—")}</td>
-          <td class="mono">${esc(p.files ?? "—")}</td>
-          <td class="row">
-            <button class="ghost" data-detail="${esc(p.project_id)}">Open</button>
-            <button class="ghost" data-run="${esc(p.project_id)}">Run</button>
-          </td>
-        </tr>`).join("");
-      tbody.querySelectorAll("[data-detail]").forEach((btn) =>
-        btn.addEventListener("click", () => openProject(btn.dataset.detail)));
-      tbody.querySelectorAll("[data-run]").forEach((btn) =>
-        btn.addEventListener("click", () => runProject(btn.dataset.run, btn)));
-    } catch (error) {
-      tbody.innerHTML = `<tr><td colspan="5" class="hint">${esc(error.message)}</td></tr>`;
-    }
-  }
-
-  async function loadConnectors() {
-    try {
-      const data = await api("/connectors");
-      const rows = data.connectors || [];
-      if (!rows.length) {
-        $("connectors").innerHTML = `<tr><td colspan="4" class="hint">No connectors registered.</td></tr>`;
-        return;
-      }
-      $("connectors").innerHTML = rows.map((c) => `
-        <tr>
-          <td><strong>${esc(c.name)}</strong><div class="hint">${esc(c.description || c.category || "")}</div></td>
-          <td>${c.configured ? '<span class="pill ok">ready</span>' : `<span class="pill warn">setup</span><div class="hint">${esc(c.detail || "")}</div>`}</td>
-          <td class="hint mono">${(c.actions || []).map(esc).join(", ") || "—"}</td>
-          <td>
-            <select data-connector="${esc(c.name)}" aria-label="action for ${esc(c.name)}">
-              ${(c.actions || []).map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("")}
-            </select>
-            <button class="ghost" data-call="${esc(c.name)}" ${c.configured ? "" : "disabled"}>Run</button>
-          </td>
-        </tr>`).join("");
-      $("connectors").querySelectorAll("[data-call]").forEach((btn) =>
-        btn.addEventListener("click", () => callConnector(btn.dataset.call, btn)));
-    } catch (error) {
-      $("connectors").innerHTML = `<tr><td colspan="4" class="hint">${esc(error.message)}</td></tr>`;
-    }
-  }
-
-  async function callConnector(name, button) {
-    const select = document.querySelector(`[data-connector="${name}"]`);
-    const action = select ? select.value : "";
-    const raw = window.prompt(`Parameters for ${name}.${action} (JSON object)`, "{}");
-    if (raw === null) return;
-    let params = {};
-    try { params = raw.trim() ? JSON.parse(raw) : {}; }
-    catch (error) { window.alert(`Not valid JSON: ${error.message}`); return; }
-    const dangerous = /send|create|comment|append|post|delete/i.test(action);
-    if (dangerous && !window.confirm(`${name}.${action} changes data outside Kollektiv. Run it?`)) return;
-    button.disabled = true;
-    try {
-      const result = await api(`/connectors/${name}/call`, {
-        method: "POST",
-        body: JSON.stringify({ action, params, confirm: dangerous }),
-      });
-      window.alert(`OK\n\n${JSON.stringify(result.result, null, 2).slice(0, 4000)}`);
-    } catch (error) {
-      window.alert(`Failed: ${error.message}`);
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  async function loadAgentsAndStorage() {
-    try {
-      const agents = await api("/agents/status");
-      $("agents").innerHTML = (agents.agents || []).length
-        ? agents.agents.map((a) => `<tr>
-            <td>${esc(a.label || a.account_id)}<div class="hint mono">${esc(a.account_id)}</div></td>
-            <td>${pill(a.status || (a.busy ? "busy" : "idle"), ["idle"], ["busy"])}</td>
-            <td class="mono">${a.tasks_done ?? 0} / ${(a.tasks_done ?? 0) + (a.tasks_failed ?? 0)}</td>
-            <td class="hint">${esc(a.last_error || "")}</td></tr>`).join("")
-        : `<tr><td colspan="4" class="hint">No worker agents configured (ARENA_ACCOUNTS).</td></tr>`;
-    } catch (error) {
-      $("agents").innerHTML = `<tr><td colspan="4" class="hint">${esc(error.message)}</td></tr>`;
-    }
-    try {
-      const storage = await api("/storage/status");
-      const rows = storage.per_account || [];
-      $("storage").innerHTML = rows.length
-        ? rows.map((s) => `<tr>
-            <td>${esc(s.label || s.account_id)}<div class="hint mono">${esc(s.bucket || "")}</div></td>
-            <td>${s.healthy ? '<span class="pill ok">yes</span>' : '<span class="pill bad">no</span>'}</td>
-            <td class="mono">${esc(s.used_human || s.used_gb + " GB")}</td>
-            <td class="mono">${esc(s.free_human || s.free_gb + " GB")}</td></tr>`).join("")
-        : `<tr><td colspan="4" class="hint">No shared storage configured (R2_* or TERABOX_ACCOUNTS) — state stays in the local workspace.</td></tr>`;
-    } catch (error) {
-      $("storage").innerHTML = `<tr><td colspan="4" class="hint">${esc(error.message)}</td></tr>`;
-    }
-  }
-
-  async function createProject(run) {
-    const description = $("p-desc").value.trim();
-    if (!description) { $("create-status").textContent = "Add a description first."; return; }
-    const button = run ? $("create-run") : $("create");
-    button.disabled = true;
-    $("create-status").textContent = "Planning…";
-    try {
-      const project = await api("/projects", {
-        method: "POST",
-        body: JSON.stringify({
-          name: $("p-name").value.trim(),
-          description,
-          n_agents: Number($("p-agents").value),
-        }),
-      });
-      $("create-status").textContent = `Planned ${project.plan?.tasks?.length ?? 0} task(s).`;
-      await loadProjects();
-      if (run) await runProject(project.project_id, null);
-      else await openProject(project.project_id);
-    } catch (error) {
-      $("create-status").textContent = `Failed: ${error.message}`;
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  async function runProject(projectId, button) {
-    if (button) button.disabled = true;
-    $("sync-status").textContent = `Running ${projectId}…`;
-    try {
-      const summary = await api(`/projects/${projectId}/run`, { method: "POST" });
-      $("sync-status").textContent =
-        `${summary.status}: ${summary.completed}/${summary.tasks_dispatched} task(s), ${summary.artifact?.file_count ?? 0} file(s)`;
-      await Promise.all([loadProjects(), loadAgentsAndStorage(), loadConnectors()]);
-    } catch (error) {
-      $("sync-status").textContent = `Run failed: ${error.message}`;
-    } finally {
-      if (button) button.disabled = false;
-    }
-  }
-
-  async function openProject(projectId) {
-    state.project = projectId;
-    $("detail-section").classList.remove("hidden");
-    $("detail-name").innerHTML = `<span class="mono">${esc(projectId)}</span>`;
-    $("detail-status").textContent = "";
-    try {
-      const status = await api(`/projects/${projectId}/status`);
-      const tasks = status.tasks || [];
-      const done = tasks.filter((t) => t.status === "completed").length;
-      const failed = tasks.filter((t) => t.status === "failed").length;
-      $("detail-cards").innerHTML = [
-        ["Project", esc(status.project_name || "—"), esc(status.description || "")],
-        ["Status", esc(status.status || "—"), `${done}/${tasks.length} completed`],
-        ["Failed", String(failed), (status.queued_tasks ?? 0) + " queued"],
-        ["Last commit", esc(status.last_commit || "—"), esc(status.last_commit_branch || "")],
-        ["Files", String((status.files || []).length), esc(status.updated_at || "")],
-      ].map(([k, v, sub]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="sub">${sub}</div></div>`).join("");
-      $("detail-tasks").innerHTML = tasks.length
-        ? tasks.map((t) => `<tr>
-            <td class="mono">${esc(t.id)}</td>
-            <td>${esc(t.title)}</td>
-            <td>${pill(t.status, ["completed"], ["pending", "in_progress"])}</td>
-            <td class="mono">${esc(t.assigned_agent || "—")}</td>
-            <td class="mono">${t.score == null ? "—" : Number(t.score).toFixed(2)}</td></tr>`).join("")
-        : `<tr><td colspan="5" class="hint">No tasks recorded yet.</td></tr>`;
-      const history = (status.history || []).slice(-25).reverse();
-      $("detail-history").textContent = history.length
-        ? history.map((e) => `${e.timestamp || ""} | ${e.agent_id || "?"} | ${e.action || ""} | ${e.result || ""}`).join("\n")
-        : "—";
-    } catch (error) {
-      $("detail-status").textContent = error.message;
-    }
-  }
-
-  async function replan() {
-    if (!state.project) return;
-    $("detail-status").textContent = "Replanning…";
-    try {
-      const outcome = await api(`/projects/${state.project}/replan`, { method: "POST" });
-      $("detail-status").textContent = outcome.new_tasks.length
-        ? `Revision ${outcome.revision}: ${outcome.new_tasks.length} corrective task(s)`
-        : "Nothing to replan — no failed tasks.";
-      await openProject(state.project);
-    } catch (error) {
-      $("detail-status").textContent = `Replan failed: ${error.message}`;
-    }
-  }
-
-  async function sync() {
-    $("sync-status").textContent = "Syncing…";
-    try {
-      const result = await api("/sync", { method: "POST" });
-      $("sync-status").textContent =
-        `synced ${result.commits ?? 0} commit(s), ${(result.errors || []).length} error(s)`;
-      await Promise.all([loadHealth(), loadProjects()]);
-    } catch (error) {
-      $("sync-status").textContent = `Sync failed: ${error.message}`;
-    }
-  }
-
-  function connect() {
-    state.base = ($("api").value || guessBase()).replace(/\/$/, "");
-    store.api = state.base;
-    $("api").value = state.base;
-    return Promise.all([loadHealth(), loadProjects(), loadAgentsAndStorage(), loadConnectors()]);
-  }
-
-  $("connect").addEventListener("click", connect);
-  $("refresh").addEventListener("click", () => Promise.all([loadHealth(), loadProjects(), loadAgentsAndStorage(), loadConnectors()]));
-  $("sync").addEventListener("click", sync);
-  $("create").addEventListener("click", () => createProject(false));
-  $("create-run").addEventListener("click", () => createProject(true));
-  $("detail-run").addEventListener("click", () => state.project && runProject(state.project, $("detail-run")));
-  $("detail-replan").addEventListener("click", replan);
-  $("detail-close").addEventListener("click", () => $("detail-section").classList.add("hidden"));
-  $("api").addEventListener("keydown", (event) => { if (event.key === "Enter") connect(); });
-
-  $("api").value = guessBase();
-  connect();
-})();
-</script>
+  <script type="module" src="assets/app.js"></script>
 </body>
 </html>

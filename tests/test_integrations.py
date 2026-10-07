@@ -648,7 +648,7 @@ def test_email_rendering_escapes_html() -> None:
 
 
 # ----------------------------------------------------------------------
-# CLI bootstrap + dashboard
+# CLI bootstrap + dashboard (asset-level checks live in tests/test_dashboard.py)
 # ----------------------------------------------------------------------
 async def test_bootstrap_prepares_a_working_install(settings: Settings, tmp_path: Any, capsys: Any) -> None:
     """``kollektiv bootstrap`` sets up the database, workspace and report."""
@@ -711,19 +711,6 @@ async def test_bootstrap_prints_the_free_tier_checklist(settings: Settings, tmp_
     assert "SECRET_KEY=" in output
 
 
-def test_dashboard_calls_the_documented_endpoints() -> None:
-    """The static dashboard only uses endpoints the API actually exposes."""
-    from pathlib import Path
-
-    page = Path(__file__).resolve().parents[1] / "web" / "index.html"
-    html = page.read_text(encoding="utf-8")
-    for endpoint in ("/health", "/projects", "/agents/status", "/storage/status", "/sync", "/replan", "/connectors"):
-        assert endpoint in html, endpoint
-    # It must be self-contained (Cloudflare Pages serves it with no build step).
-    assert "<script src=" not in html
-    assert "http://localhost:8000" in html, "the default API URL is discoverable"
-
-
 def test_api_serves_the_dashboard_at_ui(settings: Settings) -> None:
     """`kollektiv serve-api` also serves the static dashboard (single origin)."""
     app = create_app(settings)
@@ -737,15 +724,6 @@ def test_api_serves_the_dashboard_at_ui(settings: Settings) -> None:
     assert response.status_code == 200
     assert "Kollektiv" in response.text
     assert "mission control" in response.text
-
-
-def test_dashboard_defaults_to_the_api_it_is_served_from() -> None:
-    """The page auto-detects same-origin hosting under /ui."""
-    from pathlib import Path
-
-    html = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text("utf-8")
-    assert 'location.pathname.startsWith("/ui")' in html
-    assert '"/auth/me"' not in html  # nothing undocumented is called
 
 
 def test_api_documents_the_new_routes(settings: Settings) -> None:

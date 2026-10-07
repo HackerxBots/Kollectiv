@@ -1,63 +1,71 @@
-# Kollektiv mission control (Cloudflare Pages)
+# Kollektiv mission control (static dashboard)
 
-A single static page — no build step, no framework, no server — that talks
-straight to a running Kollektiv API. It shows subsystem health, projects and
-their tasks, the worker pool and the shared-storage quota, and it can create,
-run, inspect and replan projects.
+A dependency-free dashboard for a running Kollektiv API: health, projects with
+live progress, connectors with probes, agent pool and shared-drive quota.
 
 ```
 web/
-├── index.html      the whole app (HTML + CSS + vanilla JS)
-└── README.md       this file
+├── index.html            markup and hash routes (#/overview, #/projects, #/connectors, #/agents)
+├── assets/
+│   ├── styles.css        design tokens, components, hover/focus/motion states
+│   ├── app.js            API client, renderers, command palette (⌘K), SSE live view
+│   └── favicon.svg       logo
+└── README.md             this file
 ```
+
+No build step, no framework, no CDN, no telemetry: plain ES modules and CSS.
+The API serves this folder itself at `/ui` (and `/` redirects there), so a
+single-origin deployment needs no CORS configuration.
+
+## Features
+
+- **Overview**: subsystem health, configuration warnings with the variable that
+  fixes each one, six stat cards.
+- **Projects**: table with status pills, progress bars and per-row actions
+  (Open, Run, Handoff) plus a create form (plan-only or plan-and-run).
+- **Project drawer**: live task table, artifacts with copy-URL, event history,
+  streamed over Server-Sent Events (`/projects/{id}/events/stream`) — the dot in
+  the header shows the stream state.
+- **Connectors**: catalogue with readiness, per-service probe, and an action
+  runner that asks for JSON parameters and confirms dangerous actions.
+- **Agents & storage**: pool status, per-account drive usage and health.
+- **Command palette** (⌘K / Ctrl-K): navigate, run projects, copy handoffs,
+  probe connectors, toggle theme. Keyboard shortcuts: `g p`, `g c`, `g a`,
+  `r` refresh, `t` theme, `esc` close.
+- **Accessibility**: real buttons and labels, `aria-current` navigation,
+  focus-visible rings, `prefers-reduced-motion` support, light and dark themes
+  (system default, toggle persisted).
+- **Hover craft**: cards lift with a spotlight, buttons sweep a sheen, table rows
+  highlight with an accent edge, pills reveal tooltips, the brand mark tilts.
 
 ## Deploy on Cloudflare Pages (free)
 
 1. **Pages → Create application → Connect to Git** and pick this repository.
-2. Build settings:
-   - Framework preset: **None**
-   - Build command: *(leave empty)*
-   - Build output directory: `web`
-3. Deploy. You get `https://<project>.pages.dev`.
+2. Framework preset **None**, build command empty, **output directory `web`**.
+3. Deploy — you get `https://<project>.pages.dev`.
 
-Then point the page at your API: either type the URL in the header field (it is
-remembered in `localStorage`), or pass `?api=https://kollektiv.example.com` once.
-If the API is served from the same origin (for example behind a Pages Function
-or a reverse proxy on `/api`), the page auto-detects it.
-
-### Making the API reachable
-
-The page is static, so the browser calls the API directly. Two supported setups:
+Point the page at your API: type the URL in the header field (remembered in
+`localStorage`), or pass `?api=https://kollektiv.example.com` once. Same-origin
+setups (API behind the same host) are detected automatically.
 
 | Setup | What to do |
 | --- | --- |
-| API on a public URL | Set `CORS_ORIGINS=https://<project>.pages.dev` in the API's `.env`, then reload the page with `?api=https://your-api-host`. |
-| Same origin | Add a Pages `_redirects` file with `/api/* https://your-api-host/:splat 200` (Cloudflare proxies it, so no CORS at all) and open the page with `?api=/api`. |
+| API on a public URL | set `CORS_ORIGINS=https://<project>.pages.dev` in the API's `.env` |
+| Same origin | add a Pages `_redirects`: `/api/* https://your-api-host/:splat 200`, then open with `?api=/api` |
+| Behind Clerk auth | sign in through your Clerk frontend, then `localStorage.setItem("kollektiv.token", token)` — sent as `Authorization: Bearer …` |
 
-When `AUTH_REQUIRED=true` (Clerk), the page needs a session token: sign in
-through your Clerk-powered frontend, then call
-`localStorage.setItem("kollektiv.token", token)`. The script sends it as
-`Authorization: Bearer …` on every request. Without a token a protected API
-answers `401` and the page says so.
+Without `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` the same folder is
+published by `.github/workflows/pages.yml` to GitHub Pages instead.
 
 ## Local preview
 
-The API serves this folder itself — no second server, no CORS:
-
 ```bash
-kollektiv serve-api
-# dashboard: http://localhost:8000/ui   (the API's "/" redirects there too)
+kollektiv serve-api                          # http://localhost:8000/ui
+python -m http.server 8088 --directory web   # or standalone while editing
 ```
 
-Or serve the folder standalone (useful while editing the page):
+## Regenerating the UI
 
-```bash
-python -m http.server 8088 --directory web   # http://localhost:8088
-```
-
-## GitHub Pages instead?
-
-The same folder works on GitHub Pages (workflow in
-`.github/workflows/pages.yml` when `CLOUDFLARE_API_TOKEN` is not configured):
-enable Pages with "GitHub Actions" as the source and the workflow publishes
-`web/`.
+`docs/ui-prompt.md` contains the prompt used to produce this dashboard (and to
+iterate on it with an AI website builder). Keep it in sync: if the API surface
+changes there, update the prompt and `assets/app.js` together.
