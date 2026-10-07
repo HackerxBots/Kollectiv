@@ -1206,6 +1206,16 @@ planner, a pool with zero workers, local-workspace storage, an open API and no
 emails. Everything reports itself in `/health`, `kollektiv check` and
 `kollektiv connectors`, so you can add one credential at a time.
 
+**Is any specific agent required — Freebuff, Aider, Arena?** No agent is
+required to *build or run* Kollektiv: it is a plain Python package (FastAPI,
+SQLModel, httpx, one optional `mcp`), so no particular coding agent appears
+anywhere in the install or the test suite, and the planner has a built-in
+heuristic mode that works with an empty worker pool. A *worker* is only needed
+to generate code: pick one or more that cost you nothing — Arena accounts are
+the documented default, and Groq, a local Ollama model or a Freebuff/Aider shim
+are interchangeable alternatives. Freebuff is a convenience for "no API key, no
+card" situations, never a dependency.
+
 **Is every piece really free?** Yes, and there is no paid component on the
 critical path: Cloudflare R2 (10 GB, no egress), Neon, Clerk, Resend and Pages
 all have usable free tiers, and Kollektiv runs with none of them.
