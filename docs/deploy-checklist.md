@@ -79,7 +79,7 @@ actually left, and how it fits Kollektiv's always-on requirement:
 
 | Host | Free? | Fits Kollektiv because | Watch out for |
 | --- | --- | --- | --- |
-| **Oracle Cloud Always Free** (ARM VM, up to 4 cores / 24 GB) | forever | best free fit: real VM, `docker compose`, always on, room for Postgres too | sign-up friction; idle instances can be reclaimed — keep it busy; you run the OS updates |
+| **Oracle Cloud Always Free** | forever, but **the allowance was halved on 2026-06-15** | still the best free fit: a real VM, `docker compose`, always on | the ARM pool is now **2 OCPUs / 12 GB** for new Always Free tenancies (PAYG accounts keep 4/24); two x86 micro VMs at 1 GB each remain — those are **amd64**, so build the image for `linux/amd64` on them, not ARM; signup wants payment details; idle instances can be reclaimed — keep it busy; you run the OS updates |
 | **A machine you own** (spare laptop, mini PC, Raspberry Pi) | yes | zero cost, always on, local by default; expose it with `cloudflared` | your uptime and your backups |
 | **Render free web service** | 750 h/mo | one-click Docker deploys | **sleeps after ~15 min idle** → set `CRON_ENABLED=false` and expect cold webhooks; a cron ping or an external pinger helps |
 | **Google Cloud Run** | generous meter | scale-to-zero API | not a scheduler: the background loop only runs while an instance is alive |
@@ -87,14 +87,26 @@ actually left, and how it fits Kollektiv's always-on requirement:
 | ~~Fly.io / Railway / Koyeb compute~~ | — | — | free allowances removed or trial-only in 2026; don't plan on them |
 
 Rule of thumb: **webhooks + cron want an always-on box** (Oracle, your own
-machine, or a small VPS). Everything else — dashboard, storage, database,
-auth — is happy on free tiers because it is reachable on demand.
+machine, or a small VPS. A 2 OCPU / 12 GB ARM VM runs the API, the MCP server and
+Postgres with room to spare — the memory number is not the constraint here).
+Everything else — dashboard, storage, database, auth — is happy on free tiers
+because it is reachable on demand.
+
+**Short of a box? Checkpointing does it.** Kollektiv keeps project state in
+storage and writes a handoff briefing on demand, so a laptop that is awake a few
+hours a day works: `kollektiv run` in the evening, `kollektiv resume` the next
+morning. What you lose without an always-on host is *event-driven* work — GitHub
+webhooks arriving at 3am — not the orchestrator itself. Two free tiers cover the
+rest: Cloudflare Pages for the dashboard, and the GitHub Actions cron already in
+`.github/workflows/` for scheduled syncs.
 
 ## 3. Before you deploy (once)
 
-- [ ] `SECRET_KEY` generated (`kollektiv secret`) and stored somewhere you can
-      restore — it decrypts every stored token. Losing it means re-authenticating
-      every account.
+- [ ] Local secrets generated: `kollektiv keys` (one command writes `SECRET_KEY`,
+      `SESSION_TOKEN` and a `GATEWAY_ADMIN_TOKEN` to `.env`; `kollektiv secret`
+      alone still prints just the Fernet key). Back the file up somewhere you can
+      restore — `SECRET_KEY` decrypts every stored token, so losing it means
+      re-authenticating every account.
 - [ ] `GITHUB_TOKEN` + `GITHUB_REPO` set (a fine-grained token with
       `contents: write` and `pull_requests: write` on that repository).
 - [ ] `ARENA_ACCOUNTS` filled (or another worker, or none: the heuristic planner
@@ -131,6 +143,13 @@ cloudflared tunnel --url http://localhost:8000
 
 Put that `https://…trycloudflare.com` URL in the GitHub webhook and in
 `CORS_ORIGINS` if you also host the dashboard on Pages.
+
+**Not a server person?** Two routes skip the box for the *dashboard*: the
+Cloudflare Pages link (step 5 above) and the native desktop app
+(`desktop/README.md`, installers from **Actions → Desktop installers**). Both
+still need an API somewhere for real work — your own machine with `kollektiv
+serve-api` is a perfectly good "somewhere", and `cloudflared tunnel --url
+http://localhost:8000` gives it a public URL when you want one.
 
 ## 5. First real project
 

@@ -419,6 +419,7 @@ function renderAll() {
 
   renderConnection();
   renderBanner();
+  reportConnection(health ? health.status : "offline");
   renderStats();
   renderProjects();
   renderConnectors();
@@ -1017,6 +1018,77 @@ function initPwa() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Native shell bridge (Tauri)
+ * ------------------------------------------------------------------ */
+
+/**
+ * What the desktop shell tells us about itself, when there is one.
+ *
+ * In a browser this stays null and nothing below runs: `web/` is the same static
+ * site on Cloudflare Pages, on GitHub Pages and inside the desktop app. The
+ * shell emits `kollektiv://shell-ready` with `{shell, version, bundled_api,
+ * api_base, sidecar_note}` — `desktop/README.md` documents it.
+ */
+let shellInfo = null;
+const IS_SHELL = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+/**
+ * Remember what the shell said, and use the API it brought with it.
+ *
+ * A bundled install (the "bundle" variant) starts its own API on
+ * 127.0.0.1:8765, so the dashboard points there once and never asks. A shell-only
+ * install keeps whatever the user typed.
+ */
+function adoptShellInfo(info) {
+  if (!info || info.shell !== "tauri") return;
+  shellInfo = info;
+  if (!STORAGE.api && info.bundled_api && info.api_base) {
+    store.base = info.api_base;
+    STORAGE.api = info.api_base;
+  }
+  const note = $("#shell-note");
+  if (note) {
+    note.hidden = !info.sidecar_note;
+    note.textContent = info.sidecar_note || "";
+  }
+  renderConnection();
+}
+
+/** Ask the shell about itself (and listen, in case it announces first). */
+function initShell() {
+  if (!IS_SHELL) return;
+  window.addEventListener("kollektiv://shell-ready", (event) => adoptShellInfo(event.detail));
+  const internals = window.__TAURI_INTERNALS__;
+  if (internals && typeof internals.invoke === "function") {
+    Promise.resolve(internals.invoke("shell_info"))
+      .then(adoptShellInfo)
+      .catch((error) => console.warn("shell_info failed", error));
+  }
+}
+
+/**
+ * Open an external link in the user's real browser, from inside the shell.
+ *
+ * A desktop window that navigates away from the dashboard is a dead end: there
+ * is no back button and no tab. Every http(s) target that is not this app goes to
+ * the shell, which refuses anything that is not http(s) — see
+ * `desktop/src-tauri/src/lib.rs`.
+ */
+function openExternal(url) {
+  const internals = window.__TAURI_INTERNALS__;
+  if (!IS_SHELL || !internals || typeof internals.invoke !== "function") return false;
+  internals.invoke("open_external", { url }).catch((error) => console.warn("open_external failed", error));
+  return true;
+}
+
+/** Keep the window title honest about the connection (taskbar, not banner). */
+function reportConnection(state) {
+  const internals = window.__TAURI_INTERNALS__;
+  if (!IS_SHELL || !internals || typeof internals.invoke !== "function") return;
+  internals.invoke("set_connection_state", { state }).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ *
  * Boot
  * ------------------------------------------------------------------ */
 function boot() {
@@ -1028,6 +1100,7 @@ function boot() {
   initSidebar();
   initOnboarding();
   initPwa();
+  initShell();
   navigate((location.hash || "#/overview").replace("#/", ""));
   refreshAll();
 

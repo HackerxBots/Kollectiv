@@ -10,6 +10,7 @@ and these checks make the same class of mistake visible in the test job too.
 
 from __future__ import annotations
 
+import json
 import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Set
@@ -55,6 +56,57 @@ def test_dashboard_ships_inside_the_distribution() -> None:
     assert "web/index.html" in manifest, "the sdist needs the dashboard too"
     assert "web/sw.js" in manifest, "the sdist needs the service worker too"
     assert "recursive-include web/assets" in manifest
+
+
+def test_the_desktop_shell_is_wired_to_the_shipped_dashboard() -> None:
+    """The Tauri window loads ``web/`` — never a copy of it."""
+    config = json.loads((ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    frontend = (ROOT / "desktop" / "src-tauri" / config["build"]["frontendDist"]).resolve()
+    assert frontend == (ROOT / "web").resolve(), "the shell must embed the shipped dashboard"
+    assert (frontend / "index.html").is_file()
+
+    # A shell is a window, not a second frontend: no separate HTML/CSS/JS tree.
+    offenders = [
+        path.relative_to(ROOT / "desktop")
+        for path in (ROOT / "desktop").rglob("*")
+        if path.suffix in {".html", ".css"} and "target" not in path.parts
+    ]
+    assert not offenders, f"the desktop app should not carry its own UI files: {offenders}"
+
+    cargo = (ROOT / "desktop" / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
+    assert 'tauri = { version = "2"' in cargo or 'tauri = "2' in cargo, "Tauri v2 is the supported shell"
+    assert "[lib]" in cargo, "Tauri v2 expects a library crate (mobile-ready layout)"
+
+
+def test_the_desktop_shell_has_icons_and_a_capability_file() -> None:
+    """Installers need icons, and the window needs a small permission list."""
+    icons = ROOT / "desktop" / "src-tauri" / "icons"
+    for needed in ("32x32.png", "128x128.png", "128x128@2x.png", "icon.ico", "icon.icns"):
+        assert (icons / needed).is_file(), f"{needed} is missing — run `npm run icons`"
+
+    capabilities = json.loads(
+        (ROOT / "desktop" / "src-tauri" / "capabilities" / "desktop-shell.json").read_text(encoding="utf-8")
+    )
+    granted = set(capabilities["permissions"])
+    assert "core:default" in granted and "opener:default" in granted
+    # The shell reaches the API over HTTP, so it needs none of the powerful ones.
+    dangerous = {"fs:default", "shell:default", "process:default", "http:default"}
+    assert not (granted & dangerous), f"the shell should not need {sorted(granted & dangerous)}"
+
+
+def test_the_sidecar_recipe_exists_or_the_bundle_variant_is_a_promise() -> None:
+    """Option 2 is real: a spec, an entry point, a sidecar slot and a workflow."""
+    spec = ROOT / "sidecar" / "kollektiv-sidecar.spec"
+    entry = ROOT / "sidecar" / "sidecar_entry.py"
+    assert spec.is_file() and entry.is_file(), "the bundled API needs its spec and entry point"
+    # `packaging/` would shadow the PyPI package PyInstaller itself imports.
+    assert not (ROOT / "packaging").exists(), "do not name a top-level directory `packaging`"
+    assert "externalBin" in (ROOT / "desktop" / "src-tauri" / "tauri.bundle.conf.json").read_text(encoding="utf-8")
+
+    workflow = (ROOT / ".github" / "workflows" / "desktop.yml").read_text(encoding="utf-8")
+    assert "tauri-apps/tauri-action" in workflow, "installers are built in CI, not promised"
+    assert "pyinstaller" in workflow.lower(), "the bundle variant builds the sidecar"
+    assert "variant: bundle" in workflow and "variant: shell" in workflow, "both options are built"
 
 
 def test_console_scripts_and_entrypoints_are_declared() -> None:

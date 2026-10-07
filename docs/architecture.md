@@ -172,7 +172,7 @@ CONTRIBUTING.md                gates, non-negotiables, connector + release recip
 CODE_OF_CONDUCT.md             Contributor Covenant 2.1
 .github/ISSUE_TEMPLATE/         bug, feature and question forms
 .github/workflows/codeql.yml   CodeQL scanning (PRs + weekly)
-tests/                         479 hermetic tests (no network, no credentials)
+tests/                         484 hermetic tests (no network, no credentials)
 scripts/benchmark.py           the measured Python-side cost (docs/performance.md)
 ```
 

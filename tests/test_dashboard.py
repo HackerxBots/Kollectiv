@@ -178,6 +178,19 @@ def test_dashboard_has_onboarding_and_mobile_chrome() -> None:
     assert "prefers-reduced-motion" in js and "pointer: fine" in js
 
 
+def test_dashboard_bridges_to_the_desktop_shell() -> None:
+    """The same page works in a browser and inside the Tauri window."""
+    source = _read("assets/app.js")
+    assert "__TAURI_INTERNALS__" in source, "detect the shell without breaking the browser"
+    assert "kollektiv://shell-ready" in source, "the shell announces itself; the page listens"
+    assert "shell_info" in source and "open_external" in source and "set_connection_state" in source
+    assert 'id="shell-note"' in _read("index.html"), "the shell explains itself when it has no API"
+    # The page itself must never *require* the shell: no top-level invocation.
+    assert "if (!IS_SHELL) return;" in source, "every shell path is guarded"
+    # External links must not strand a window with no back button.
+    assert re.search(r"function openExternal\(", source)
+
+
 def test_dashboard_is_installable() -> None:
     """A web manifest makes the shell installable without a build step."""
     manifest = json.loads(_read("assets/manifest.webmanifest"))

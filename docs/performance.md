@@ -85,7 +85,7 @@ The two numbers worth improving, if you care at all:
    layer).
 5. **A rewrite** — Rust/Go/C#/C++ — is the last rung and, for this project, the
    wrong one. What it buys: the sub-1 % of wall clock above. What it costs: the
-   479-test suite, FastAPI/SQLModel/httpx/MCP, the OpenAI-compatible client
+   484-test suite, FastAPI/SQLModel/httpx/MCP, the OpenAI-compatible client
    stack, every connector, and the ability of a contributor to read the code.
    If Kollektiv ever needs a rewrite it will be because the *product* changed
    (a hosted control plane serving thousands of tenants, say), not because
@@ -99,7 +99,7 @@ The two numbers worth improving, if you care at all:
 | Cost model, budgets, ledger | Python | **Python** | 0.2 µs/task; SQLite handles the rest |
 | Dashboard (`web/`) | plain ES modules, no build step | **TypeScript when someone wants it** | The UI is 1 700 lines of dependency-free JS. A build step buys types and costs contributors a toolchain; if the frontend becomes its own project, TypeScript is the obvious pick |
 | Gateway transport | Python (FastAPI + MCP SDK) | **Python** | It is a proxy over the same tools; a Go gateway would be faster and would duplicate 57 tool definitions |
-| Desktop shell, if we ship one | — | **Rust (Tauri 2)** | Smallest shell, OS webview, mobile later |
+| Desktop shell | Rust (Tauri 2), `desktop/` | **Rust** | ~120 lines that open a window, start the optional sidecar and kill it on exit |
 | Hot numeric loops, if a profiler finds them | — | **Rust via PyO3** | See rung 3 |
 | CI, deploys, infra | YAML + bash | **YAML + bash** | Nothing to rewrite |
 
@@ -114,7 +114,9 @@ prompt of its own). It costs nothing, ships on the same free Pages URL, and work
 with the API wherever you run it. What it is *not*: an offline engine. The shell
 loads offline; the work needs the API.
 
-**2. A Tauri 2 desktop app — the recipe, not built yet.** Tauri wraps the exact
+**2. A Tauri 2 desktop app — the shell is built; the sidecar is wired.**
+(Installers come from `.github/workflows/desktop.yml`; the code is in
+`desktop/`, and the guide is `desktop/README.md`.) Tauri wraps the exact
 `web/` directory we already have in a Rust shell that uses the OS webview, and
 can carry the API as a *sidecar* process, so "download Kollektiv" means one
 installer that starts everything. The honest numbers:

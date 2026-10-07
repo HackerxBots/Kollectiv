@@ -28,6 +28,47 @@ No account for any of them? Kollektiv still runs: the brain falls back to the
 deterministic heuristic planner, storage falls back to the local workspace and
 the API runs without auth. Add the keys later — nothing has to be migrated.
 
+**Read that table as optional.** A working install needs three things, and none of
+them is on it: a **database** (SQLite by default, nothing to sign up for), a
+**workspace** (a local directory), and a way to reach the API (localhost). R2,
+Neon, Clerk, Resend and TeraBox are *upgrades* — shared storage, a serverless
+Postgres, multi-user auth, email summaries, pooled free space. `kollektiv check`
+says which ones you have configured and what changes if you add the rest.
+
+**The one thing you must do yourself is generate the local secrets**, once:
+
+```bash
+kollektiv keys          # writes SECRET_KEY, SESSION_TOKEN and GATEWAY_ADMIN_TOKEN to .env
+```
+
+It keeps existing values unless you pass `--rotate`, so running it twice is safe.
+
+## Run it as a desktop app
+
+Two native builds, both embedding the same `web/` dashboard ([desktop/README.md](../desktop/README.md)):
+
+| Option | Download | API | When to pick it |
+| --- | --- | --- | --- |
+| **Shell** | 5–15 MB | one you run (laptop, VM, tunnel) | you already have an API, or you want one window onto a server |
+| **Bundle** | 60–120 MB | starts with the app on `127.0.0.1:8765` | you want one double-click and no terminal |
+
+```bash
+# Shell (needs Rust once)
+cd desktop && npm install && npm run build
+
+# Bundle: build the API sidecar first, then the same command
+pip install pyinstaller && pyinstaller sidecar/kollektiv-sidecar.spec --noconfirm
+TARGET=$(rustc -Vv | sed -n 's/host: //p')
+cp dist/kollektiv-api "desktop/src-tauri/binaries/kollektiv-api-${TARGET}"
+cd desktop && npm run build -- --config src-tauri/tauri.bundle.conf.json
+```
+
+Installers for macOS (arm64 + x64), Windows and Linux are built by
+`.github/workflows/desktop.yml` — **Actions → Desktop installers → Run workflow**.
+Unsigned builds warn on first launch; the Apple/Windows/Azure secrets that fix
+that are listed in `desktop/README.md`. The engine itself stays Python: the shell
+is a window, and `docs/performance.md` has the measurements behind that decision.
+
 ### One storage layer, two providers (and the 9Drive trick)
 
 It is easy to read "R2 or 9Drive" as two storage options. It is really one

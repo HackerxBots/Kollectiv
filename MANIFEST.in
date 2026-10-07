@@ -13,3 +13,8 @@ recursive-include docs *.md *.json
 recursive-include scripts *.py
 recursive-include examples *.py *.md
 recursive-include .github *.yml *.md
+# Desktop shell sources and the sidecar recipe (no target/, no sidecar binaries).
+include desktop/package.json desktop/package-lock.json desktop/README.md
+recursive-include desktop/src-tauri *.json *.json5 *.toml *.rs *.png *.ico *.icns *.md
+include sidecar/kollektiv-sidecar.spec sidecar/sidecar_entry.py
+recursive-include sidecar *.md

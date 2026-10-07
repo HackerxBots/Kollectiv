@@ -409,6 +409,37 @@ def test_health_reports_budget_configuration(settings: Settings) -> None:
     assert "ledger" in budget
 
 
+def test_cli_keys_writes_secrets_once_and_keeps_them(settings: Settings, tmp_path: Path, capsys: Any, monkeypatch: Any) -> None:
+    """``kollektiv keys`` is the one manual step: a .env, written once."""
+    from src.api import cli as cli_module
+
+    env_file = tmp_path / ".env"
+    monkeypatch.setattr(cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr("src.orchestrator.app.get_settings", lambda: settings)
+
+    def args(**kwargs: Any) -> Any:
+        """An argparse-like namespace for the keys command."""
+        defaults = {"env_file": str(env_file), "rotate": False, "json": False}
+        defaults.update(kwargs)
+        return type("Args", (), defaults)()
+
+    assert run(cli_module.cmd_keys(args())) == 0
+    written = env_file.read_text(encoding="utf-8")
+    for key in ("SECRET_KEY", "SESSION_TOKEN", "GATEWAY_ADMIN_TOKEN"):
+        assert f"{key}=" in written, key
+    assert "kollektiv bootstrap" in capsys.readouterr().out
+
+    # Second run keeps the existing values instead of locking the operator out.
+    assert run(cli_module.cmd_keys(args())) == 0
+    out = capsys.readouterr().out
+    assert "kept" in out and env_file.read_text(encoding="utf-8") == written
+
+    # --rotate replaces them, and load_env_file finds the file afterwards.
+    assert run(cli_module.cmd_keys(args(rotate=True))) == 0
+    capsys.readouterr()
+    assert cli_module.load_env_file(str(env_file)) , "the file must be loadable by other entry points"
+
+
 def test_cli_init_config_estimate_and_budget(settings: Settings, tmp_path: Path, capsys: Any, monkeypatch: Any) -> None:
     """The three new commands work end to end against a temp config."""
     from src.api import cli as cli_module

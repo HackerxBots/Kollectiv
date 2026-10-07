@@ -328,7 +328,58 @@ catalogue validator will refuse it.
 
 ---
 
-## 8. What would make this real
+## 8. The money path, in order
+
+Everything above is a menu. This is the order it gets eaten in, and why — the
+ranking is honest about the fact that the *hard* part is not the code.
+
+| Order | Move | Who pays | What it costs us | Why it is next |
+| --- | --- | --- | --- | --- |
+| 1 | **GitHub Sponsors** button, wired to a **funding.json**-style grant declaration | individuals | nothing; 0 % platform fee, paid out through Stripe Connect | it is the only one that works *today*, and open-source grants are written against it |
+| 2 | **The gateway + budget ledger** (shipped: `docs/gateway.md`, `docs/budget.md`) | teams | already done | it is the control plane any hosted or paid tier needs: per-client tokens, policies, an audit log, spend caps |
+| 3 | **Hosted quota-vs-balance accounting** | users of a hosted tier | the next real build | turns "free forever" from a promise into a number: a balance, runs against it, an honest refusal when it is empty |
+| 4 | **Direct sponsor slots** (`SPONSORS_ENABLED`, shipped, off by default) | ecosystem vendors | sales time | needs *one* advertiser and a rate card before it needs code |
+| 5 | **Managed hosting** (self-hosting stays first-class and MIT) | teams that want it to just run | the biggest build | the only model where revenue scales with value — do it after 3 |
+
+The guard rails stay as written in §6: no data sales (there is none), no prompt
+targeting, no always-on ads, no features held back from the self-hosted edition,
+and the free path never gets slower to upsell a paid one.
+
+### Collecting it
+
+Two honest routes, and the difference matters:
+
+* **Fiscal host: Open Collective (e.g. Open Collective Europe, which accepts
+  non-EU projects).** You do not need a company, an accountant or a bank account
+  in a particular country; the host invoices, holds and pays out, and publishes
+  the ledger. Cost: a share of each contribution. This is the realistic route for
+  an individual maintainer.
+* **Direct: GitHub Sponsors.** 0 % platform fee, payouts through Stripe Connect,
+  and a public profile that developers already trust. Payout requires an eligible
+  bank/Stripe region — **check your own country before promising anything** and do
+  not promise a payout you cannot make.
+
+Two things to be careful about, because they are easy to get wrong:
+
+* **Advertiser side is not the same as donation side.** Paying a sponsor's invoice
+  is a *commercial* transaction; Stripe (and most processors) require a **business**
+  or registered entity for it, and personal accounts usually cannot receive it. A
+  sponsored line therefore needs the fiscal host (or a company) in the middle.
+  Donations do not have that constraint.
+* **Local currency and tax are real.** The amount you can actually keep depends on
+  your country's rules for foreign income; the project's ledger and this page are
+  documentation, not tax advice.
+
+### What is missing, stated plainly
+
+An advertiser, a rate card and a fill rate (§4 has the arithmetic); a tested
+payout path (a signed local claim exists, `kollektiv sponsors claim` — but no money
+has moved through it); and the hosted quota accounting in step 3 above. The code
+is ahead of the business on purpose: shipping the gateway and the ledger costs
+nothing when the money never arrives, and it is what makes the offer credible
+when it does.
+
+## 9. What would make this real
 
 - The relay (§5.4) and a payout rail a sponsor can actually use.
 - Two or three ecosystem sponsors with the integrity to appear next to

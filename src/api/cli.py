@@ -30,6 +30,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+import secrets
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -778,6 +780,45 @@ async def cmd_sponsors(args: argparse.Namespace) -> int:
     return 0
 
 
+def load_env_file(path: str = ".env", *, override: bool = False) -> List[str]:
+    """Load an env file into ``os.environ`` and return the keys it set.
+
+    ``pydantic-settings`` reads ``.env`` for *its own* fields, which is enough for
+    the API. It is not enough for the desktop shell, the packaged sidecar or a
+    bare ``uvicorn`` run, because those read environment variables before
+    settings exist. Calling this first makes ``kollektiv keys`` a complete answer:
+    write the file once, and every entry point finds it.
+
+    Real environment variables always win unless ``override`` is asked for, so a
+    container or a systemd unit keeps control.
+
+    Args:
+        path: Env file to read; a missing file is not an error.
+        override: Replace variables that are already set.
+
+    Returns:
+        The names of the variables that were set from the file.
+    """
+    target = Path(path)
+    if not target.exists():
+        return []
+    applied: List[str] = []
+    for raw in target.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.lower().startswith("export "):
+            line = line[7:].strip()
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if not key or (key in os.environ and not override):
+            continue
+        os.environ[key] = value
+        applied.append(key)
+    return applied
+
+
 async def cmd_gateway(args: argparse.Namespace) -> int:
     """Manage the MCP gateway: clients, tokens, policies, audit, serve.
 
@@ -803,6 +844,13 @@ async def cmd_gateway(args: argparse.Namespace) -> int:
 
     if action == "serve":
         import uvicorn
+
+        # A packaged sidecar and a desktop launch have no shell profile to read,
+        # so pick up .env here: one file, every entry point.
+        applied = load_env_file(getattr(args, "env_file", ".env"))
+        if applied:
+            LOGGER.info("Loaded %s value(s) from %s: %s", len(applied), args.env_file, ", ".join(applied))
+            settings = get_settings()
 
         app = create_gateway_app(
             settings.model_copy(update={"GATEWAY_ENABLED": True}, deep=True)
@@ -1278,6 +1326,119 @@ def cmd_serve_mcp(args: argparse.Namespace) -> int:
 # ----------------------------------------------------------------------
 # Argument parsing
 # ----------------------------------------------------------------------
+async def cmd_keys(args: argparse.Namespace) -> int:
+    """Generate the three local secrets Kollektiv needs, and write them to .env.
+
+    This is the answer to "what do I have to do myself?" — once:
+
+    * ``SECRET_KEY`` — Fernet key for ``TokenStore`` (worker tokens, gateway
+      tokens, connector credentials are encrypted with it). Lose it and stored
+      tokens must be re-entered; that is the whole point.
+    * ``SESSION_TOKEN`` — the shared secret the service uses for its own
+      internal callbacks.
+    * ``GATEWAY_ADMIN_TOKEN`` — a ``kgw_…`` admin token for an AI client (or the
+      desktop shell) to reach ``kollektiv gateway serve``.
+
+    Existing values are **kept** unless ``--rotate`` is given, so running this
+    twice does not lock you out of anything. The file is edited in place
+    (comments and ordering preserved) and printed with the secret partially
+    masked, because a terminal history is not a secrets manager.
+    """
+    from cryptography.fernet import Fernet
+
+    from src.gateway.auth import GatewayAuth
+    from src.gateway.policy import Policy
+
+    env_path = Path(args.env_file)
+    existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+    changed: List[str] = []
+    kept: List[str] = []
+
+    def present(key: str) -> bool:
+        """Return whether the env file already sets ``key`` to something."""
+        for line in existing.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(f"{key}=") and not stripped.startswith("#"):
+                return bool(stripped.split("=", 1)[1].strip())
+        return False
+
+    secret = ""
+    if args.rotate or not present("SECRET_KEY"):
+        secret = Fernet.generate_key().decode("utf-8")
+        set_env_value(str(env_path), "SECRET_KEY", secret)
+        changed.append("SECRET_KEY")
+    else:
+        kept.append("SECRET_KEY")
+
+    session = ""
+    if args.rotate or not present("SESSION_TOKEN"):
+        session = secrets.token_urlsafe(32)
+        set_env_value(str(env_path), "SESSION_TOKEN", session)
+        changed.append("SESSION_TOKEN")
+    else:
+        kept.append("SESSION_TOKEN")
+
+    gateway_token = ""
+    if args.rotate or not present("GATEWAY_ADMIN_TOKEN"):
+        settings = get_settings()
+        auth = GatewayAuth(settings)
+        try:
+            issued = await auth.issue(
+                "desktop",
+                label="Desktop shell and local AI clients",
+                role="admin",
+                policy=Policy.preset("admin"),
+                rotate=True,
+            )
+            gateway_token = str(issued["token"])
+        except Exception as exc:  # noqa: BLE001 - report, do not crash the rest
+            print(f"kollektiv: could not issue a gateway token: {exc}", file=sys.stderr)
+        else:
+            set_env_value(str(env_path), "GATEWAY_ADMIN_TOKEN", gateway_token)
+            changed.append("GATEWAY_ADMIN_TOKEN")
+    else:
+        kept.append("GATEWAY_ADMIN_TOKEN")
+
+    payload = {
+        "env_file": str(env_path),
+        "written": changed,
+        "kept": kept,
+        "secret_key": secret,
+        "session_token": session,
+        "gateway_admin_token": gateway_token,
+        "masked": {
+            "secret_key": mask_secret(secret),
+            "session_token": mask_secret(session),
+            "gateway_admin_token": mask_secret(gateway_token),
+        },
+        "note": "Secrets are written to the env file and shown once. Keep that file out of git.",
+    }
+    if args.json:
+        _print(payload, True)
+        return 0
+
+    def show(label: str, value: str) -> str:
+        """Mask all but the last four characters of a secret."""
+        return mask_secret(value) if value else "(kept the existing value)"
+
+    print(f"env file : {env_path}")
+    print(f"secret   : {show('SECRET_KEY', secret)}")
+    print(f"session  : {show('SESSION_TOKEN', session)}")
+    print(f"gateway  : {show('GATEWAY_ADMIN_TOKEN', gateway_token)}")
+    if kept:
+        print(f"kept     : {', '.join(kept)} (--rotate to replace)")
+    print("next     : kollektiv bootstrap && kollektiv serve-api")
+    return 0
+
+
+def mask_secret(value: str) -> str:
+    """Return a secret with everything but its last four characters hidden."""
+    if not value:
+        return ""
+    tail = value[-4:] if len(value) > 4 else ""
+    return f"{'*' * 8}{tail}"
+
+
 async def cmd_links(args: argparse.Namespace) -> int:
     """List agent-connector grants: who may use which service.
 
@@ -1399,6 +1560,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_config.add_argument("--path", default="", help="Where to write it (default ./.kollektiv.yml)")
     init_config.add_argument("--force", action="store_true", help="Overwrite an existing file")
 
+    keys = sub.add_parser("keys", help="Generate SECRET_KEY, SESSION_TOKEN and an admin gateway token")
+    keys.add_argument("--env-file", default=".env", help="Env file to write (default: .env)")
+    keys.add_argument("--rotate", action="store_true", help="Replace existing values instead of keeping them")
+    keys.add_argument("--json", action="store_true")
+
     links = sub.add_parser("links", help="List agent-connector grants (who may use which service)")
     links.add_argument("--json", action="store_true")
     link = sub.add_parser("link", help="Grant one agent access to one connector")
@@ -1459,6 +1625,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Policy preset for a new client",
     )
     gateway.add_argument("--rotate", action="store_true", help="Re-key an existing client instead of failing")
+    gateway.add_argument("--env-file", default=".env", help="Env file to load before serving (default: .env)")
     gateway.add_argument("--preset", default="", help="Apply a policy preset (policy action)")
     gateway.add_argument("--allow", default="", help="Comma-separated allow globs")
     gateway.add_argument("--deny", default="", help="Comma-separated deny globs")
@@ -1510,6 +1677,7 @@ COMMANDS = {
     "gateway": cmd_gateway,
     "estimate": cmd_estimate,
     "budget": cmd_budget,
+    "keys": cmd_keys,
     "links": cmd_links,
     "link": cmd_link,
     "unlink": cmd_unlink,

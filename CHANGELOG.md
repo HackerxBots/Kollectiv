@@ -133,8 +133,10 @@ on GitHub links to the section below for its version.
   refusing an over-budget run), `tests/test_perf.py` (7 performance tripwires)
   and three more dashboard tests for the PWA), plus `tests/test_agent_links.py`
   (15 tests: naming, the pool beyond four agents, the link lifecycle over HTTP,
-  enforcement with reasons, persistence, the CLI and the MCP tools).
-  **479 tests total.**
+  enforcement with reasons, persistence, the CLI and the MCP tools), a `keys`
+  round-trip in `tests/test_budget.py`, three desktop/sidecar guards in
+  `tests/test_packaging.py` and a shell-bridge guard in `tests/test_dashboard.py`.
+  **484 tests total.**
 
 - **Budgets: estimate, cap, and record.** A run can no longer cost more than you
   expected without saying so first.
@@ -206,6 +208,25 @@ on GitHub links to the section below for its version.
   Links live in the `agent_links` table, unique per `(agent_id, connector)`, and
   `GET /connectors` now carries `linked_agents` per connector so a UI can render
   link/unlink with no other calls.
+
+- **Desktop: both options, for real.** `desktop/` is a Tauri 2 shell that embeds
+  the shipped `web/` dashboard — a window, not a second frontend — with icons
+  generated from the project's own `favicon.svg`, a deliberately tiny capability
+  list (no filesystem, shell or process permissions) and a JS bridge
+  (`kollektiv://shell-ready`, `shell_info`, `open_external`,
+  `set_connection_state`) that leaves the page a plain static site everywhere
+  else. `sidecar/kollektiv-sidecar.spec` builds the API as a **one-file
+  sidecar** (PyInstaller), which the shell starts on `127.0.0.1:8765`, supervises
+  and kills with the window; `.github/workflows/desktop.yml` builds installers for
+  macOS (arm64 + x64), Windows and Linux, in both the *shell* and *bundle*
+  variants. Signing is optional and documented, not assumed. The engine stays
+  Python: `docs/performance.md` is the reasoning, and `desktop/README.md` is the
+  guide.
+- **`kollektiv keys` — the one manual step, done for you.** One command writes
+  `SECRET_KEY`, `SESSION_TOKEN` and a `kgw_…` admin gateway token to `.env`, keeps
+  existing values unless `--rotate` is passed, and masks them on screen. A new
+  `load_env_file()` means every entry point (API, MCP, gateway, packaged sidecar)
+  reads that same file instead of relying on a shell profile.
 
 ### Changed
 

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-shell",
+  "description": "What the Kollektiv window is allowed to do. Deliberately tiny: render the dashboard, open links in the user's browser, and nothing else. The orchestrator is reached over HTTP exactly like in a browser, so the shell needs no filesystem, no shell and no process permissions.",
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:default"]
+}

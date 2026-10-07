@@ -21,10 +21,10 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 479 hermetic tests, ~34 s
+pytest -q                      # 484 hermetic tests, ~40 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
-mypy src config examples       # types (clean)
+mypy src config examples sidecar # types (clean)
 
 kollektiv bootstrap            # schema + workspace + free-tier checklist
 kollektiv connectors           # services the agents can call (+ what is missing)
@@ -36,6 +36,8 @@ kollektiv gateway serve        # the optional gateway, port 8010
 kollektiv init-config          # commented .kollektiv.yml (agents, budget, brain)
 kollektiv budget               # local ledger: tokens, dollars, caps
 kollektiv links                # agent-connector grants (who may use what)
+kollektiv keys                 # write SECRET_KEY/SESSION_TOKEN/gateway token to .env
+cd desktop && npm run build    # native shell (Rust once); see desktop/README.md
 python scripts/benchmark.py    # measured Python-side cost (see docs/performance.md)
 ```
 
@@ -134,6 +136,14 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 - **Agents have names** (`src/agents/names.py`): operator `name` wins, otherwise a
   stable friendly name derived from the account id, made unique within the pool.
   The pool is uncapped — `MAX_AGENT_COUNT` (64) only bounds one project's plan.
+- **The desktop app is a window, not a second frontend.** `desktop/` embeds
+  `web/` via `frontendDist`; a `tests/test_packaging.py` guard fails if a second
+  HTML/CSS tree appears there. The optional sidecar (Option 2) is built by
+  `sidecar/kollektiv-sidecar.spec` as **one file** (Tauri's `externalBin`
+  requirement) and starts on 127.0.0.1:8765. Rust here is unverified in this
+  sandbox — CI compiles it.
+- **Secrets come from `.env` via `load_env_file()`** so the API, the MCP server,
+  the gateway and the packaged sidecar all find what `kollektiv keys` wrote.
 - **Linking is not calling.** `agent_links` rows say who may use which connector;
   connector *actions* stay in the registry/API/MCP/CLI and must never be mirrored
   into a linking surface. A connector with no links is open; links only constrain

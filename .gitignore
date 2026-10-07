@@ -42,6 +42,15 @@ release-notes.md
 # Local dashboard preview
 web/node_modules/
 
+# Desktop shell (Rust build output; the sidecar binaries are built per platform,
+# never committed: .github/workflows/desktop.yml produces them)
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/binaries/kollektiv-api*
+sidecar/build/
+sidecar/dist/
+
 # Editors / OS
 .idea/
 .vscode/

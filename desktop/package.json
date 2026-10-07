@@ -1,0 +1,14 @@
+{
+  "name": "kollektiv-desktop",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Native shell for the Kollektiv dashboard: the same web/ UI in a small Tauri 2 window.",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon ../web/assets/favicon.svg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.1"
+  }
+}

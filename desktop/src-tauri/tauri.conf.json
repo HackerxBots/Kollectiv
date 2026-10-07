@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Kollektiv",
+  "version": "0.4.0",
+  "identifier": "dev.kollektiv.desktop",
+  "build": {
+    "frontendDist": "../../web",
+    "devUrl": "http://localhost:8088/ui/",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Kollektiv — mission control",
+        "width": 1280,
+        "height": 880,
+        "minWidth": 880,
+        "minHeight": 560,
+        "resizable": true,
+        "center": true,
+        "dragDropEnabled": true,
+        "theme": null
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; base-uri 'none'; form-action 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src *",
+      "capabilities": ["desktop-shell"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Mission control for a self-hosted multi-agent dev team",
+    "longDescription": "The Kollektiv dashboard as a native window: projects, agents, connectors and budgets for the orchestrator you host yourself. No telemetry, no accounts — it talks only to the API you point it at.",
+    "copyright": "MIT licensed",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}
