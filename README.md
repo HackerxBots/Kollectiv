@@ -901,6 +901,16 @@ Cutting a release:
 git tag v0.3.0-beta.1 && git push origin v0.3.0-beta.1   # workflow publishes the release
 ```
 
+### Repository settings (maintainers)
+
+The switches that exist only in the GitHub UI — description, topics, Dependabot
+alerts, private vulnerability reporting, code scanning, rulesets — are listed
+with the exact values to paste in [docs/repo-settings.md](docs/repo-settings.md).
+Worth knowing: GitHub reads `SECURITY.md` and `codeql.yml` from the **default
+branch**, so the Security tab reports "security policy · disabled" and "code
+scanning · needs setup" for as long as they live on a branch — the files are in
+place, the settings follow the merge.
+
 ### Health and observability
 
 - `GET /health` — always `200`; lists subsystems, counts and configuration

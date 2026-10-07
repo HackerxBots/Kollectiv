@@ -33,6 +33,14 @@ on GitHub links to the section below for its version.
   non-negotiables, connector recipe, release checklist),
   `.github/ISSUE_TEMPLATE/{bug_report,feature_request,question}.yml` +
   `config.yml`, and `.github/pull_request_template.md`.
+- **Maintainer checklist** (`docs/repo-settings.md`) — the copy-paste
+  repository description and topic list, the security toggles to enable
+  (private vulnerability reporting, Dependabot alerts and security updates, code
+  scanning → *Advanced* so it keeps the shipped `codeql.yml`), a suggested
+  ruleset for `main`, the Pages sources, and why `SECURITY.md`/`codeql.yml` only
+  take effect on the default branch. It also records which repository settings a
+  repository-scoped token cannot change (`403 Resource not accessible by
+  integration`) so nobody hunts for an API call that does not exist.
 - **Automated hygiene** — `.github/workflows/codeql.yml` (CodeQL
   `security-and-quality` on pull requests, `security-extended` weekly, and
   `security-events: write` so code-scanning alerts light up) and
