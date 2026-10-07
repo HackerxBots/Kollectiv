@@ -9,6 +9,21 @@ on GitHub links to the section below for its version.
 
 ### Added
 
+- **Desktop installers, both options** — `desktop/` is a Tauri 2 shell that embeds
+  the shipped `web/` dashboard (Option 1: a window, point it at any API) and turns
+  into a one-double-click app when the Python API is bundled as a sidecar
+  (Option 2: `sidecar/kollektiv-sidecar.spec`, PyInstaller one-file, started on
+  `127.0.0.1:8765` and killed when the window closes). The window icon is the
+  project's own `favicon.svg`, the capability list is `core:default` +
+  `opener:default` only, and `.github/workflows/desktop.yml` builds *both*
+  variants for macOS (arm64 + x64), Windows and Linux, smoke-tests the frozen
+  sidecar against `/health` before bundling it, uploads artifacts and can draft a
+  release for a `desktop-v*` tag. Signing secrets are optional and named.
+- **`kollektiv keys`** — writes `SECRET_KEY`, `SESSION_TOKEN` and a
+  `GATEWAY_ADMIN_TOKEN` (`kgw_…`, admin role) to `.env` in one command, keeps
+  existing values unless `--rotate`, and masks them on screen. `load_env_file()`
+  makes the API, the MCP server, the gateway and the packaged sidecar all read
+  that file, so a fresh install has exactly one manual step.
 - **Live project stream** — `GET /projects/{id}/events/stream` speaks Server-Sent
   Events: an `event: state` frame whenever the project's status, tasks, files,
   history or queue changes, `: keep-alive` heartbeats otherwise, a 0.5–30 s

@@ -37,10 +37,14 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
 
-ROOT = Path(SPECPATH).resolve().parent.parent  # noqa: F821 - SPECPATH is PyInstaller's
+# ``SPECPATH`` is the directory containing this file (``sidecar/``), so the
+# repository root is its parent — not its grandparent.
+ROOT = Path(SPECPATH).resolve().parent  # noqa: F821 - SPECPATH is PyInstaller's
 NAME = "kollektiv-api"
 
 # The bundled dashboard and configuration the app expects next to itself.
+# ``.`` means "next to the executable", which is where `create_app()` looks when
+# the sources are not on disk (a frozen build has no ``src/`` tree to walk).
 datas = [
     (str(ROOT / "web"), "web"),
     (str(ROOT / "config"), "config"),
@@ -58,7 +62,7 @@ hiddenimports = (
 )
 
 a = Analysis(  # noqa: F821 - PyInstaller injects these names
-    [str(ROOT / "packaging" / "sidecar_entry.py")],
+    [str(ROOT / "sidecar" / "sidecar_entry.py")],
     pathex=[str(ROOT)],
     binaries=[],
     datas=datas,

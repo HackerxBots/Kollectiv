@@ -132,14 +132,17 @@ fn start_sidecar() -> (ShellInfo, Option<Child>) {
             }
         }
     }
-    ShellInfo {
-        shell: "tauri",
-        api_major: 2,
-        version: env!("CARGO_PKG_VERSION"),
-        bundled_api: false,
-        api_base: None,
-        sidecar_note: "shell only: point the dashboard at an API you run, or build the bundle".to_string(),
-    }
+    (
+        ShellInfo {
+            shell: "tauri",
+            api_major: 2,
+            version: env!("CARGO_PKG_VERSION"),
+            bundled_api: false,
+            api_base: None,
+            sidecar_note: "shell only: point the dashboard at an API you run, or build the bundle".to_string(),
+        },
+        None,
+    )
 }
 
 /// Report what this build is, so the dashboard can offer native-only affordances

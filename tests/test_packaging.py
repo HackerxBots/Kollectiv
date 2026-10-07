@@ -161,3 +161,31 @@ def test_installed_layout_matches_the_runtime_lookup() -> None:
     assert 'parents[2] / "web"' in routes, "the dashboard lookup path changed; update packaging too"
     expected: List[str] = [str(Path("src/api/routes.py").resolve().parents[2].name)]
     assert expected == ["Kollectiv"], expected
+def test_the_sidecar_spec_points_at_paths_that_exist() -> None:
+    """The spec resolves everything from SPECPATH; a typo only shows up in CI.
+
+    This is the bug that made the first real desktop build fail: the root was
+    computed one level too high (and still said ``packaging/`` after the rename),
+    so PyInstaller could not find its entry script.
+    """
+    import re
+
+    spec = (ROOT / "sidecar" / "kollektiv-sidecar.spec").read_text()
+    root_line = next(line for line in spec.splitlines() if line.startswith("ROOT = "))
+    assert "Path(SPECPATH).resolve().parent" in root_line, root_line
+
+    referenced = set(re.findall(r'ROOT / "([^"]+)"(?: / "([^"]+)")?', spec))
+    assert referenced, "the spec should resolve its inputs from ROOT"
+    missing = [
+        "/".join(part for part in pair if part)
+        for pair in referenced
+        if not (ROOT / pair[0] / pair[1] if pair[1] else ROOT / pair[0]).exists()
+    ]
+    assert not missing, f"the spec points at paths that do not exist: {missing}"
+
+
+def test_the_bundle_job_smoke_tests_the_frozen_sidecar() -> None:
+    """A frozen build is the one artifact no unit test can check, so CI runs it."""
+    workflow = (ROOT / ".github" / "workflows" / "desktop.yml").read_text()
+    assert "Smoke-test the sidecar" in workflow
+    assert "curl -fsS http://127.0.0.1:8791/health" in workflow

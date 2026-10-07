@@ -52,13 +52,17 @@ jobs:
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
+      # `--bundles` is explicit on purpose: rpm needs rpmbuild, AppImage needs
+      # FUSE tooling and msi needs WiX. `deb`, `app`/`dmg` and `nsis` are the
+      # formats the runners can produce without extra setup. Add the others
+      # locally (and to this list) once you install their toolchains.
       matrix:
         include:
-          - { platform: macos-latest, target: aarch64-apple-darwin, variant: shell, args: "--target aarch64-apple-darwin" }
-          - { platform: macos-latest, target: x86_64-apple-darwin, variant: shell, args: "--target x86_64-apple-darwin" }
-          - { platform: ubuntu-22.04, target: x86_64-unknown-linux-gnu, variant: shell, args: "" }
-          - { platform: windows-latest, target: x86_64-pc-windows-msvc, variant: shell, args: "" }
-          - { platform: ubuntu-22.04, target: x86_64-unknown-linux-gnu, variant: bundle, args: "--config src-tauri/tauri.bundle.conf.json" }
+          - { platform: macos-latest, target: aarch64-apple-darwin, variant: shell, args: "--target aarch64-apple-darwin --bundles app,dmg" }
+          - { platform: macos-latest, target: x86_64-apple-darwin, variant: shell, args: "--target x86_64-apple-darwin --bundles app,dmg" }
+          - { platform: ubuntu-22.04, target: x86_64-unknown-linux-gnu, variant: shell, args: "--bundles deb" }
+          - { platform: windows-latest, target: x86_64-pc-windows-msvc, variant: shell, args: "--bundles nsis" }
+          - { platform: ubuntu-22.04, target: x86_64-unknown-linux-gnu, variant: bundle, args: "--config src-tauri/tauri.bundle.conf.json --bundles deb" }
 
     steps:
       - uses: actions/checkout@v4
@@ -103,6 +107,20 @@ jobs:
           mkdir -p desktop/src-tauri/binaries
           # Tauri expects the sidecar named <name>-<target-triple>, one file.
           cp dist/kollektiv-api "desktop/src-tauri/binaries/kollektiv-api-${{ matrix.target }}"
+
+      - name: Smoke-test the sidecar (bundle only)
+        if: matrix.variant == 'bundle'
+        run: |
+          # A frozen build is the one artifact a unit test cannot check: run it
+          # and wait for a real answer from /health before it goes in the bundle.
+          ./desktop/src-tauri/binaries/kollektiv-api-${{ matrix.target }} \
+            --host 127.0.0.1 --port 8791 --data-dir /tmp/kollektiv-smoke &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8791/health; then ok=1; break; fi
+            sleep 2
+          done
+          kill %1 2>/dev/null || true
+          test "${ok:-}" = "1" || { echo "the sidecar never answered"; exit 1; }
 
       # --- both variants: build the installers ------------------------------
       - name: Build installers
