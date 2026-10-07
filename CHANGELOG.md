@@ -33,6 +33,21 @@ on GitHub links to the section below for its version.
   non-negotiables, connector recipe, release checklist),
   `.github/ISSUE_TEMPLATE/{bug_report,feature_request,question}.yml` +
   `config.yml`, and `.github/pull_request_template.md`.
+- **Freebuff worker shim** (`examples/freebuff_shim.py`) — runs the free,
+  ad-supported [Freebuff](https://freebuff.com) agent as a Kollektiv worker.
+  Two things make it more than a wrapper: `strip_ansi`/`strip_ads` keep the
+  free tier's terminal ads and escape codes out of every artifact (fenced
+  blocks are never touched, long lines are never cut), and `collect_changes`
+  turns `git status` into Kollektiv's fenced-block contract so the worker's
+  answer is *the files it changed*, with paths validated by
+  `src/utils/paths.py` and binaries/oversized files reported instead of
+  inlined. Git reads are retried (index-lock contention); the agent itself is
+  never retried, because each run edits the tree. 19 tests in
+  `tests/test_freebuff_shim.py` cover ad filtering, the artifact contract, the
+  binary/oversize/deleted cases, both prompt-delivery modes, the timeout and
+  the authenticated endpoints. **Documented caveat:** Freebuff's terms (as
+  reported by reviewers) expect an operator to stay present, so the README
+  presents it as a supervised single worker, not an unattended fleet.
 - **Maintainer checklist** (`docs/repo-settings.md`) — the copy-paste
   repository description and topic list, the security toggles to enable
   (private vulnerability reporting, Dependabot alerts and security updates, code

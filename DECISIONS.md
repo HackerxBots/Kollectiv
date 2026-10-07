@@ -46,6 +46,9 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 | 34 | Dependabot + CodeQL + OpenSSF Scorecard | ✅ | Issue #24. |
 | 35 | `kollektiv demo` (fake agents, real pipeline) | ✅ | Issue #25. |
 | 36 | Compatibility shim: import `kollektiv` alongside `src` | ✅ | Issue #26. |
+| 37 | Freebuff (free, ad-funded coding agent) as a worker | 🚀 | `examples/freebuff_shim.py`: strips ads/ANSI, converts its edits into the fenced-block contract, retries only git reads. Caveat shipped in the README: its terms expect a supervised session, so it is one worker you watch — not an unattended fleet. |
+| 38 | Use Freebuff to work on Kollektiv itself | ✅ | Free dev agent for contributors who cannot pay for one; it is just a CLI in your terminal, so nothing in the repository needs to change. |
+| 39 | Ad-supported "free" tools on the critical path | 🟡 | Ruled out for now: ads are a business model that can change (Freebuff already cut its free allowance once). It stays an *optional* worker, never the documented default — that remains Arena. |
 
 ## Non-negotiables (not up for a vote)
 

@@ -114,6 +114,11 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 - Errors that reach a client are generic: log the exception with
   `exc_info=True`, answer with a fixed message (an exception *class* name is the
   most detail that goes out). CodeQL watches for `py/stack-trace-exposure`.
+- `examples/*_shim.py` wrap CLI coding agents as workers. They must stay
+  supervised-friendly: no shell, prompt as a single argv element (or stdin),
+  ads/ANSI stripped, and Kollektiv's fenced-block contract returned — never a
+  raw transcript when the agent edited files. `tests/test_freebuff_shim.py`
+  pins that behaviour.
 - Live updates use Server-Sent Events (`GET /projects/{id}/events/stream`,
   `event: state` when the project's state digest changes, `: keep-alive`
   otherwise). Note for tests: `httpx.ASGITransport` buffers whole responses, so

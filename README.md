@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&label=release)](https://github.com/HackerxBots/Kollektiv/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Tests: 262](https://img.shields.io/badge/tests-262%20passing-brightgreen.svg)](tests/)
+[![Tests: 281](https://img.shields.io/badge/tests-281%20passing-brightgreen.svg)](tests/)
 
 **A multi-agent collaborative dev team orchestrator — free to run, self-hosted, open source (MIT).**
 
@@ -416,6 +416,7 @@ data as JSON and the MCP tool `get_handoff` exposes it to any MCP client.
 | **[Cline](https://github.com/cline/cline)** / **[Kilo Code](https://github.com/kilo-org)** | Apache-2.0 / MIT | autonomous edits in the editor; Kilo runs parallel agents |
 | **[Qwen Code](https://github.com/QwenLM/qwen-code)** | Apache-2.0 | open fork of the Gemini CLI line, pairs with open-weight models |
 | **[Codex CLI](https://github.com/openai/codex)** | Apache-2.0 | sandboxed CLI agent; local models via `--oss` |
+| **[Freebuff](https://freebuff.com)** | Apache-2.0 | **free without an API key**, ads fund the models; its file edits become artifacts through `examples/freebuff_shim.py` — one **supervised** session at a time (see the note below) |
 | **Local models** (Ollama, llama.cpp, LM Studio, vLLM) | — | zero per-token cost; expose the OpenAI-compatible endpoint as a worker |
 
 #### Wiring one in
@@ -437,7 +438,18 @@ For a CLI agent (Aider, OpenHands, Codex CLI), put it behind a tiny HTTP shim
 that accepts `{"prompt": …}` and returns `{"text": …}` — a ~40-line FastAPI app —
 and register that URL as a worker. Kollektiv keeps planning, dependency
 ordering, collection, review, state and sync; the runtime only has to write the
-code for one subtask. `examples/aider_shim.py` is a working template.
+code for one subtask. `examples/aider_shim.py` is a working template, and
+`examples/freebuff_shim.py` does the same for [Freebuff](https://freebuff.com) —
+the free, ad-supported coding agent — with two extras: it strips terminal ads
+and ANSI noise, and it returns **the files the agent changed** as fenced
+blocks (Kollektiv's worker contract) instead of the chat transcript.
+
+> **Freebuff is supervised by design.** Its free tier is funded by ads and its
+> terms (as reported by reviewers) expect an operator to start a session and
+> stay present while the agent works. So it is a perfectly good *free* single
+> worker for a project you are watching — and the wrong choice for an
+> unattended fleet. Kollektiv supports both patterns; this one is the
+> deliberate exception.
 
 **The 3-example minimisation.** Three workers on free endpoints (Groq, a local
 Ollama model, a cheap DeepSeek key) cost nothing to start and are enough to see
@@ -1014,6 +1026,8 @@ src/connectors/webhook.py      outbound events (Slack/Discord/n8n/Zapier/webhook
 src/connectors/rest.py         declarative REST connectors (CUSTOM_CONNECTORS)
 src/api/cli.py                 the `kollektiv` command line interface
 examples/aider_shim.py         wrap any CLI coding agent as a worker endpoint
+examples/freebuff_shim.py      run the free, ad-supported Freebuff agent as a worker
+                              (strips ads, returns its edits as artifact blocks)
 web/index.html                 dashboard markup — four views, hash routes
 web/assets/styles.css          design tokens, components, hover/focus states
 web/assets/app.js              API client, renderers, command palette, SSE consumer
@@ -1024,7 +1038,7 @@ CONTRIBUTING.md                gates, non-negotiables, connector + release recip
 CODE_OF_CONDUCT.md             Contributor Covenant 2.1
 .github/ISSUE_TEMPLATE/         bug, feature and question forms
 .github/workflows/codeql.yml   CodeQL scanning (PRs + weekly)
-tests/                         262 hermetic tests (no network, no credentials)
+tests/                         281 hermetic tests (no network, no credentials)
 ```
 
 ---
@@ -1034,7 +1048,7 @@ tests/                         262 hermetic tests (no network, no credentials)
 ```bash
 pip install -e ".[dev]"
 
-pytest -q                 # 262 tests, ~10 s, fully mocked
+pytest -q                 # 281 tests, ~11 s, fully mocked
 pytest tests/test_api.py -q
 ruff check .              # lint (clean)
 mypy src config examples  # types (clean)
@@ -1181,7 +1195,7 @@ yourself (see [Self-hosting checklist](#self-hosting-checklist)).
 **Can I use something other than Arena for the workers?** Yes, and most people
 do: any OpenAI-compatible endpoint works as a worker, so Groq, Together,
 OpenRouter, DeepSeek, a local Ollama/vLLM server, or a shim around a CLI agent
-(OpenHands, Aider, OpenCode, Goose, Cline/Kilo, Qwen Code, Codex CLI) all plug
+(OpenHands, Aider, OpenCode, Goose, Cline/Kilo, Qwen Code, Codex CLI, Freebuff) all plug
 in through `ARENA_ACCOUNTS` — see [Agent runtimes](#agent-runtimes). The same is
 true for connectors: the four built-ins and `CUSTOM_CONNECTORS` cover most of
 what "linking services" means, and Activepieces/n8n/Zapier can be reached
