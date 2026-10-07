@@ -31,6 +31,13 @@ on:
   push:
     tags:
       - "desktop-v*"
+  # pull_request lets a fork prove the shell still compiles without anyone's
+  # signing secrets; the release step below is skipped for pull requests.
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "sidecar/**"
+      - ".github/workflows/desktop.yml"
 
 permissions:
   contents: write
@@ -117,7 +124,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop
-          tagName: ${{ github.event.inputs.release_tag || github.ref_name }}
+          # A release is created only for a real release tag or an explicit
+          # input. A smoke tag (`desktop-v…-smoke`) and a pull request build the
+          # installers and stop there.
+          tagName: ${{ (inputs.release_tag != '' && inputs.release_tag) || (startsWith(github.ref_name, 'desktop-v') && !contains(github.ref_name, 'smoke') && github.ref_name) || '' }}
           releaseName: "Kollektiv ${{ matrix.variant }} ${{ github.ref_name }}"
           releaseBody: |
             Native installers for the Kollektiv dashboard.
@@ -131,6 +141,8 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Keep the installers as artifacts
+        # Unsigned builds are the common case, and the artifacts are how you get
+        # them without configuring a single secret.
         uses: actions/upload-artifact@v4
         with:
           name: kollektiv-${{ matrix.variant }}-${{ matrix.target }}
