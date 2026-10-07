@@ -10,7 +10,7 @@ git clone https://github.com/HackerxBots/Kollektiv.git
 cd Kollektiv
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q                 # 262 hermetic tests, ~10 s
+pytest -q                 # 287 hermetic tests, ~10 s
 kollektiv bootstrap       # prepares the database/workspace, prints the checklist
 kollektiv serve-api       # dashboard at http://localhost:8000/ui
 ```
@@ -68,7 +68,9 @@ Keep pull requests focused; one idea per PR is easier to review and revert.
 **Update in the same PR:**
 
 - `CHANGELOG.md` — add a line under `[Unreleased]`;
-- `README.md` — if a command, config key, interface or the feature list changed;
+- the matching page in `docs/` — and the README only if the pitch, the
+  quickstart, the feature table or the test count changed (the README is a front
+  page now; depth lives in `docs/`);
 - `DECISIONS.md` — if you are changing an agreed decision (say why);
 - `.env.example` — if you added configuration;
 - the peak block (release name, test count) — see the release checklist below.
@@ -94,7 +96,8 @@ Connectors are the most common contribution and the most fun:
 1. Bump `version` in `pyproject.toml` **and** `src/__init__.py` (SemVer).
 2. Move `CHANGELOG.md`'s `[Unreleased]` entries under the new version with
    today's date and add the compare links.
-3. Update the README peak block (release name, test count) and any changed
+3. Update the README peak block (status, test count) and any changed page in
+   `docs/`;
    table or command.
 4. Tag and push: `git tag v0.x.0-beta.N && git push origin v0.x.0-beta.N`.
    The workflow builds the sdist/wheel, refuses to publish without a changelog

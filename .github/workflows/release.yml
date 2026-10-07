@@ -84,7 +84,7 @@ jobs:
           body = match.group(1).strip() if match else ""
           repo = os.environ.get("GITHUB_REPOSITORY", "HackerxBots/Kollektiv")
           server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
-          policy = f"{server}/{repo}/blob/main/README.md#releases-versioning-and-the-readme"
+          policy = f"{server}/{repo}/blob/main/docs/operations.md#releases-versioning-and-the-readme"
           beta = (
               "\n> **Beta release.** Interfaces and configuration may still change between\n"
               f"> beta tags; see the [release policy]({policy}).\n"

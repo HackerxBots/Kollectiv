@@ -69,7 +69,7 @@ on GitHub links to the section below for its version.
   third-party origin may appear. `tests/test_api.py` adds two SSE tests
   (state frame + faithful copy of `/status`, and an `event: error` frame for an
   unknown project). `tests/test_path_safety.py` covers the path rules end to end,
-  from the helpers to the API's `400`. 262 tests total.
+  from the helpers to the API's `400`. 287 tests total.
 
 ### Security
 
@@ -93,6 +93,23 @@ on GitHub links to the section below for its version.
 
 ### Changed
 
+- **The README is a front page, and `docs/` is the manual.** At 1 300 lines the
+  README had become the manual: it now carries the pitch, a feature table, the
+  quickstart and links (in the shape large projects like OpenHands use), and the
+  depth moved into pages that each link back — `docs/architecture.md`,
+  `configuration.md`, `connectors.md`, `deployment.md`, `agent-runtimes.md`,
+  `api.md`, `operations.md`, `extending.md`, `development.md`, `faq.md`,
+  `roadmap.md`, `privacy.md`, `legal.md`, `why-kollektiv.md`, plus a
+  `docs/README.md` hub. Nothing was dropped: the moved sections are byte-for-byte
+  the same text, with every relative link and anchor rewritten.
+  `tests/test_docs.py` keeps it that way: the README has a line budget, every
+  local link and `file.md#anchor` must resolve to a real file or heading, every
+  page must be listed in the hub, and the long-form sections must not creep back
+  into the README.
+- **Badges and links follow the split** — the release workflow's beta banner now
+  points at `docs/operations.md`, the pull-request template and `CONTRIBUTING.md`
+  ask for the *matching page* in `docs/` rather than a bigger README, and
+  `CLAUDE.md` documents the docs map so the split survives future edits.
 - **Beta releases are published as normal GitHub releases.** Tags stay
   `vX.Y.Z-beta.N` and the release notes open with a beta warning, but the release
   is no longer marked as a GitHub *pre-release* — pre-releases are skipped by the

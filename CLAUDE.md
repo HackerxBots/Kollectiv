@@ -21,7 +21,7 @@ state/GitHub sync`.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                      # 262 hermetic tests, ~11 s
+pytest -q                      # 287 hermetic tests, ~11 s
 pytest tests/test_api.py -q    # one module
 ruff check .                   # lint (clean)
 mypy src config examples       # types (clean)
@@ -55,6 +55,8 @@ Tests are fully offline: mocked `httpx` transports, in-memory SQLite, fakes in
 | `src/orchestrator/handoff.py` | Resume briefings: dependency-aware next actions, blockers and rendered Markdown, written to `HANDOFF.md` after every run and served by `GET /projects/{id}/handoff` + the `get_handoff` MCP tool. |
 | `src/connectors/` | `base.py` (Connector/ConnectorAction/ConnectorRegistry) + one module per service (GitHub, Google, Notion, webhooks, declarative REST). Every connector is always registered; `configured` decides what runs, and `dangerous` actions require `confirm`. |
 | `src/api/` | `routes.py` (FastAPI), `mcp_server.py` (MCP tools), `cli.py` (`kollektiv`). |
+| `web/` | The static dashboard (`index.html` + `assets/`): no build step, no CDN, no telemetry. Served by the API at `/ui`, published by Cloudflare Pages or `pages.yml`. |
+| `docs/` | The documentation set. `README.md` is a **front page**: pitch, features, quickstart, links — `tests/test_docs.py` enforces the budget and checks every local link and `file.md#anchor` in `README.md` and `docs/`. Depth goes in the matching page (`architecture`, `configuration`, `connectors`, `deployment`, `agent-runtimes`, `api`, `operations`, `faq`, …). |
 
 ## Conventions
 
@@ -159,8 +161,9 @@ project is judged by its README and its releases, so they ship together:
    beta for now**: tag `vX.Y.Z-beta.N`; the workflow adds the beta banner and
    publishes it as a normal release so it stays findable (see the policy in
    `README.md`).
-3. Update the README: the "peak" block at the top (release name, test count) and
-   any tool table, command or configuration key that changed.
+3. Update the README: the "peak" block and badges at the top (status, test
+   count) plus, for anything deeper, the matching page in `docs/` — the README is
+   a front page and `tests/test_docs.py` fails if it grows past its budget.
 4. Tag `v<version>` and push the tag — `.github/workflows/release.yml` builds
    the artifacts, refuses to publish when the changelog lacks the version, and
    creates the release with notes from `CHANGELOG.md`.

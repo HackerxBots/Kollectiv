@@ -1,5 +1,7 @@
 # Repository settings (maintainer checklist)
 
+> Part of the [Kollektiv documentation](README.md) · back to the [README](../README.md)
+
 Everything in this repository that lives in **files** is already in place: the
 README, `LICENSE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SECURITY.md`, the
 issue forms, the pull-request template, `dependabot.yml` and `codeql.yml`.

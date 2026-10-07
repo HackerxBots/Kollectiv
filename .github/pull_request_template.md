@@ -26,7 +26,8 @@ Closes #
 ## Documentation
 
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
-- [ ] `README.md` updated if commands, config keys or interfaces changed
+- [ ] `README.md` updated if the pitch, quickstart, feature table or test count changed
+- [ ] the matching page in `docs/` updated if commands, config keys or interfaces changed
 - [ ] `.env.example` updated if new configuration was added
 - [ ] `DECISIONS.md` updated if an agreed decision changed
 

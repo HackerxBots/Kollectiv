@@ -1,5 +1,7 @@
 # Frontend prompt
 
+> Part of the [Kollektiv documentation](README.md) · back to the [README](../README.md)
+
 The prompt used to build (and iterate on) the dashboard in `web/`. It is written
 for an AI website builder — v0, Bolt, Lovable, Claude Artifacts, ChatGPT canvas —
 or for a human designer. Keep it in sync with the API: **if an endpoint changes,
