@@ -18,8 +18,9 @@ WORKER_TOKEN=local-dev-token \\
 then register it in ``.env``:
 
 ```jsonc
-ARENA_ACCOUNTS='[{"name":"aider","session_token":"local-dev-token",
-                  "base_url":"http://127.0.0.1:8099/v1","model":"aider"}]'
+ARENA_ACCOUNTS='[{"name":"aider","provider":"custom","account_id":"aider",
+                  "base_url":"http://127.0.0.1:8099/v1","model":"aider",
+                  "api_key_env":"WORKER_TOKEN"}]'
 ```
 
 The shim speaks two dialects:

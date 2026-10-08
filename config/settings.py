@@ -8,7 +8,7 @@ attention because they hold JSON encoded lists:
     JSON list of ``{"email", "password", "access_token", "refresh_token"}``.
 
 ``ARENA_ACCOUNTS``
-    JSON list of ``{"email", "password", "session_token"}``.
+    JSON list of ``{"name", "provider", "model"}``. Keys are never in here: `kollektiv login` keeps them encrypted (docs/byok.md).
 
 They are kept as raw strings by pydantic-settings and parsed on demand by
 :meth:`Settings.terabox_account_list` / :meth:`Settings.arena_account_list`.
@@ -101,41 +101,34 @@ class TeraBoxAccount(BaseModel):
 
 
 class ArenaAccount(BaseModel):
-    """One worker agent account.
+    """One worker agent: a model you reach with your own API key (BYOK).
 
-    Kollektiv is provider agnostic here: an "Arena account" is simply an
-    HTTP endpoint that accepts a prompt and returns text. Point
-    :attr:`base_url` at any OpenAI-compatible or custom chat endpoint --
-    including self-hosted models or official API keys -- and the pool will
-    use it exactly the same way.
+    The key is never stored here. ``kollektiv login`` keeps it encrypted in the
+    token store under ``(provider, account_id)``, or you name an environment
+    variable in :attr:`api_key_env`. See ``docs/byok.md``.
 
     Attributes:
-        email: Account login.
-        password: Account password (only used for the interactive login flow).
-        session_token: Pre-existing bearer/session token, if you have one.
-        name: Optional friendly label.
-        base_url: Per-account endpoint override.
-        model: Per-account model name override.
-        max_concurrency: How many prompts this account may run at once.
+        name: Display name shown on the dashboard (empty = the pool picks one).
+        provider: A key from :data:`src.agents.providers.PROVIDER_PRESETS`.
+        account_id: Stable id for the stored key; derived from the name when empty.
+        model: Model name override (defaults to the provider's model).
+        base_url: Endpoint override (required for ``custom``).
+        api_key_env: Environment variable holding the key (defaults per provider).
+        max_concurrency: How many prompts this worker may run at once.
     """
 
-    email: str = ""
-    password: str = ""
-    session_token: str = ""
     name: str = ""
-    base_url: str = ""
+    provider: str = "custom"
+    account_id: str = ""
     model: str = ""
+    base_url: str = ""
+    api_key_env: str = ""
     max_concurrency: int = 1
 
     @property
-    def account_id(self) -> str:
-        """Stable identifier used for token storage, logs and routing."""
-        return _stable_id(self.email, self.name)
-
-    @property
     def label(self) -> str:
-        """Human readable label (never the password)."""
-        return self.name or self.email or self.account_id
+        """Human readable label (never a key)."""
+        return self.name or self.account_id or self.provider
 
 
 class Settings(BaseSettings):
@@ -332,7 +325,7 @@ class Settings(BaseSettings):
     #: provider's current rates. Defaults match a cheap DeepSeek-class model.
     BUDGET_PRICE_IN_PER_MTOK: float = 0.30
     BUDGET_PRICE_OUT_PER_MTOK: float = 1.20
-    #: Worker endpoints are free by default (Arena accounts, local models).
+    #: Worker endpoints cost nothing by default (local models, free-tier keys).
     BUDGET_WORKER_PRICE_IN_PER_MTOK: float = 0.0
     BUDGET_WORKER_PRICE_OUT_PER_MTOK: float = 0.0
     #: Token heuristics behind the estimate, so it can be tuned rather than
@@ -383,12 +376,10 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Worker agents
     # ------------------------------------------------------------------
+    #: JSON list of workers, e.g. [{"name":"Vega","provider":"deepseek"}]. Keys are
+    #: never stored here: run ``kollektiv login`` (see docs/byok.md).
     ARENA_ACCOUNTS: str = "[]"
-    ARENA_BASE_URL: str = "https://arena.ai"
-    # NOTE: these two paths are provider specific. See
-    # ``src/agents/arena_client.py`` for what to set them to.
-    ARENA_LOGIN_PATH: str = "/api/auth/login"
-    ARENA_CHAT_PATH: str = "/api/chat"
+    #: Default model for a worker whose entry names none.
     ARENA_MODEL: str = ""
     ARENA_REQUEST_TIMEOUT: float = 300.0
     ARENA_MAX_CONCURRENCY: int = 1
@@ -433,35 +424,6 @@ class Settings(BaseSettings):
     MCP_PORT: int = 8001
     MCP_HOST: str = "0.0.0.0"
     MCP_TRANSPORT: str = "sse"
-
-    # ------------------------------------------------------------------
-    # Sponsor line (optional, off by default, ledger stays on your machine)
-    # ------------------------------------------------------------------
-    #: Master switch. Kollektiv shows nothing -- and earns nothing -- until you
-    #: flip this on. Nothing here is required to build, run or deploy.
-    SPONSORS_ENABLED: bool = False
-    #: JSON catalogue on disk; see ``docs/monetization.md`` for the schema.
-    SPONSOR_CATALOG_PATH: str = ""
-    #: Or an HTTPS endpoint returning the same JSON, for catalogues you do not
-    #: want to keep in sync by hand. Fetched only when a line is actually asked
-    #: for, never at import time.
-    SPONSOR_CATALOG_URL: str = ""
-    #: Ed25519 public key (base64, raw 32 bytes) that signs the catalogue. Set
-    #: it to refuse unsigned catalogues; leave empty for a local file you wrote.
-    SPONSOR_CATALOG_PUBLIC_KEY: str = ""
-    #: Developer share of the gross, in basis points (7500 = 75%, the rate the
-    #: CLI spinner ad networks publish).
-    SPONSOR_SHARE_BP: int = 7500
-    #: Fallback rate, in cents per 1000 impressions, when an entry omits one.
-    SPONSOR_CPM_CENTS: int = 100
-    #: A claim is only offered above this many cents.
-    SPONSOR_MIN_PAYOUT_CENTS: int = 1000
-    #: Self-declared interests ("databases,ai") -- the *only* targeting that
-    #: exists. No prompt, no code, no history is ever read to pick a line.
-    SPONSOR_CATEGORIES: str = ""
-    #: Minimum seconds between two lines in one process (attention budget).
-    SPONSOR_MIN_INTERVAL_SECONDS: int = 90
-    SPONSOR_REQUEST_TIMEOUT: float = 15.0
 
     # ------------------------------------------------------------------
     # Resilience

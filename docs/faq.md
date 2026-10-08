@@ -51,11 +51,13 @@ optional free dashboard on Pages. Nothing calls home, no feature is gated and
 every hosted free tier in the docs can be replaced by something you run
 yourself (see [Self-hosting checklist](deployment.md#self-hosting-checklist)).
 
-**Can I use something other than Arena for the workers?** Yes, and most people
-do: any OpenAI-compatible endpoint works as a worker, so Groq, Together,
-OpenRouter, DeepSeek, a local Ollama/vLLM server, or a shim around a CLI agent
-(OpenHands, Aider, OpenCode, Goose, Cline/Kilo, Qwen Code, Codex CLI, Freebuff) all plug
-in through `ARENA_ACCOUNTS` — see [Agent runtimes](agent-runtimes.md#agent-runtimes). The same is
+**Which models can the workers use?** Any you hold a key for. Each worker is one
+provider, model and key: DeepSeek, Groq, OpenRouter, OpenAI, Gemini, Mistral,
+Together, a local Ollama or LM Studio server, or any OpenAI-compatible endpoint
+(`provider: custom`). A shim around a CLI agent (OpenHands, Aider, OpenCode, Goose,
+Cline/Kilo, Qwen Code, Codex CLI, Freebuff) plugs in the same way. Setup is in
+[Bring your own key](byok.md), and the workers themselves go in
+`ARENA_ACCOUNTS` — see [Agent runtimes](agent-runtimes.md#agent-runtimes). The same is
 true for connectors: the four built-ins and `CUSTOM_CONNECTORS` cover most of
 what "linking services" means, and Activepieces/n8n/Zapier can be reached
 through `EVENT_WEBHOOKS` or their own REST APIs.
@@ -65,15 +67,13 @@ planner, a pool with zero workers, local-workspace storage, an open API and no
 emails. Everything reports itself in `/health`, `kollektiv check` and
 `kollektiv connectors`, so you can add one credential at a time.
 
-**Is any specific agent required — Freebuff, Aider, Arena?** No agent is
-required to *build or run* Kollektiv: it is a plain Python package (FastAPI,
-SQLModel, httpx, one optional `mcp`), so no particular coding agent appears
-anywhere in the install or the test suite, and the planner has a built-in
-heuristic mode that works with an empty worker pool. A *worker* is only needed
-to generate code: pick one or more that cost you nothing — Arena accounts are
-the documented default, and Groq, a local Ollama model or a Freebuff/Aider shim
-are interchangeable alternatives. Freebuff is a convenience for "no API key, no
-card" situations, never a dependency.
+**Is any specific agent required — Freebuff, Aider, a particular provider?** No.
+Kollektiv is a plain Python package (FastAPI, SQLModel, httpx, one optional
+`mcp`), so no coding agent appears in the install or the test suite, and the
+planner has a built-in heuristic mode that works with an empty worker pool. A
+*worker* is only needed to generate code, and you choose it: a provider you hold
+a key for, a local model that needs no key, or a shim around a CLI agent. Freebuff
+is optional, for people who want its free tier; it is never a dependency.
 
 **Is every piece really free?** Yes, and there is no paid component on the
 critical path: Cloudflare R2 (10 GB, no egress), Neon, Clerk, Resend and Pages

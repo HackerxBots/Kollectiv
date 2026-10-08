@@ -57,7 +57,6 @@ hiddenimports = (
     collect_submodules("src.connectors")
     + collect_submodules("src.storage")
     + collect_submodules("src.gateway")
-    + collect_submodules("src.sponsors")
     + ["uvicorn.logging", "uvicorn.loops.auto", "uvicorn.protocols.http.auto", "uvicorn.protocols.websockets.auto"]
 )
 

@@ -1,6 +1,6 @@
 """Human-friendly names for worker agents.
 
-An operator with six Arena accounts should not have to read six masked emails to
+An operator with six workers should not have to read six masked keys to
 tell them apart, and a dashboard that shows "Agent 1 … Agent 4" is a mock-up, not
 a product. So every agent gets a *name*:
 

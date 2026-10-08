@@ -1,15 +1,12 @@
-"""Tests for the worker agent layer: ``ArenaClient``, ``AgentPool`` and sessions.
+"""Tests for the worker layer (bring your own key): ``ArenaClient``, ``AgentPool`` and sessions.
 
-All HTTP is mocked; the tests cover both request shapes (OpenAI-compatible and
-custom), rate limiting, retries across agents, health reporting and the
-periodic session manager.
+All HTTP is mocked. Keys come from the constructor, an environment variable or
+the encrypted token store; none of them ever travels anywhere but the provider.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
-import time
 from typing import Any, Dict, List, cast
 
 import httpx
@@ -17,407 +14,381 @@ import pytest
 
 from src.agents.agent_pool import AgentPool, AgentTaskError
 from src.agents.arena_client import ArenaClient
+from src.agents.providers import PROVIDER_PRESETS, resolve_provider
 from src.agents.session_manager import SessionManager
-from src.utils.errors import ArenaError, AuthenticationError, ConfigurationError, RateLimitError
+from src.utils.errors import (
+    ArenaError,
+    ArenaTransientError,
+    AuthenticationError,
+    ConfigurationError,
+    RateLimitError,
+)
+from src.utils.token_store import TokenStore
+
+
+def mock_client(handler: Any, base: str = "https://agents.example.com/v1") -> httpx.AsyncClient:
+    """An HTTP client whose every request goes through ``handler``."""
+    return httpx.AsyncClient(base_url=base, transport=httpx.MockTransport(handler))
+
+
+def chat_reply(text: str = "Hello from the agent") -> httpx.Response:
+    """A minimal OpenAI-style chat completion."""
+    return httpx.Response(
+        200,
+        json={"id": "cmpl-1", "choices": [{"index": 0, "message": {"role": "assistant", "content": text}}]},
+    )
 
 
 # ----------------------------------------------------------------------
-# ArenaClient
+# Providers
 # ----------------------------------------------------------------------
-@pytest.fixture()
-def openai_router() -> Any:
-    """A router answering OpenAI-style chat completions."""
-    calls: List[Dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content or b"{}")
-        calls.append(payload)
-        return httpx.Response(
-            200,
-            json={
-                "id": "cmpl-1",
-                "model": payload.get("model", "test"),
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello from the agent"}}],
-                "usage": {"total_tokens": 12},
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    client = httpx.AsyncClient(base_url="https://agents.example.com/v1", transport=transport)
-    client.test_calls = calls  # type: ignore[attr-defined]
-    return client
+def test_provider_presets_cover_hosted_and_local_options() -> None:
+    """Hosted providers need a key, local ones do not, and every endpoint is https (or local)."""
+    for name in ("deepseek", "groq", "openrouter", "openai", "gemini", "mistral", "together"):
+        assert PROVIDER_PRESETS[name]["kind"] == "key"
+        assert PROVIDER_PRESETS[name]["base_url"].startswith("https://")
+        assert PROVIDER_PRESETS[name]["env"].endswith("_API_KEY")
+    for name in ("ollama", "lmstudio"):
+        assert PROVIDER_PRESETS[name]["kind"] == "local"
+        assert PROVIDER_PRESETS[name]["env"] == ""
+    assert PROVIDER_PRESETS["custom"]["base_url"] == ""
 
 
-async def test_send_prompt_openai_style(settings: Any, openai_router: Any) -> None:
-    """An OpenAI-compatible endpoint returns the assistant message."""
-    agent = ArenaClient(
-        {"email": "w@example.com", "session_token": "tok", "base_url": "https://agents.example.com/v1",
-         "model": "test-model"},
-        settings=settings,
-        client=openai_router,
-    )
-    try:
-        reply = await agent.send_prompt("Write a function", system_prompt="be brief")
-        assert reply == "Hello from the agent"
-        sent = openai_router.test_calls[-1]
-        assert sent["model"] == "test-model"
-        assert sent["messages"][0]["role"] == "system"
-        assert sent["messages"][1]["content"] == "Write a function"
-        assert openai_router.test_calls[0] is sent
-        assert agent.tasks_done == 1
-        assert agent.busy is False
-    finally:
-        pass  # the injected client is owned by the test
+def test_resolve_provider_is_case_insensitive_and_strict() -> None:
+    """Unknown names fail with the full list of choices."""
+    assert resolve_provider("DeepSeek")["label"] == "DeepSeek"
+    with pytest.raises(ConfigurationError) as excinfo:
+        resolve_provider("arena")
+    assert "deepseek" in str(excinfo.value)
 
 
-async def test_send_prompt_custom_style(settings: Any) -> None:
-    """A bespoke endpoint receives the Kollektiv prompt envelope."""
-    captured: Dict[str, Any] = {}
+# ----------------------------------------------------------------------
+# ArenaClient: requests
+# ----------------------------------------------------------------------
+async def test_transient_failures_are_retried_with_backoff(settings: Any, monkeypatch: Any) -> None:
+    """Two 503s then a success: the worker retries and the task still completes."""
+    monkeypatch.setenv("KOLLEKTIV_RETRY_BASE_DELAY", "0")
+    monkeypatch.setenv("KOLLEKTIV_RETRY_MAX_DELAY", "0")
+    calls: List[int] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.update(json.loads(request.content))
-        return httpx.Response(200, json={"response": "custom reply", "session": "s-1"})
+    def flaky(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(503, text="busy")
+        return chat_reply("finally")
 
-    client = httpx.AsyncClient(base_url="https://arena.example.com", transport=httpx.MockTransport(handler))
-    custom_settings = settings.model_copy(update={"ARENA_CHAT_PATH": "/api/chat"}, deep=True)
-    agent = ArenaClient(
-        {"email": "w@example.com", "session_token": "tok", "api_style": "custom"},
-        settings=custom_settings,
-        client=client,
-    )
-    reply = await agent.send_prompt("Plan the work", use_agent_mode=True)
-    assert reply == "custom reply"
-    assert captured["prompt"] == "Plan the work"
-    assert captured["agent_mode"] is True
-    assert captured["stream"] is False
+    agent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(flaky), api_key="k")
+    assert await agent.send_prompt("hi") == "finally"
+    assert len(calls) == 3
 
 
-async def test_send_prompt_handles_content_arrays(settings: Any) -> None:
-    """Multi-part content arrays are concatenated."""
+async def test_retries_stop_after_three_attempts(settings: Any, monkeypatch: Any) -> None:
+    """A worker that stays down gets exactly three attempts, then the error surfaces."""
+    monkeypatch.setenv("KOLLEKTIV_RETRY_BASE_DELAY", "0")
+    monkeypatch.setenv("KOLLEKTIV_RETRY_MAX_DELAY", "0")
+    calls: List[int] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": [{"type": "text", "text": "part one "}, {"text": "part two"}]}}]},
-        )
+    def down(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(502, text="bad gateway")
 
-    client = httpx.AsyncClient(base_url="https://agents.example.com/v1", transport=httpx.MockTransport(handler))
-    agent = ArenaClient({"email": "w@e.com", "session_token": "t", "base_url": "https://agents.example.com/v1"},
-                        settings=settings, client=client)
-    assert await agent.send_prompt("go") == "part one part two"
+    agent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(down), api_key="k")
+    with pytest.raises(ArenaTransientError):
+        await agent.send_prompt("hi")
+    assert len(calls) == 3
 
 
-async def test_rate_limit_sets_cooldown(settings: Any) -> None:
-    """A 429 puts the agent into cooldown and is not retried immediately."""
-    attempts = {"count": 0}
+async def test_rate_limits_and_rejected_keys_are_not_retried(settings: Any, monkeypatch: Any) -> None:
+    """429 goes to the cooldown and the pool; 401 needs a new key. Neither is retried here."""
+    monkeypatch.setenv("KOLLEKTIV_RETRY_BASE_DELAY", "0")
+    monkeypatch.setenv("KOLLEKTIV_RETRY_MAX_DELAY", "0")
+    calls: List[int] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        attempts["count"] += 1
-        return httpx.Response(429, json={"error": "slow down"}, headers={"Retry-After": "42"})
+    def limited(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(429, headers={"Retry-After": "7"}, text="slow down")
 
-    client = httpx.AsyncClient(base_url="https://agents.example.com/v1", transport=httpx.MockTransport(handler))
-    agent = ArenaClient({"email": "w@e.com", "session_token": "t", "base_url": "https://agents.example.com/v1"},
-                        settings=settings, client=client)
-
-    with pytest.raises(RateLimitError) as excinfo:
-        await agent.send_prompt("go")
-    assert excinfo.value.retry_after == 42.0
-    assert agent.is_rate_limited() is True
-    assert agent.cooldown_until > time.time()
-
-    # A second call short-circuits while the cooldown is active.
+    agent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(limited), api_key="k")
     with pytest.raises(RateLimitError):
-        await agent.send_prompt("go again")
-    assert attempts["count"] == 1
+        await agent.send_prompt("hi")
+    assert len(calls) == 1
+
+    def unauthorised(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(401, text="bad key")
+
+    calls.clear()
+    agent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(unauthorised), api_key="k")
+    with pytest.raises(AuthenticationError):
+        await agent.send_prompt("hi")
+    assert len(calls) == 1
 
 
-async def test_five_xx_is_retried_then_succeeds(settings: Any) -> None:
-    """Transient 5xx responses are retried with backoff."""
-    attempts = {"count": 0}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        attempts["count"] += 1
-        if attempts["count"] < 3:
-            return httpx.Response(503, json={"error": "unavailable"})
-        return httpx.Response(200, json={"choices": [{"message": {"content": "recovered"}}]})
-
-    client = httpx.AsyncClient(base_url="https://agents.example.com/v1", transport=httpx.MockTransport(handler))
-    fast = settings.model_copy(update={"RETRY_BASE_DELAY": 0.01, "RETRY_MAX_DELAY": 0.05}, deep=True)
-    agent = ArenaClient({"email": "w@e.com", "session_token": "t", "base_url": "https://agents.example.com/v1"},
-                        settings=fast, client=client)
-    assert await agent.send_prompt("go") == "recovered"
-    assert attempts["count"] == 3
-
-
-async def test_client_error_is_permanent(settings: Any) -> None:
-    """A 400 response is not retried and surfaces as an ArenaError."""
-    attempts = {"count": 0}
+async def test_send_prompt_posts_chat_completion_with_the_key(settings: Any) -> None:
+    """The request goes to <base>/chat/completions with the provider's model and a bearer key."""
+    seen: List[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        attempts["count"] += 1
-        return httpx.Response(400, json={"error": "bad prompt"})
+        seen.append(request)
+        return chat_reply("ok")
 
-    client = httpx.AsyncClient(base_url="https://agents.example.com/v1", transport=httpx.MockTransport(handler))
-    agent = ArenaClient({"email": "w@e.com", "session_token": "t", "base_url": "https://agents.example.com/v1"},
-                        settings=settings, client=client)
-    with pytest.raises(ArenaError):
-        await agent.send_prompt("go")
-    assert attempts["count"] == 1
-    assert agent.tasks_failed == 1
-
-
-async def test_login_flow_stores_session_token(settings: Any, db_engine: Any) -> None:
-    """Email/password login stores the returned session token encrypted."""
-    calls: List[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(request.url.path)
-        if request.url.path.endswith("/api/auth/login"):
-            return httpx.Response(200, json={"session_token": "session-abc", "expires_in": 7200})
-        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
-
-    client = httpx.AsyncClient(base_url="https://arena.example.com", transport=httpx.MockTransport(handler))
     agent = ArenaClient(
-        {"email": "w@example.com", "password": "secret"},
-        settings=settings.model_copy(update={"ARENA_CHAT_PATH": "/api/chat"}, deep=True),
-        client=client,
+        {"name": "Vega", "provider": "deepseek"},
+        settings=settings,
+        client=mock_client(handler, base="https://api.deepseek.com/v1"),
+        api_key="sk-test-123",
     )
-    token = await agent.authenticate()
-    assert token == "session-abc"
-    assert agent.is_authenticated() is True
-    assert calls == ["/api/auth/login"]
+    assert await agent.send_prompt("Plan the work", system_prompt="be brief") == "ok"
+    request = seen[0]
+    assert request.url.path == "/v1/chat/completions"
+    assert request.headers["Authorization"] == "Bearer sk-test-123"
+    body = json.loads(request.content)
+    assert body["model"] == "deepseek-chat"
+    assert body["messages"][0] == {"role": "system", "content": "be brief"}
+    assert body["messages"][-1] == {"role": "user", "content": "Plan the work"}
+    assert agent.tasks_done == 1 and agent.last_error == ""
 
-    from src.utils.token_store import SERVICE_ARENA, TokenStore
 
-    stored = TokenStore(settings.fernet_secret).get_token(SERVICE_ARENA, agent.account_id)
-    assert stored["session_token"] == "session-abc"
-
-
-async def test_login_missing_endpoint_is_explicit(settings: Any) -> None:
-    """A 404 on the login route explains exactly what to configure."""
+async def test_content_arrays_are_flattened_to_text(settings: Any) -> None:
+    """Providers that return content parts still give plain text."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(404, json={"error": "no such route"})
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": [{"type": "text", "text": "part-a "}, {"text": "part-b"}]}}]},
+        )
 
-    client = httpx.AsyncClient(base_url="https://arena.example.com", transport=httpx.MockTransport(handler))
+    agent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(handler), api_key="gsk-1")
+    assert await agent.send_prompt("hi") == "part-a part-b"
+
+
+async def test_rate_limit_sets_a_cooldown(settings: Any) -> None:
+    """A 429 raises RateLimitError and parks the worker for the Retry-After window."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "42"}, json={"error": "slow down"})
+
+    agent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(handler), api_key="gsk-1")
+    with pytest.raises(RateLimitError) as excinfo:
+        await agent.send_prompt("hi")
+    assert excinfo.value.retry_after == 42
+    assert agent.is_rate_limited() is True
+    assert agent.stats()["status"] == "rate_limited"
+
+
+async def test_server_errors_are_transient_and_client_errors_are_not(settings: Any, monkeypatch: Any) -> None:
+    """5xx is retryable (ArenaTransientError); 4xx is a permanent ArenaError."""
+    monkeypatch.setenv("KOLLEKTIV_RETRY_BASE_DELAY", "0")
+    monkeypatch.setenv("KOLLEKTIV_RETRY_MAX_DELAY", "0")
+
+    def server_down(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="busy")
+
+    def bad_request(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "nope"})
+
+    transient = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(server_down), api_key="k")
+    with pytest.raises(ArenaTransientError):
+        await transient.send_prompt("hi")
+
+    permanent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(bad_request), api_key="k")
+    with pytest.raises(ArenaError) as excinfo:
+        await permanent.send_prompt("hi")
+    assert not isinstance(excinfo.value, ArenaTransientError)
+
+
+async def test_a_rejected_key_is_forgotten_so_a_fixed_key_is_read_again(settings: Any, monkeypatch: Any) -> None:
+    """401 clears the cached key; the next authenticate() reads the environment again."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "invalid key"})
+
+    monkeypatch.setenv("TEST_WORKER_KEY", "sk-old")
     agent = ArenaClient(
-        {"email": "w@example.com", "password": "secret"},
-        settings=settings.model_copy(update={"ARENA_CHAT_PATH": "/api/chat"}, deep=True),
-        client=client,
+        {"provider": "groq", "api_key_env": "TEST_WORKER_KEY"}, settings=settings, client=mock_client(handler)
+    )
+    with pytest.raises(AuthenticationError) as excinfo:
+        await agent.send_prompt("hi")
+    assert "kollektiv login --provider groq" in str(excinfo.value)
+    assert agent.api_key == "" and agent.authenticated is False
+
+    monkeypatch.setenv("TEST_WORKER_KEY", "sk-fixed")
+    assert await agent.authenticate() == "sk-fixed"
+
+
+# ----------------------------------------------------------------------
+# ArenaClient: where the key comes from
+# ----------------------------------------------------------------------
+async def test_a_hosted_worker_without_a_key_says_how_to_fix_it(settings: Any, monkeypatch: Any, db_engine: Any) -> None:
+    """No key in the store and no environment variable is an explicit, actionable error."""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    agent = ArenaClient(
+        {"name": "Vega", "provider": "deepseek", "account_id": "vega"},
+        settings=settings,
+        token_store=TokenStore(settings.fernet_secret, engine=db_engine),
     )
     with pytest.raises(AuthenticationError) as excinfo:
         await agent.authenticate()
-    assert "ARENA_LOGIN_PATH" in str(excinfo.value) or "session_token" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "kollektiv login --provider deepseek" in message and "DEEPSEEK_API_KEY" in message
 
 
-async def test_authenticate_requires_credentials_when_custom_endpoint(settings: Any) -> None:
-    """A custom endpoint with no token and no login route is a config error."""
-    client = httpx.AsyncClient(base_url="https://arena.example.com", transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+async def test_key_from_an_environment_variable(settings: Any, monkeypatch: Any) -> None:
+    """``api_key_env`` names the variable; the key is read at call time and never stored."""
+    monkeypatch.setenv("VEGA_GROQ_KEY", "gsk-from-env")
+    agent = ArenaClient({"provider": "groq", "api_key_env": "VEGA_GROQ_KEY"}, settings=settings)
+    assert await agent.authenticate() == "gsk-from-env"
+    assert agent.key_source == "env"
+
+
+async def test_key_from_the_encrypted_store_is_never_plaintext_at_rest(settings: Any, db_engine: Any) -> None:
+    """A key saved with ``kollektiv login`` is read back, and the database holds only ciphertext."""
+    store = TokenStore(settings.fernet_secret, engine=db_engine)
+    store.save_token("groq", "vega", {"api_key": "gsk-stored-secret", "provider": "groq"})
     agent = ArenaClient(
-        {"email": "w@example.com"},
-        settings=settings.model_copy(update={"ARENA_CHAT_PATH": "/api/chat"}, deep=True),
-        client=client,
+        {"name": "Vega", "provider": "groq", "account_id": "vega"},
+        settings=settings,
+        token_store=TokenStore(settings.fernet_secret, engine=db_engine),
     )
-    with pytest.raises(AuthenticationError):
-        await agent.authenticate()
+    assert await agent.authenticate() == "gsk-stored-secret"
+    assert agent.key_source == "store"
+    with db_engine.connect() as connection:
+        raw = connection.exec_driver_sql("SELECT payload FROM token_records").fetchall()
+    assert raw and "gsk-stored-secret" not in str(raw)
 
 
-async def test_get_session_status_and_reset(settings: Any, db_engine: Any) -> None:
-    """Status reports health, and reset re-authenticates."""
-    logged_in = {"count": 0}
+async def test_local_providers_run_without_any_key(settings: Any) -> None:
+    """Ollama and LM Studio need no key, so no Authorization header is sent."""
+    seen: List[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/api/auth/login"):
-            logged_in["count"] += 1
-            return httpx.Response(200, json={"session_token": f"token-{logged_in['count']}"})
-        if request.url.path == "/models":
-            return httpx.Response(200, json={"data": []})
-        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        seen.append(request)
+        return chat_reply("local answer")
 
-    client = httpx.AsyncClient(base_url="https://arena.example.com", transport=httpx.MockTransport(handler))
-    agent = ArenaClient(
-        {"email": "w@example.com", "password": "pw", "api_style": "custom"},
-        settings=settings.model_copy(update={"ARENA_CHAT_PATH": "/api/chat"}, deep=True),
-        client=client,
-    )
+    agent = ArenaClient({"name": "Terra", "provider": "ollama"}, settings=settings, client=mock_client(handler, "http://127.0.0.1:11434/v1"))
+    assert agent.is_authenticated() is True
+    assert await agent.send_prompt("hi") == "local answer"
+    assert "Authorization" not in seen[0].headers
+
+
+async def test_a_custom_worker_needs_a_base_url(settings: Any) -> None:
+    """A worker with no endpoint is a configuration error, not a crash later."""
+    agent = ArenaClient({"name": "Nowhere", "provider": "custom"}, settings=settings)
+    with pytest.raises(ConfigurationError) as excinfo:
+        await agent.authenticate()
+    assert "base_url" in str(excinfo.value)
+
+
+async def test_reset_session_picks_up_a_rotated_key(settings: Any, monkeypatch: Any) -> None:
+    """After a key is rotated, reset_session() loads the new one without a restart."""
+    monkeypatch.setenv("ROTATING_KEY", "sk-one")
+    agent = ArenaClient({"provider": "openai", "api_key_env": "ROTATING_KEY"}, settings=settings)
     await agent.authenticate()
-    status = await agent.get_session_status(probe=True)
-    assert status["alive"] is True and status["token_valid"] is True
-    assert status["probed"] is True and status["http_status"] == 200
-
+    monkeypatch.setenv("ROTATING_KEY", "sk-two")
     assert await agent.reset_session() is True
-    assert agent.session_token == "token-2"
-    assert logged_in["count"] == 2
+    assert agent.api_key == "sk-two"
 
 
-async def test_is_ready_false_when_rate_limited(settings: Any) -> None:
-    """``is_ready`` reflects busy and rate-limited states."""
-    agent = ArenaClient({"email": "w@e.com", "session_token": "t"}, settings=settings)
+async def test_status_probe_checks_the_models_route(settings: Any) -> None:
+    """``get_session_status(probe=True)`` asks /models and reports the answer."""
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(200, json={"data": []})
+
+    agent = ArenaClient({"provider": "groq"}, settings=settings, client=mock_client(handler), api_key="gsk-1")
+    status = await agent.get_session_status(probe=True)
+    assert seen == ["/openai/v1/models"]  # Groq serves its OpenAI-compatible API under /openai/v1
+    assert status["probed"] is True and status["http_status"] == 200
+    assert status["alive"] is True and status["key_source"] == "argument"
+
+
+async def test_is_ready_is_false_while_rate_limited(settings: Any) -> None:
+    """A worker in cooldown is not offered new work."""
+    agent = ArenaClient({"provider": "ollama"}, settings=settings)
     assert await agent.is_ready() is True
-    agent.busy = True
-    assert await agent.is_ready() is False
-    agent.busy = False
     agent.apply_rate_limit(60)
     assert await agent.is_ready() is False
-    assert agent.stats()["status"] == "rate_limited"
 
 
 # ----------------------------------------------------------------------
 # AgentPool
 # ----------------------------------------------------------------------
-async def test_pool_initialises_and_reports_status(settings: Any, agent_settings: Any) -> None:
-    """Accounts from settings become authenticated workers."""
-    created: List[ArenaClient] = []
+def factory_for(handler: Any, api_key: str = "sk-pool") -> Any:
+    """A client factory whose workers all talk to ``handler``."""
 
     def factory(account: Any, cfg: Any) -> ArenaClient:
-        agent = ArenaClient.from_config(account, settings=cfg)
-        created.append(agent)
-        return agent
+        data = account if isinstance(account, dict) else account.model_dump()
+        return ArenaClient(data, settings=cfg, client=mock_client(handler), api_key=api_key)
 
-    pool = AgentPool(agent_settings.arena_account_list(), settings=agent_settings, client_factory=factory)
+    return factory
+
+
+async def test_pool_initialises_named_workers_and_reports_them(settings: Any) -> None:
+    """Named workers keep their names; the pool reports every one of them."""
+    accounts = [
+        {"name": "Vega", "provider": "ollama"},
+        {"name": "Terra", "provider": "ollama", "model": "qwen2.5-coder:14b"},
+    ]
+    pool = AgentPool(accounts, settings=settings, client_factory=factory_for(lambda r: chat_reply()))
     report = await pool.initialize()
-    assert report["agents"] == 2
-    assert report["ready"] == 2
+    assert report["agents"] == 2 and report["ready"] == 2
     statuses = await pool.get_pool_status()
-    assert {status["account_id"] for status in statuses} == {agent.account_id for agent in created}
-    assert all(status["status"] == "idle" for status in statuses)
+    assert {status["label"] for status in statuses} == {"Vega", "Terra"}
+    assert all(status["status"] == "idle" for status in pool.snapshot())
     await pool.close()
 
 
-async def test_pool_assign_task_builds_prompt_and_returns_output(settings: Any) -> None:
-    """The dispatch prompt carries the context, task and output contract."""
+async def test_pool_assign_task_builds_a_prompt_and_returns_the_output(settings: Any) -> None:
+    """A task is sent to a worker and its reply comes back as the task output."""
+    pool = AgentPool([{"name": "Vega", "provider": "ollama"}], settings=settings,
+                     client_factory=factory_for(lambda r: chat_reply("def add(a, b): return a + b")))
+    await pool.initialize()
+    result = await pool.assign_task({"id": "t1", "title": "Write add()"}, context="repo is empty")
+    assert "def add" in str(result)
+    await pool.close()
+
+
+async def test_pool_falls_back_to_a_second_worker(settings: Any) -> None:
+    """When one worker fails transiently, the task goes to the next worker."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"choices": [{"message": {"content": "```python path=a.py\nx=1\n```"}}]})
+        if json.loads(request.content)["model"] == "broken-model":
+            return httpx.Response(500, text="overloaded")
+        return chat_reply("recovered")
 
-    def factory(account: Any, cfg: Any) -> ArenaClient:
-        client = httpx.AsyncClient(base_url="https://agents.example.com/v1", transport=httpx.MockTransport(handler))
-        data = account if isinstance(account, dict) else account.model_dump()
-        data["base_url"] = "https://agents.example.com/v1"
-        return ArenaClient(data, settings=cfg, client=client)
-
-    pool = AgentPool(
-        [{"email": "w@example.com", "session_token": "t"}],
-        settings=settings,
-        client_factory=factory,
-    )
+    accounts = [
+        {"name": "Broken", "provider": "ollama", "model": "broken-model"},
+        {"name": "Healthy", "provider": "ollama", "model": "good-model"},
+    ]
+    pool = AgentPool(accounts, settings=settings, client_factory=factory_for(handler))
     await pool.initialize()
-    output = await pool.assign_task(
-        {"id": "t1", "title": "Write the parser", "description": "Parse CSV files"},
-        context="## Shared project context\n\n- Project: demo",
-    )
-    assert "a.py" in output
-    stats = await pool.get_pool_status()
-    assert stats[0]["tasks_done"] == 1
+    result = await pool.assign_task({"id": "t2", "title": "Recover"}, context="", max_attempts=3)
+    assert "recovered" in str(result)
+    await pool.close()
 
 
-async def test_pool_falls_back_to_second_agent(settings: Any) -> None:
-    """A failing agent is skipped and the task is retried on another one."""
-    attempts: List[str] = []
-
-    def factory(account: Any, cfg: Any) -> ArenaClient:
-        data = account if isinstance(account, dict) else account.model_dump()
-        data["base_url"] = "https://agents.example.com/v1"
-        email = data.get("email")
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            attempts.append(str(email))
-            if email == "bad@example.com":
-                return httpx.Response(400, json={"error": "cannot help"})
-            return httpx.Response(200, json={"choices": [{"message": {"content": "done by good agent"}}]})
-
-        client = httpx.AsyncClient(base_url="https://agents.example.com/v1", transport=httpx.MockTransport(handler))
-        return ArenaClient(data, settings=cfg, client=client)
-
-    pool = AgentPool(
-        [{"email": "bad@example.com", "session_token": "t"}, {"email": "good@example.com", "session_token": "t"}],
-        settings=settings.model_copy(update={"RETRY_BASE_DELAY": 0.01}, deep=True),
-        client_factory=factory,
-    )
-    await pool.initialize()
-    output = await pool.assign_task({"id": "t1", "title": "Work"}, context="ctx", max_attempts=2)
-    assert output == "done by good agent"
-    assert "bad@example.com" in attempts and "good@example.com" in attempts
-
-
-async def test_pool_raises_when_every_agent_fails(settings: Any) -> None:
-    """Exhausting the pool raises AgentTaskError with per-agent detail."""
-
-    def factory(account: Any, cfg: Any) -> ArenaClient:
-        data = account if isinstance(account, dict) else account.model_dump()
-        data["base_url"] = "https://agents.example.com/v1"
-        client = httpx.AsyncClient(
-            base_url="https://agents.example.com/v1",
-            transport=httpx.MockTransport(lambda r: httpx.Response(400, json={"error": "nope"})),
-        )
-        return ArenaClient(data, settings=cfg, client=client)
-
-    pool = AgentPool([{"email": "w@example.com", "session_token": "t"}], settings=settings, client_factory=factory)
+async def test_pool_raises_with_per_worker_detail_when_all_fail(settings: Any) -> None:
+    """Exhausting the pool raises AgentTaskError naming the task and each failure."""
+    pool = AgentPool([{"name": "Only", "provider": "ollama"}], settings=settings,
+                     client_factory=factory_for(lambda r: httpx.Response(400, json={"error": "nope"})))
     await pool.initialize()
     with pytest.raises(AgentTaskError) as excinfo:
         await pool.assign_task({"id": "t9", "title": "Doomed"}, context="", max_attempts=2)
     assert excinfo.value.details["task_id"] == "t9"
     assert excinfo.value.details["errors"]
+    await pool.close()
 
 
-async def test_pool_raises_configuration_error_when_empty(settings: Any) -> None:
-    """An empty pool explains how to configure agents."""
+async def test_empty_pool_is_a_configuration_error(settings: Any) -> None:
+    """No workers means a clear message that names the fix."""
     pool = AgentPool([], settings=settings)
-    with pytest.raises(ConfigurationError):
-        await pool.assign_task({"id": "t1", "title": "x"})
+    with pytest.raises(ConfigurationError) as excinfo:
+        await pool.assign_task({"id": "t0", "title": "Nobody home"}, context="")
+    assert "kollektiv login" in str(excinfo.value)
 
 
-async def test_pool_assign_many_runs_jobs_concurrently(db_engine: Any) -> None:
-    """``assign_many`` returns one result per job and records failures."""
-    from tests.conftest import FakeAgent, FakeAgentPool
-
-    pool = FakeAgentPool([FakeAgent("agent-1", ["out-1", "out-2"])])
-    results = await pool.assign_many(
-        [
-            {"task": {"id": "t1", "title": "One"}},
-            {"task": {"id": "t2", "title": "Two"}},
-        ]
-    )
-    assert [result["task_id"] for result in results] == ["t1", "t2"]
-    assert all(result["success"] for result in results)
-
-
-async def test_pool_assign_many_with_real_agents(settings: Any) -> None:
-    """Two real agents execute two jobs in parallel."""
-
-    def factory(account: Any, cfg: Any) -> ArenaClient:
-        data = account if isinstance(account, dict) else account.model_dump()
-        data["base_url"] = "https://agents.example.com/v1"
-
-        async def handler(request: httpx.Request) -> httpx.Response:
-            await asyncio.sleep(0.01)
-            payload = json.loads(request.content)
-            title = payload["messages"][-1]["content"].split("**Title:** ")[1].split("\n")[0]
-            return httpx.Response(
-                200, json={"choices": [{"message": {"content": f"```python path={title}.py\npass\n```"}}]}
-            )
-
-        client = httpx.AsyncClient(
-            base_url="https://agents.example.com/v1", transport=httpx.MockTransport(handler)
-        )
-        return ArenaClient(data, settings=cfg, client=client)
-
-    pool = AgentPool(
-        [{"email": "a@example.com", "session_token": "t"}, {"email": "b@example.com", "session_token": "t"}],
-        settings=settings,
-        client_factory=factory,
-    )
-    await pool.initialize()
-    results = await pool.assign_many(
-        [{"task": {"id": "t1", "title": "alpha"}}, {"task": {"id": "t2", "title": "beta"}}]
-    )
-    assert {result["task_id"] for result in results} == {"t1", "t2"}
-    assert all(result["success"] for result in results)
-
-
-# ----------------------------------------------------------------------
-# SessionManager
-# ----------------------------------------------------------------------
 async def test_session_manager_refreshes_unhealthy_agents(db_engine: Any) -> None:
     """The maintenance pass resets only unhealthy agents."""
     from tests.conftest import FakeAgent, FakeAgentPool

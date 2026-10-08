@@ -76,7 +76,6 @@ packages = [
     "src.gateway",
     "src.github",
     "src.orchestrator",
-    "src.sponsors",
     "src.storage",
     "src.utils",
     # The dashboard is a static site, not a Python package: web.assets is

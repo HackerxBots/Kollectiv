@@ -7,7 +7,7 @@
     <strong>A multi-agent collaborative dev team orchestrator — free to run, self-hosted, open source (MIT).</strong>
   </p>
   <p align="center">
-    Give it a brief and a few free LLM endpoints. It plans the work, splits it into subtasks,
+    Give it a brief and a few LLM keys (or a local model). It plans the work, splits it into subtasks,
     runs them in parallel across pooled agents, reviews the output, keeps a shared state
     document in pooled cloud storage, and syncs everything through GitHub.
   </p>
@@ -54,8 +54,9 @@ history live in a single shared `PROJECT_STATE.md` on pooled free storage, so
 any session — including the next one — can pick the project up exactly where it
 stopped.
 
-It is a **coordinator, not a worker**: point it at Arena accounts, Groq, a local
-Ollama model, or a shim around a CLI agent like Aider or Freebuff, and it will
+It is a **coordinator, not a worker**: give it your own API keys (DeepSeek, Groq,
+OpenRouter, Gemini and more), a local model through Ollama or LM Studio, or a shim
+around a CLI agent like Aider, and it will
 keep them all busy, route around the slow or throttled ones, and keep the state
 that makes the effort compound.
 
@@ -119,7 +120,7 @@ own policy and its own audit trail ([gateway docs](docs/gateway.md)).
 
 | Capability | Variable(s) | Free source |
 | --- | --- | --- |
-| Worker agents | `ARENA_ACCOUNTS` (JSON list) | Arena accounts are the default; any OpenAI-compatible endpoint works |
+| Worker agents | `ARENA_ACCOUNTS` (JSON list) + `kollektiv login` | Your own API key per worker (bring your own key), or none for a local model |
 | Brain (planner/reviewer) | `BRAIN_API_KEY` (+ optional `BRAIN_BASE_URL`) | DeepSeek by default, Groq as a fallback; local models work |
 | Shared storage | `R2_*` or `TERABOX_ACCOUNTS` | Cloudflare R2 (10 GB, no egress) or TeraBox |
 | Database | `DATABASE_URL` | SQLite by default; Neon Postgres free tier for a server |
@@ -141,14 +142,15 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 - [Desktop app](desktop/README.md) — the dashboard in a native window, with or without the API bundled
 - [Deploy checklist](docs/deploy-checklist.md) — accounts, CLIs, hosts that actually fit, and `scripts/smoke.py`
 - [Deployment and the free stack](docs/deployment.md) — Compose, bare metal, free hosting, self-hosting checklist
-- [Agent runtimes](docs/agent-runtimes.md) — Arena by default, and the whole free menu
+- [Bring your own key](docs/byok.md) — providers, local models, what needs the internet
+- [Agent runtimes](docs/agent-runtimes.md) — workers, shims and the optional CLI-agent menu
 - [Connectors](docs/connectors.md) — Google, Notion, GitHub, Telegram, Discord, Slack, Linear, WhatsApp, any REST API
 - [API, MCP and CLI](docs/api.md) — endpoints, tools and commands
 - [MCP gateway](docs/gateway.md) — one MCP URL for a team: per-client tokens, policies, audit
 - [Operations](docs/operations.md) — releases, health, sync, scaling, maintainer settings
 - [Extending Kollektiv](docs/extending.md) · [Development](docs/development.md) · [Troubleshooting and FAQ](docs/faq.md)
 - [Performance and roadmap](docs/roadmap.md) · [Privacy](docs/privacy.md) · [Legal](docs/legal.md)
-- [Monetization](docs/monetization.md) — how this stays free, honestly (and the opt-in sponsor line)
+- [Support](docs/support.md) — donations and sponsorship, the only support model
 
 ## Contributing
 
@@ -165,5 +167,5 @@ produce and for the terms of every service you connect
 ([Legal & responsible use](docs/legal.md)).
 
 <div align="center">
-  <sub>Free to run · self-hosted · no telemetry · <a href="#readme-top">back to top</a></sub>
+  <sub>Free to run · self-hosted · no telemetry · <a href="docs/support.md">support</a> · <a href="#readme-top">back to top</a></sub>
 </div>

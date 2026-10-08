@@ -15,8 +15,9 @@ WORKER_COMMAND='aider --yes --no-auto-commits --message {prompt}' WORKER_TOKEN=d
 
 ```jsonc
 // .env
-ARENA_ACCOUNTS='[{"name":"aider","session_token":"dev",
-                  "base_url":"http://127.0.0.1:8099/v1","model":"aider"}]'
+ARENA_ACCOUNTS='[{"name":"aider","provider":"custom","account_id":"aider",
+                  "base_url":"http://127.0.0.1:8099/v1","model":"aider",
+                  "api_key_env":"WORKER_TOKEN"}]'
 ```
 
 The Freebuff shim takes its prompt on stdin (or in argv), edits the working

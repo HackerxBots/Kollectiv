@@ -38,8 +38,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from config.settings import Settings, get_settings
+from src.agents.providers import PROVIDER_PRESETS, resolve_provider
 from src.utils.crypto import generate_secret_key
-from src.utils.errors import BudgetError
+from src.utils.errors import BudgetError, ConfigurationError
 from src.utils.logger import configure_logging, get_logger
 
 LOGGER = get_logger(__name__)
@@ -251,7 +252,7 @@ async def cmd_bootstrap(args: argparse.Namespace) -> int:
          settings.is_resend_configured, "run summaries and alerts by email"),
         ("Groq / DeepSeek", "BRAIN_API_KEY (+ BRAIN_PROVIDER)",
          settings.is_brain_configured, "LLM planning and reviews"),
-        ("Worker endpoints", "ARENA_ACCOUNTS=[...]",
+        ("Worker agents", "kollektiv login --provider <name>  (BYOK, see docs/byok.md)",
          settings.is_arena_configured, "the agents that write the code"),
         ("Google Workspace", "GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN",
          settings.is_google_configured, "Gmail/Calendar/Drive as agent tools"),
@@ -350,160 +351,140 @@ async def cmd_init_db(args: argparse.Namespace) -> int:
     return 0
 
 
-#: Provider presets for `kollektiv login`. Arena is the default because Arena
-#: accounts are what Kollektiv was built around; the others are optional and
-#: only need a key instead of an account.
-PROVIDER_PRESETS: Dict[str, Dict[str, str]] = {
-    "arena": {
-        "label": "Arena.ai account",
-        "base_url": "https://arena.ai",
-        "model": "",
-        "hint": "paste the session token from your signed-in browser session",
-        "kind": "account",
-    },
-    "groq": {
-        "label": "Groq (free tier)",
-        "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
-        "hint": "API key from console.groq.com (starts with gsk_)",
-        "kind": "key",
-    },
-    "deepseek": {
-        "label": "DeepSeek",
-        "base_url": "https://api.deepseek.com/v1",
-        "model": "deepseek-chat",
-        "hint": "API key from platform.deepseek.com",
-        "kind": "key",
-    },
-    "openrouter": {
-        "label": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "model": "deepseek/deepseek-chat",
-        "hint": "API key from openrouter.ai/keys",
-        "kind": "key",
-    },
-    "together": {
-        "label": "Together AI",
-        "base_url": "https://api.together.xyz/v1",
-        "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
-        "hint": "API key from api.together.xyz",
-        "kind": "key",
-    },
-    "ollama": {
-        "label": "Ollama (local, no key)",
-        "base_url": "http://127.0.0.1:11434/v1",
-        "model": "qwen2.5-coder:32b",
-        "hint": "no key needed; the token is just a placeholder",
-        "kind": "local",
-    },
-}
-
-
 async def cmd_login(args: argparse.Namespace) -> int:
-    """Store a worker credential in the encrypted token store.
+    """Register a worker that runs on your own API key (BYOK).
 
-    The credential never touches ``.env``: it is encrypted with ``SECRET_KEY``
-    and written to the database, so it can be rotated, revoked and audited. The
-    matching ``ARENA_ACCOUNTS`` entry only needs to name the account — Kollektiv
-    finds the token in the store.
+    The key is encrypted with ``SECRET_KEY`` and stored in the database, and the
+    worker is written into ``ARENA_ACCOUNTS`` in the env file. The key itself
+    never goes into ``.env``. With ``--key-env NAME`` the key stays in your
+    environment instead and nothing is stored. Local providers (Ollama, LM
+    Studio) need no key at all.
 
-    Non-interactive use (CI, scripts) reads the token from ``KOLLEKTIV_TOKEN``
-    or ``--token`` so nothing has to be typed at a prompt.
+    Non-interactive use reads the key from ``--token``, ``KOLLEKTIV_TOKEN`` or
+    ``--key-env`` so nothing has to be typed at a prompt.
     """
     import getpass
-    import os
+    import re
 
     from src.db.models import bind_engine
     from src.utils.token_store import TokenStore
 
     settings = get_settings()
-    provider = (args.provider or "arena").lower()
-    preset = PROVIDER_PRESETS.get(provider)
-    if preset is None:
-        _print({"error": f"Unknown provider {provider!r}", "providers": sorted(PROVIDER_PRESETS)}, True)
+    try:
+        preset = resolve_provider(args.provider)
+    except ConfigurationError as exc:
+        _print({"error": str(exc)}, True)
         return 2
+    provider = args.provider.strip().lower()
+    kind = preset["kind"]
+    name = args.name or provider
+    account_id = args.account or re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-") or provider
 
-    token = args.token or os.environ.get("KOLLEKTIV_TOKEN", "")
-    if not token:
-        if not sys.stdin.isatty():
-            _print(
-                {
-                    "error": "No token supplied and stdin is not a terminal.",
-                    "next": f"run `kollektiv login --provider {provider}` interactively, "
-                    "or set KOLLEKTIV_TOKEN / pass --token",
-                },
-                True,
-            )
+    key = ""
+    if args.key_env:
+        key = os.environ.get(args.key_env, "").strip()
+        if not key and kind == "key":
+            _print({"error": f"The environment variable {args.key_env} is empty or unset."}, True)
             return 2
-        print(f"{preset['label']} ({provider})")
-        print(f"  {preset['hint']}")
-        token = getpass.getpass("  token (hidden): ").strip()
-    if not token:
-        _print({"error": "No token supplied."}, True)
-        return 2
+    else:
+        key = (args.token or os.environ.get("KOLLEKTIV_TOKEN", "")).strip()
+        if not key and kind == "key":
+            if not sys.stdin.isatty():
+                _print(
+                    {
+                        "error": "No API key supplied and stdin is not a terminal.",
+                        "next": f"run `kollektiv login --provider {provider}` interactively, "
+                        "or set KOLLEKTIV_TOKEN / pass --key-env",
+                    },
+                    True,
+                )
+                return 2
+            print(f"{preset['label']} ({provider})")
+            print(f"  {preset['hint']}")
+            key = getpass.getpass("  API key (hidden): ").strip()
+            if not key:
+                _print({"error": "No API key supplied."}, True)
+                return 2
 
-    account_id = args.account or ("default" if provider == "arena" else provider)
-    store = TokenStore(settings.fernet_secret, engine=bind_engine(settings))
-    store.save_token(
-        provider,
-        account_id,
-        {
-            "access_token": token,
-            "session_token": token,
-            "base_url": args.base_url or preset["base_url"],
-            "model": args.model or preset["model"],
-            "provider": provider,
-            "kind": preset["kind"],
-        },
-    )
-    account = {
-        "name": account_id,
-        "account_id": account_id,
-        "base_url": args.base_url or preset["base_url"],
-        "model": args.model or preset["model"],
-        "provider": provider,
-    }
+    stored_in_db = bool(key) and not args.key_env
+    if stored_in_db:
+        store = TokenStore(settings.fernet_secret, engine=bind_engine(settings))
+        store.save_token(provider, account_id, {"api_key": key, "provider": provider, "kind": kind})
+
+    entry: Dict[str, str] = {"name": name, "provider": provider, "account_id": account_id}
+    if args.model:
+        entry["model"] = args.model
+    if args.base_url:
+        entry["base_url"] = args.base_url
+    if args.key_env:
+        entry["api_key_env"] = args.key_env
+    workers = _read_worker_list(settings.ARENA_ACCOUNTS)
+    workers = [w for w in workers if str(w.get("account_id") or w.get("name") or "") != account_id]
+    workers.append(entry)
+    set_env_value(args.env_file, "ARENA_ACCOUNTS", json.dumps(workers, separators=(",", ":")))
+
+    preview = mask_secret(key) if key else ("from " + args.key_env if args.key_env else "none needed")
     report: Dict[str, Any] = {
-        "stored": True,
-        "service": provider,
-        "account": account_id,
-        "token_preview": f"{token[:4]}…{token[-4:]}" if len(token) > 10 else "***",
-        "next": {
-            "env": f'ARENA_ACCOUNTS=\'[{json.dumps(account)}]\'',
-            "workers": "kollektiv check --json | jq .subsystems.agents",
-            "note": "the token is encrypted in the database; ARENA_ACCOUNTS only names the account",
-        },
+        "registered": True,
+        "name": name,
+        "account_id": account_id,
+        "provider": provider,
+        "key": preview,
+        "key_storage": "encrypted database" if stored_in_db else ("environment" if args.key_env else "none"),
+        "env_file": args.env_file,
+        "next": "kollektiv check --json | jq .subsystems.agents",
     }
     if args.json:
         _print(report, True)
     else:
-        print(f"Stored an encrypted {preset['label']} credential for {account_id}.")
-        next_steps = report["next"]
-        print(f"  token: {report['token_preview']} (encrypted with SECRET_KEY; never written to .env)")
-        print()
-        print("Add this worker to .env:")
-        print(f"  {next_steps['env']}")
-        print()
-        print("Other providers are optional: " + ", ".join(sorted(PROVIDER_PRESETS)))
+        print(f"Registered worker {name!r} on {preset['label']}.")
+        print(f"  key: {preview} (stored: {report['key_storage']})")
+        print(f"  wrote ARENA_ACCOUNTS to {args.env_file}; keys never go into the env file")
+        print(f"  check it: {report['next']}")
     return 0
 
 
+def _read_worker_list(raw: str) -> List[Dict[str, Any]]:
+    """Parse ``ARENA_ACCOUNTS`` as a list of dicts, tolerating an empty or broken value."""
+    try:
+        data = json.loads(raw or "[]")
+    except ValueError:
+        LOGGER.warning("ARENA_ACCOUNTS is not valid JSON; it will be rewritten from scratch")
+        return []
+    return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+
+
 async def cmd_logout(args: argparse.Namespace) -> int:
-    """Remove a stored credential from the encrypted token store."""
+    """Remove a worker's stored key and its ``ARENA_ACCOUNTS`` entry."""
     from src.db.models import bind_engine
     from src.utils.token_store import TokenStore
 
     settings = get_settings()
-    provider = (args.provider or "arena").lower()
-    account_id = args.account or ("default" if provider == "arena" else provider)
+    provider = (args.provider or "deepseek").strip().lower()
+    account_id = args.account or provider
     store = TokenStore(settings.fernet_secret, engine=bind_engine(settings))
-    removed = store.delete_token(provider, account_id)
-    _print({"removed": removed, "service": provider, "account": account_id}, True)
+    removed_key = store.delete_token(provider, account_id)
+    workers = _read_worker_list(settings.ARENA_ACCOUNTS)
+    kept = [w for w in workers if str(w.get("account_id") or w.get("name") or "") != account_id]
+    removed_entry = len(kept) != len(workers)
+    if removed_entry:
+        set_env_value(args.env_file, "ARENA_ACCOUNTS", json.dumps(kept, separators=(",", ":")))
+    removed = removed_key or removed_entry
+    _print(
+        {
+            "removed": removed,
+            "provider": provider,
+            "account": account_id,
+            "key_deleted": removed_key,
+            "worker_removed_from_env": removed_entry,
+        },
+        True,
+    )
     return 0 if removed else 1
 
 
 async def cmd_accounts(args: argparse.Namespace) -> int:
-    """List stored credentials (never the secrets themselves)."""
+    """List registered workers and stored keys (keys are always masked)."""
     from src.db.models import bind_engine
     from src.utils.token_store import TokenStore
 
@@ -514,28 +495,35 @@ async def cmd_accounts(args: argparse.Namespace) -> int:
         service = str(record.get("service") or "")
         account_id = str(record.get("account_id") or "")
         data = store.get_token(service, account_id) if service and account_id else {}
-        token = str(data.get("access_token") or data.get("session_token") or "")
+        key = str(data.get("api_key") or "")
         rows.append(
             {
-                "service": service,
+                "provider": service,
                 "account": account_id,
-                "provider": data.get("provider", service),
-                "base_url": data.get("base_url", ""),
-                "model": data.get("model", ""),
-                "token_preview": f"{token[:4]}…{token[-4:]}" if len(token) > 10 else ("***" if token else ""),
+                "key": mask_secret(key) if key else "",
                 "expires_at": str(record.get("expires_at") or ""),
             }
         )
+    workers = [
+        {"name": w.get("name", ""), "provider": w.get("provider", ""), "account_id": w.get("account_id", "")}
+        for w in _read_worker_list(settings.ARENA_ACCOUNTS)
+    ]
     if args.json:
-        _print({"count": len(rows), "accounts": rows}, True)
+        _print({"count": len(rows), "keys": rows, "workers": workers}, True)
         return 0
-    print("Stored credentials (encrypted with SECRET_KEY)")
-    print("==============================================")
+    print("Workers (ARENA_ACCOUNTS)")
+    print("========================")
+    if not workers:
+        print("  none — run `kollektiv login --provider deepseek` (or any provider in docs/byok.md)")
+    for worker in workers:
+        print(f"  {worker['name'] or '(unnamed)':<14} {worker['provider']:<12} {worker['account_id']}")
+    print()
+    print("Stored keys (encrypted with SECRET_KEY)")
+    print("=======================================")
     if not rows:
-        print("  none — run `kollektiv login` (Arena is the default provider)")
-        return 0
+        print("  none stored (keys read from environment variables are not stored)")
     for row in rows:
-        print(f"  {row['service']:<10} {row['account']:<12} {row['token_preview']:<14} {row['base_url']}")
+        print(f"  {row['provider']:<12} {row['account']:<14} {row['key']}")
     return 0
 
 
@@ -609,175 +597,6 @@ def read_env_flag(path: str, key: str, default: bool = False) -> bool:
         if name.strip() == key:
             return value.strip().strip('"').lower() in {"1", "true", "yes", "on"}
     return default
-
-
-async def cmd_sponsors(args: argparse.Namespace) -> int:
-    """Inspect, enable, claim from -- or forget -- the opt-in sponsor line.
-
-    Args:
-        args: Parsed arguments; ``action`` selects the sub-behaviour.
-
-    Returns:
-        A process exit code.
-    """
-    from src.db.models import init_db
-    from src.sponsors.catalog import load_catalog, normalise_url, split_categories
-    from src.sponsors.ledger import SponsorLedger, verify_claim
-    from src.sponsors.line import SponsorLineMux
-
-    settings = get_settings()
-    action = args.action
-    try:
-        init_db()
-    except Exception as exc:  # noqa: BLE001 - a missing schema must not hide the report
-        LOGGER.warning("Could not initialise the database schema: %s", exc)
-
-    if action in {"enable", "disable"}:
-        wanted = action == "enable"
-        path = args.env_file
-        try:
-            changed = set_env_value(path, "SPONSORS_ENABLED", "true" if wanted else "false")
-        except OSError as exc:
-            _print({"error": f"could not write {path}: {exc}"}, args.json)
-            return 1
-        payload = {
-            "env_file": path,
-            "SPONSORS_ENABLED": wanted,
-            "changed": changed,
-            "note": (
-                "Restart the API/CLI process, then point SPONSOR_CATALOG_PATH at your catalogue JSON."
-                if wanted
-                else "The line is off again; the ledger keeps its totals until you forget them."
-            ),
-        }
-        if args.json:
-            _print(payload, True)
-        else:
-            state = "enabled" if wanted else "disabled"
-            print(f"sponsor line {state} in {path}" + ("" if changed else " (already set)"))
-            print(payload["note"])
-        return 0
-
-    if action == "forget":
-        count = await SponsorLedger(settings).forget()
-        _print({"forgotten": count, "note": "the local tally no longer exists"}, args.json)
-        return 0
-
-    if action == "ledger":
-        summary = await SponsorLedger(settings).summary()
-        if args.json:
-            _print(summary, True)
-            return 0
-        print(
-            f"{summary['impressions']} line(s) shown, {summary['net_cents']} cents to you "
-            f"({summary['gross_cents']} gross, {summary['share_bp'] / 100:.0f}% share)"
-        )
-        for row in summary["rows"]:
-            print(
-                f"  {row['sponsor_id']:<16} {row['impressions']:>6} lines  "
-                f"{row['net_cents']:>5} cents  {row['advertiser']}"
-            )
-        if summary.get("error"):
-            print(f"  (ledger unreadable: {summary['error']})")
-        return 0
-
-    if action == "claim":
-        try:
-            result = await SponsorLedger(settings).claim(payout_to=args.payout_to, note=args.note)
-        except ValueError as exc:
-            _print({"error": str(exc)}, args.json)
-            return 1
-        if args.json:
-            _print(result, True)
-        else:
-            print(f"claim token ({result['payload']['net_cents']} cents, {result['payload']['total_impressions']} lines):")
-            print()
-            print(result["claim"])
-            print()
-            for step in result["redeem"]:
-                print(f"- {step}")
-        return 0
-
-    if action == "verify":
-        token = args.claim or sys.stdin.read().strip()
-        try:
-            payload = verify_claim(token, settings.SECRET_KEY)
-        except ValueError as exc:
-            _print({"valid": False, "reason": str(exc)}, args.json)
-            return 1
-        _print({"valid": True, "payload": payload}, args.json)
-        return 0
-
-    if action == "line":
-        line = await SponsorLineMux(settings=settings).next_line(
-            context=args.context, categories=split_categories(args.categories) or None
-        )
-        if args.json:
-            _print({"line": line}, True)
-            return 0 if line else 2
-        if line is None:
-            print("no line: disabled, not due, context not dead time, or empty catalogue")
-            return 2
-        print(line["rendered"])
-        return 0
-
-    if action == "catalog":
-        catalog = await load_catalog(settings)
-        if args.set_url:
-            try:
-                normalised = normalise_url(args.set_url)
-            except ValueError as exc:
-                _print({"error": str(exc)}, args.json)
-                return 1
-            try:
-                changed = set_env_value(args.env_file, "SPONSOR_CATALOG_URL", normalised)
-            except OSError as exc:
-                _print({"error": f"could not write {args.env_file}: {exc}"}, args.json)
-                return 1
-            _print(
-                {
-                    "env_file": args.env_file,
-                    "SPONSOR_CATALOG_URL": normalised,
-                    "changed": changed,
-                    "current_catalog_source": catalog.source,
-                },
-                args.json,
-            )
-            return 0
-        _print(catalog.to_dict(), args.json)
-        return 0
-
-    # default: status
-    catalog = await load_catalog(settings)
-    summary = await SponsorLedger(settings).summary()
-    payload = {
-        "enabled": bool(settings.SPONSORS_ENABLED),
-        "catalog_source": catalog.source,
-        "catalog_entries": len(catalog.entries),
-        "catalog_error": catalog.error,
-        "categories": split_categories(settings.SPONSOR_CATEGORIES),
-        "share_bp": int(settings.SPONSOR_SHARE_BP),
-        "impressions": summary["impressions"],
-        "net_cents": summary["net_cents"],
-        "min_payout_cents": summary["min_payout_cents"],
-        "claimable": summary["claimable"],
-        "ledger_error": summary.get("error", ""),
-    }
-    if args.json:
-        _print(payload, True)
-        return 0
-    print("Sponsor line" + (" (enabled)" if payload["enabled"] else " (disabled -- this is the default)"))
-    print(f"  catalogue : {payload['catalog_source']} ({payload['catalog_entries']} entries)")
-    if payload["catalog_error"]:
-        print(f"  refused   : {payload['catalog_error']}")
-    print(f"  share     : {payload['share_bp'] / 100:.0f}% to you")
-    print(f"  accrued   : {payload['impressions']} lines, {payload['net_cents']} cents")
-    print(f"  payout at : {payload['min_payout_cents']} cents" + ("  (ready: kollektiv sponsors claim)" if payload["claimable"] else ""))
-    if payload["ledger_error"]:
-        print(f"  ledger    : {payload['ledger_error']}")
-    if not payload["enabled"]:
-        print("  enable it : kollektiv sponsors enable")
-    return 0
 
 
 def load_env_file(path: str = ".env", *, override: bool = False) -> List[str]:
@@ -1590,17 +1409,21 @@ def build_parser() -> argparse.ArgumentParser:
     call.add_argument("action", help="Action name")
     call.add_argument("--params", default="{}", help="JSON object of parameters")
     call.add_argument("--confirm", action="store_true", help="Allow dangerous actions")
-    login = sub.add_parser("login", help="Store an encrypted worker credential (Arena by default)")
-    login.add_argument("--provider", default="arena", help="arena (default), groq, deepseek, openrouter, together, ollama")
-    login.add_argument("--token", default="", help="Token (otherwise prompted; KOLLEKTIV_TOKEN also works)")
-    login.add_argument("--account", default="", help="Account name (default: 'default' for Arena, else the provider)")
-    login.add_argument("--base-url", default="", help="Override the provider endpoint")
-    login.add_argument("--model", default="", help="Override the default model")
+    login = sub.add_parser("login", help="Register a worker on your own API key (BYOK)")
+    login.add_argument("--provider", default="deepseek", help=f"One of: {', '.join(sorted(PROVIDER_PRESETS))}")
+    login.add_argument("--name", default="", help="Display name for the worker (default: the provider)")
+    login.add_argument("--account", default="", help="Stable id for the stored key (default: from --name)")
+    login.add_argument("--token", default="", help="API key (otherwise prompted; KOLLEKTIV_TOKEN also works)")
+    login.add_argument("--key-env", default="", help="Read the key from this variable, e.g. DEEPSEEK_API_KEY (nothing stored)")
+    login.add_argument("--base-url", default="", help="Override the provider endpoint (required for custom)")
+    login.add_argument("--model", default="", help="Override the provider's default model")
+    login.add_argument("--env-file", default=".env", help="Env file that receives the ARENA_ACCOUNTS entry")
     login.add_argument("--json", action="store_true", help="Machine-readable report")
-    logout = sub.add_parser("logout", help="Delete a stored credential")
-    logout.add_argument("--provider", default="arena", help="Provider whose credential to remove")
-    logout.add_argument("--account", default="", help="Account name")
-    accounts = sub.add_parser("accounts", help="List stored credentials (masked)")
+    logout = sub.add_parser("logout", help="Remove a worker's stored key and its ARENA_ACCOUNTS entry")
+    logout.add_argument("--provider", default="deepseek", help="Provider of the worker to remove")
+    logout.add_argument("--account", default="", help="Account id of the worker (default: the provider name)")
+    logout.add_argument("--env-file", default=".env", help="Env file that holds ARENA_ACCOUNTS")
+    accounts = sub.add_parser("accounts", help="List registered workers and stored keys (masked)")
     accounts.add_argument("--json", action="store_true", help="Machine-readable report")
     resume = sub.add_parser("resume", help="Print the resume briefing for a project")
     resume.add_argument("--project-id", required=True, help="Project identifier")
@@ -1637,23 +1460,6 @@ def build_parser() -> argparse.ArgumentParser:
     gateway.add_argument("--host", default=None, help="Serve host (default: GATEWAY_HOST)")
     gateway.add_argument("--port", type=int, default=None, help="Serve port (default: GATEWAY_PORT)")
 
-    sponsors = sub.add_parser("sponsors", help="Opt-in sponsor line, local ledger and claims")
-    sponsors.add_argument(
-        "action",
-        nargs="?",
-        default="status",
-        choices=["status", "catalog", "line", "ledger", "claim", "verify", "enable", "disable", "forget"],
-        help="What to do (default: status)",
-    )
-    sponsors.add_argument("--json", action="store_true", help="Machine-readable report")
-    sponsors.add_argument("--context", default="waiting", help="Dead-time context for 'line'")
-    sponsors.add_argument("--categories", default="", help="Self-declared interests, comma separated")
-    sponsors.add_argument("--payout-to", default="", help="Payout handle to embed in a claim (email, ...)")
-    sponsors.add_argument("--note", default="", help="Free-text note to embed in a claim")
-    sponsors.add_argument("--claim", default="", help="Claim token to verify (or pipe it on stdin)")
-    sponsors.add_argument("--set-url", default="", help="With 'catalog': write SPONSOR_CATALOG_URL to the env file")
-    sponsors.add_argument("--env-file", default=".env", help="Env file to read/write (default: .env)")
-
     serve_api = sub.add_parser("serve-api", help="Run the FastAPI app")
     serve_api.add_argument("--host", default=None)
     serve_api.add_argument("--port", type=int, default=None)
@@ -1682,7 +1488,6 @@ COMMANDS = {
     "link": cmd_link,
     "unlink": cmd_unlink,
     "init-config": cmd_init_config,
-    "sponsors": cmd_sponsors,
     "resume": cmd_resume,
     "call": cmd_call,
     "bootstrap": cmd_bootstrap,

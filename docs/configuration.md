@@ -4,48 +4,52 @@
 
 ## Configuration
 
-All settings come from `.env` (see `.env.example`, 51 keys with comments).
+All settings come from `.env` (see `.env.example`, which documents every key).
 `kollektiv check --json` prints the resolved configuration plus warnings;
 secrets are always redacted.
 
 ### 1. Worker agents (`ARENA_ACCOUNTS`)
 
-A JSON list; each entry becomes one worker in the pool. Two request shapes are
-supported and auto-detected:
+A JSON list; each entry becomes one worker in the pool. Every worker is an
+OpenAI-compatible endpoint reached with **your own key** (bring your own key —
+see [BYOK](byok.md) for the providers and the rules):
 
 ```jsonc
-// (a) OpenAI-compatible endpoint holding its own key
 [
-  {"name": "fast", "base_url": "https://api.groq.com/openai/v1",
-   "model": "llama-3.3-70b-versatile", "session_token": "gsk_…"},
-  {"name": "reasoner", "base_url": "https://api.deepseek.com/v1",
-   "model": "deepseek-reasoner", "session_token": "sk_…"}
+  {"name": "Vega",  "provider": "deepseek", "account_id": "vega"},
+  {"name": "Terra", "provider": "ollama",   "account_id": "terra", "model": "qwen2.5-coder:14b"},
+  {"name": "Atlas", "provider": "groq",     "account_id": "atlas", "api_key_env": "GROQ_API_KEY"},
+  {"name": "Bridge", "provider": "custom",  "base_url": "https://my-bridge.internal/v1", "model": "my-model"}
 ]
-
-// (b) a custom chat endpoint (your own bridge, a self-hosted model, …)
-[{"email": "w1@example.com", "session_token": "…",
-  "base_url": "https://my-bridge.internal", "api_style": "custom"}]
 ```
 
-The client picks the OpenAI shape when `base_url` ends in `/v1`, otherwise it
-posts the custom envelope (`{"prompt", "agent_mode", "stream"}`) to
-`ARENA_CHAT_PATH`. Related keys: `ARENA_LOGIN_PATH`, `ARENA_TIMEOUT`,
-`ARENA_MAX_CONCURRENCY`, `ARENA_RATE_LIMIT_COOLDOWN`,
-`ARENA_SESSION_LIFETIME_MINUTES`.
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `provider` | yes | A key of the provider table: `deepseek`, `groq`, `openrouter`, `openai`, `gemini`, `mistral`, `together`, `ollama`, `lmstudio`, `custom`. |
+| `name` | no | The display name on the dashboard. Empty = a friendly name is picked for you. |
+| `account_id` | no | Stable id for the stored key. Derived from the name when empty. |
+| `model` | no | Overrides the provider's default model. |
+| `base_url` | `custom` only | Endpoint override. Other providers already know theirs. |
+| `api_key_env` | no | Name of the environment variable holding the key. Nothing is stored. |
+| `max_concurrency` | no | Parallel prompts for this worker (default 1). |
+
+Keys are **never** in this list. `kollektiv login` stores them encrypted with
+`SECRET_KEY`, or you name a variable in `api_key_env`. Related keys:
+`ARENA_MODEL` (default model for a worker that names none),
+`ARENA_REQUEST_TIMEOUT`, `ARENA_MAX_CONCURRENCY`, `ARENA_RATE_LIMIT_COOLDOWN`.
 
 **Names, and how many agents you may have.** Each entry may carry a `name`
 ("Reviewer", "Docs bot") — that is what the dashboard, `GET /agents/status` and
 `/health` show. Without one, the agent gets a stable friendly name derived from
 its account id (`Nova`, `Atlas`, `Vega` …), unique within the pool, so a restart
-never renames anyone. The pool serves **every** account you list: there is no
+never renames anyone. The pool serves **every** worker you list: there is no
 four-agent limit, and `MAX_AGENT_COUNT` (64) only bounds how many a *single
 project's plan* will spread work across.
 
 > **Use endpoints you are allowed to use.** Kollektiv does not scrape services,
-> bypass paywalls or evade rate limits. Point the pool at API keys,
-> self-hosted models or your own endpoints. When a provider answers `429`, that
-> worker goes into cooldown and the task is routed to another account — the
-> orchestrator never sleeps through a rate limit.
+> log in to web chat interfaces, bypass paywalls or evade rate limits. When a
+> provider answers `429`, that worker goes into cooldown and the task is routed
+> to another worker — the orchestrator never sleeps through a rate limit.
 
 ### 2. Shared storage (`TERABOX_ACCOUNTS`)
 
@@ -110,25 +114,7 @@ BRAIN_FALLBACK_MODEL=llama-3.3-70b-versatile
 Without `BRAIN_API_KEY` the heuristic planner, reviewer and summariser take
 over, which is what makes the test suite and offline runs possible.
 
-### 5. Sponsor line (`SPONSOR_*`, optional)
-
-The only advertising surface Kollektiv has, off unless you turn it on; the full
-design and the reasoning are in [Monetization](monetization.md).
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `SPONSORS_ENABLED` | `false` | Master switch. `kollektiv sponsors enable` writes it for you. |
-| `SPONSOR_CATALOG_PATH` | — | JSON file with the sponsor entries (`docs/sponsors.example.json`) |
-| `SPONSOR_CATALOG_URL` | — | Or an HTTPS endpoint returning the same JSON (fetched lazily) |
-| `SPONSOR_CATALOG_PUBLIC_KEY` | — | Ed25519 public key (base64); set it to refuse unsigned catalogues |
-| `SPONSOR_SHARE_BP` | `7500` | Your share of the gross in basis points (75%) |
-| `SPONSOR_CPM_CENTS` | `100` | Fallback rate per 1000 lines when an entry omits one |
-| `SPONSOR_MIN_PAYOUT_CENTS` | `1000` | A claim is only offered above this |
-| `SPONSOR_CATEGORIES` | — | Self-declared interests — the only targeting that exists |
-| `SPONSOR_MIN_INTERVAL_SECONDS` | `90` | Attention budget: at most one line per interval |
-| `SPONSOR_REQUEST_TIMEOUT` | `15.0` | Catalogue HTTP timeout |
-
-### 6. Connectors (`TELEGRAM_*`, `DISCORD_*`, `SLACK_*`, `LINEAR_*`, `WA_*`)
+### 5. Connectors (`TELEGRAM_*`, `DISCORD_*`, `SLACK_*`, `LINEAR_*`, `WA_*`)
 
 All optional, all inert until filled in — see [Connectors](connectors.md) for
 what each one can do and which actions are dangerous.
@@ -155,7 +141,7 @@ what each one can do and which actions are dangerous.
 | `WA_ALLOW_UNOFFICIAL` | `false` | **Required** for the bridge route: automating a personal number breaks Meta's terms and can get it banned |
 | `<SERVICE>_REQUEST_TIMEOUT` | `30.0` | Per-service HTTP timeout |
 
-### 7. MCP gateway (`GATEWAY_*`, optional)
+### 6. MCP gateway (`GATEWAY_*`, optional)
 
 One MCP URL, per-client tokens, per-client policy and a local audit log; the
 full walkthrough is in [MCP gateway](gateway.md). Off unless you turn it on —
@@ -174,7 +160,7 @@ full walkthrough is in [MCP gateway](gateway.md). Off unless you turn it on —
 | `GATEWAY_ALLOWED_ORIGINS` | — | Origin allowlist; defaults to the hosts above |
 | `GATEWAY_MAX_BODY_BYTES` | `4194304` | Largest MCP request body |
 
-### 8. Budget (`BUDGET_*`, `PROJECT_CONFIG_PATH`, optional)
+### 7. Budget (`BUDGET_*`, `PROJECT_CONFIG_PATH`, optional)
 
 Estimate a run before it happens, refuse to exceed a cap, and keep a local tally
 of tokens and dollars. The full page is [Budgets and `.kollektiv.yml`](budget.md);
@@ -198,7 +184,7 @@ a project can also carry its own `budget.max_usd` in `.kollektiv.yml`.
 rates; the estimate is only as honest as the numbers you put in, so check your
 provider's current pricing page and override them.
 
-### 9. Runtime
+### 8. Runtime
 
 | Key | Default | Purpose |
 | --- | --- | --- |

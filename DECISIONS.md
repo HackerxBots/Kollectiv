@@ -10,8 +10,8 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 
 | # | Suggestion | Verdict | Notes |
 | --- | --- | --- | --- |
-| 1 | Rename `ARENA_*` → `WORKER_*` | ❌ | Rejected: Arena accounts are the default, the naming stays. Other providers are opt-in through the same variables. |
-| 2 | `kollektiv login --provider …` presets | 🚀 | `login`/`logout`/`accounts` shipped; Arena is the default, groq/deepseek/openrouter/together/ollama are optional. |
+| 1 | Rename `ARENA_*` → `WORKER_*` | ❌ | Rejected: the variables keep the `ARENA_` prefix. The provider behind each worker is chosen per entry (`provider`), not by the name. |
+| 2 | `kollektiv login --provider …` presets | 🚀 | Shipped: bring your own key. Keys are stored encrypted per worker; DeepSeek, Groq, OpenRouter, OpenAI, Gemini, Mistral, Together, Ollama and LM Studio are presets, and `custom` takes any OpenAI-compatible URL. |
 | 3 | Role-based model routing (cheap planner, stronger reviewer) | ✅ | Issue #2. |
 | 4 | Per-run budget caps (tokens/cost) with abort + alert | 🟡 | Explained below; waiting on a decision. |
 | 5 | Per-project `.kollektiv.yml` (agents, models, protected paths) | 🟡 | Explained below; waiting on a decision. |
@@ -48,7 +48,7 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 | 36 | Compatibility shim: import `kollektiv` alongside `src` | ✅ | Issue #26. |
 | 37 | Freebuff (free, ad-funded coding agent) as a worker | 🚀 | `examples/freebuff_shim.py`: strips ads/ANSI, converts its edits into the fenced-block contract, retries only git reads. Caveat shipped in the README: its terms expect a supervised session, so it is one worker you watch — not an unattended fleet. |
 | 38 | Use Freebuff to work on Kollektiv itself | ✅ | Free dev agent for contributors who cannot pay for one; it is just a CLI in your terminal, so nothing in the repository needs to change. |
-| 39 | Ad-supported "free" tools on the critical path | 🟡 | Ruled out for now: ads are a business model that can change (Freebuff already cut its free allowance once). It stays an *optional* worker, never the documented default — that remains Arena. |
+| 39 | Ad-supported "free" tools on the critical path | ❌ | Ruled out. No advertising, sponsor lines or paid tiers in the product. The only support is donations and sponsorship ([support.md](docs/support.md)). |
 
 ## Non-negotiables (not up for a vote)
 

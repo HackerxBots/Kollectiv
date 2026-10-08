@@ -176,7 +176,7 @@ fn shell_info(state: tauri::State<'_, Sidecar>) -> serde_json::Value {
 
 /// Open an external URL in the user's default browser.
 ///
-/// The dashboard calls this for sponsor links, documentation links and the
+/// The dashboard calls this for support links, documentation links and the
 /// "open the API docs" button — anything that is not part of the app itself.
 /// Only `http` and `https` are accepted: a desktop shell must never hand
 /// `mailto:`, `file:` or a custom scheme to the OS on a page's say-so.

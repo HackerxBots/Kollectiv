@@ -7,7 +7,47 @@ on GitHub links to the section below for its version.
 
 ## [Unreleased]
 
+### Changed
+
+- **Bring your own key (breaking).** Every worker is now an OpenAI-compatible
+  API reached with a key you hold. Workers take `provider`, `model`, `base_url`
+  and an optional `api_key_env`; keys live encrypted in the token store, written
+  by `kollektiv login`. DeepSeek is the default brain, and Groq is the fallback.
+  Local models (Ollama, LM Studio) need no key and no internet. See
+  [Bring your own key](docs/byok.md). **Migration:** entries that still carry
+  `session_token` or `email` are no longer used. Run `kollektiv login --provider
+  <p> --name <n>` for each worker, or set `api_key_env`.
+- `_post_json` in the worker client retries transport errors and 5xx responses
+  (three attempts in all, exponential backoff). A 429 still sets the worker's
+  cooldown and is not retried, and a rejected key is still forgotten.
+- Agent naming: a worker's display name is its `name`, else a stable friendly
+  name derived from its account id.
+- Documentation and README now describe the API-based, bring-your-own-key model.
+  The README stays a front page; the depth is in `docs/`.
+
+### Removed
+
+- **The Arena session-token and browser-bridge worker path.** It drove a web
+  chat through an account login, which is not an API and falls outside the
+  providers' terms. No code path does this now.
+- **Every monetization surface:** the sponsor line and its catalogue, the signed
+  claims and payout relay, the sponsor ledger, the `/sponsors/*` endpoints, the
+  `sponsor_line`/`sponsor_ledger` MCP tools, the `kollektiv sponsors` commands,
+  `docs/monetization.md`, and `docs/sponsors.example.json`.
+  Donations and sponsorship are the only support, and they are a link, not a
+  feature. See [Support](docs/support.md).
+  The `sponsor_ledger` table is no longer declared. An existing table in an old
+  database is left alone, and nothing reads it.
+
 ### Added
+
+- **Bring your own key, documented end to end.** `docs/byok.md` covers the
+  provider table, `kollektiv login` / `logout` / `accounts`, `--key-env`, the
+  rules, and Docker `host.docker.internal`.
+- **Support.** `docs/support.md` and `.github/FUNDING.yml` (the GitHub Sponsor
+  button). Donations and sponsorship are the only support model.
+- **Tests:** retry behaviour (three attempts for 5xx and transport errors, no
+  retry for 429 or 401), and the BYOK login, logout and key-storage paths.
 
 - **Desktop installers, both options** — `desktop/` is a Tauri 2 shell that embeds
   the shipped `web/` dashboard (Option 1: a window, point it at any API) and turns

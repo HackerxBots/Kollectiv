@@ -186,74 +186,120 @@ def test_handoff_endpoint(settings: Settings, tmp_path: Path) -> None:
 # ----------------------------------------------------------------------
 # Login / credentials
 # ----------------------------------------------------------------------
-def test_login_stores_an_encrypted_arena_token(settings: Settings, tmp_path: Path, capsys: Any) -> None:
-    """`kollektiv login` encrypts the token and prints the matching account entry."""
-    from src.api.cli import cmd_login
+def _login_env(settings: Settings, tmp_path: Path, monkeypatch: Any) -> Settings:
+    """Point the CLI at an isolated database and secret for one test."""
+    import src.api.cli as cli_module
 
     resolved = settings.model_copy(
         update={"DATABASE_URL": f"sqlite:///{tmp_path / 'tokens.db'}", "SECRET_KEY": "unit-test-secret"}
     )
-    import src.api.cli as cli_module
-    from config import settings as settings_module
-
-    original = settings_module.get_settings
-    settings_module.get_settings = lambda: resolved  # type: ignore[assignment]
-    cli_module.get_settings = lambda: resolved  # type: ignore[assignment]
-    try:
-        args = type("Args", (), {"provider": "arena", "token": "session-token-abcdef", "account": "", "base_url": "", "model": "", "json": True})()
-        assert run(cmd_login(args)) == 0
-        captured = capsys.readouterr().out
-        report = json.loads(captured[captured.index("{") :])
-        assert report["stored"] is True
-        assert report["service"] == "arena" and report["account"] == "default"
-        assert report["token_preview"] == "sess…cdef"
-        assert '"provider": "arena"' in report["next"]["env"]
-
-        # The token really is encrypted at rest.
-        from src.db.models import bind_engine
-        from src.utils.token_store import TokenStore
-
-        engine = bind_engine(resolved)
-        store = TokenStore("unit-test-secret", engine=engine)
-        stored = store.get_token("arena", "default")
-        assert stored["session_token"] == "session-token-abcdef"
-        with engine.connect() as connection:
-            raw = connection.exec_driver_sql("SELECT payload FROM token_records").fetchall()
-        assert raw and "session-token-abcdef" not in str(raw)
-    finally:
-        settings_module.get_settings = original  # type: ignore[assignment]
+    monkeypatch.setattr(cli_module, "get_settings", lambda: resolved)
+    return resolved
 
 
-def test_login_validates_inputs(settings: Settings, capsys: Any) -> None:
-    """Unknown providers and missing tokens fail cleanly with the options listed."""
-    import src.api.cli as cli_module
-    from config import settings as settings_module
+def _args(**overrides: Any) -> Any:
+    """A namespace shaped like the parsed `kollektiv login` / `logout` arguments."""
+    base: Dict[str, Any] = {
+        "provider": "deepseek",
+        "name": "",
+        "account": "",
+        "token": "",
+        "key_env": "",
+        "base_url": "",
+        "model": "",
+        "env_file": ".env",
+        "json": True,
+    }
+    base.update(overrides)
+    return type("Args", (), base)()
+
+
+def test_login_stores_an_encrypted_key_and_registers_the_worker(
+    settings: Settings, tmp_path: Path, monkeypatch: Any
+) -> None:
+    """`kollektiv login` encrypts the key, writes the worker into the env file and never leaks the key."""
+    from src.api.cli import cmd_login
+    from src.db.models import bind_engine
+    from src.utils.token_store import TokenStore
+
+    resolved = _login_env(settings, tmp_path, monkeypatch)
+    env_file = tmp_path / ".env"
+    key = "sk-test-abcdef1234"
+    assert run(cmd_login(_args(name="Vega", token=key, env_file=str(env_file)))) == 0
+
+    env_text = env_file.read_text(encoding="utf-8")
+    assert "ARENA_ACCOUNTS=" in env_text and '"name":"Vega"' in env_text and '"provider":"deepseek"' in env_text
+    assert key not in env_text, "keys must never be written to the env file"
+
+    engine = bind_engine(resolved)
+    store = TokenStore("unit-test-secret", engine=engine)
+    assert store.get_token("deepseek", "vega")["api_key"] == key
+    with engine.connect() as connection:
+        raw = connection.exec_driver_sql("SELECT payload FROM token_records").fetchall()
+    assert raw and key not in str(raw)
+
+
+def test_login_with_key_env_stores_nothing(settings: Settings, tmp_path: Path, monkeypatch: Any) -> None:
+    """With --key-env the key stays in the environment; only the variable name is recorded."""
+    from src.api.cli import cmd_login
+    from src.db.models import bind_engine
+    from src.utils.token_store import TokenStore
+
+    resolved = _login_env(settings, tmp_path, monkeypatch)
+    monkeypatch.setenv("VEGA_DEEPSEEK_KEY", "sk-from-environment")
+    env_file = tmp_path / ".env"
+    assert run(cmd_login(_args(name="Vega", key_env="VEGA_DEEPSEEK_KEY", env_file=str(env_file)))) == 0
+    assert '"api_key_env":"VEGA_DEEPSEEK_KEY"' in env_file.read_text(encoding="utf-8")
+    store = TokenStore("unit-test-secret", engine=bind_engine(resolved))
+    assert store.get_token("deepseek", "vega") in ({}, None)
+
+
+def test_local_providers_need_no_key(settings: Settings, tmp_path: Path, monkeypatch: Any) -> None:
+    """Ollama registers without asking for anything."""
     from src.api.cli import cmd_login
 
-    original = settings_module.get_settings
-    settings_module.get_settings = lambda: settings  # type: ignore[assignment]
-    cli_module.get_settings = lambda: settings  # type: ignore[assignment]
-    try:
-        unknown = type("Args", (), {"provider": "nope", "token": "x", "account": "", "base_url": "", "model": "", "json": True})()
-        assert run(cmd_login(unknown)) == 2
-        assert "Unknown provider" in capsys.readouterr().out
-
-        empty = type("Args", (), {"provider": "arena", "token": "", "account": "", "base_url": "", "model": "", "json": True})()
-        assert run(cmd_login(empty)) == 2
-        assert "No token supplied" in capsys.readouterr().out
-    finally:
-        settings_module.get_settings = original  # type: ignore[assignment]
+    _login_env(settings, tmp_path, monkeypatch)
+    env_file = tmp_path / ".env"
+    assert run(cmd_login(_args(provider="ollama", name="Terra", env_file=str(env_file)))) == 0
+    assert '"provider":"ollama"' in env_file.read_text(encoding="utf-8")
 
 
-def test_login_presets_cover_the_free_providers() -> None:
-    """Arena is the default; the other presets are optional keys or local."""
+def test_login_validates_inputs(settings: Settings, tmp_path: Path, capsys: Any, monkeypatch: Any) -> None:
+    """Unknown providers and missing keys fail with exit code 2 and the fix in the message."""
+    from src.api.cli import cmd_login
+
+    _login_env(settings, tmp_path, monkeypatch)
+    assert run(cmd_login(_args(provider="nope", token="x"))) == 2
+    assert "Unknown provider" in capsys.readouterr().out
+    assert run(cmd_login(_args(provider="groq", token="", env_file=str(tmp_path / ".env")))) == 2
+    assert "No API key supplied" in capsys.readouterr().out
+
+
+def test_logout_removes_the_key_and_the_worker(settings: Settings, tmp_path: Path, monkeypatch: Any) -> None:
+    """`kollektiv logout` deletes the stored key and drops the worker from the env file."""
+    import src.api.cli as cli_module
+    from src.api.cli import cmd_login, cmd_logout
+
+    resolved = _login_env(settings, tmp_path, monkeypatch)
+    env_file = tmp_path / ".env"
+    assert run(cmd_login(_args(name="Vega", token="sk-one-two-three", env_file=str(env_file)))) == 0
+
+    # The worker is now listed in the env file; logout must see that list in settings.
+    listed = json.loads(env_file.read_text(encoding="utf-8").split("ARENA_ACCOUNTS=", 1)[1].splitlines()[0])
+    assert [w["account_id"] for w in listed] == ["vega"]
+    monkeypatch.setattr(cli_module, "get_settings", lambda: resolved.model_copy(update={"ARENA_ACCOUNTS": json.dumps(listed)}))
+
+    assert run(cmd_logout(_args(account="vega", env_file=str(env_file)))) == 0
+    assert "ARENA_ACCOUNTS=[]" in env_file.read_text(encoding="utf-8")
+
+
+def test_login_presets_are_the_shared_provider_table() -> None:
+    """The CLI and the worker use one provider table, so `login` and the runtime never disagree."""
+    from src.agents.providers import PROVIDER_PRESETS as SHARED
     from src.api.cli import PROVIDER_PRESETS
 
-    assert "arena" in PROVIDER_PRESETS
-    assert PROVIDER_PRESETS["arena"]["kind"] == "account"
-    assert PROVIDER_PRESETS["ollama"]["kind"] == "local"
-    for name in ("groq", "deepseek", "openrouter", "together"):
-        assert PROVIDER_PRESETS[name]["base_url"].startswith("https://")
+    assert PROVIDER_PRESETS is SHARED
+    assert "arena" not in PROVIDER_PRESETS, "Arena web sessions are not an API and are not supported"
 
 
 # ----------------------------------------------------------------------

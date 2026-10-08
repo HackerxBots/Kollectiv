@@ -369,7 +369,7 @@ class SyncEngine:
             try:
                 if not await agent.is_ready():
                     continue
-                await agent.send_prompt(message, use_agent_mode=False)
+                await agent.send_prompt(message)
                 notified += 1
             except Exception as exc:  # noqa: BLE001 - one bad agent must not stop the rest
                 LOGGER.warning("Could not push context to %s: %s", getattr(agent, "label", "?"), exc)

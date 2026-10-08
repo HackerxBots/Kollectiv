@@ -30,21 +30,13 @@ from openai import AuthenticationError as OpenAIAuthError
 from openai import RateLimitError as OpenAIRateLimitError
 
 from config.settings import Settings, get_settings
+from src.agents.providers import PROVIDER_DEFAULTS
 from src.utils.errors import BrainError, BrainTransientError, ConfigurationError, RateLimitError
 from src.utils.logger import get_logger
 from src.utils.retry import async_retry
 
 LOGGER = get_logger(__name__)
 
-#: Provider defaults used when a custom ``BRAIN_PROVIDER`` is configured.
-PROVIDER_DEFAULTS: Dict[str, Dict[str, str]] = {
-    "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
-    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
-    "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
-    "openrouter": {"base_url": "https://openrouter.ai/api/v1", "model": "deepseek/deepseek-chat"},
-    "together": {"base_url": "https://api.together.xyz/v1", "model": "deepseek-ai/DeepSeek-V3"},
-    "ollama": {"base_url": "http://localhost:11434/v1", "model": "llama3.1"},
-}
 
 PLANNER_SYSTEM_PROMPT = (
     "You are the planning brain of a multi-agent software team. You decompose a project "

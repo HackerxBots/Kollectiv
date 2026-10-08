@@ -1,6 +1,6 @@
 # Budgets and `.kollektiv.yml`
 
-Free is the default: Arena worker accounts and a cheap brain mean a project can
+Free is the default: local models, free-tier keys and a cheap brain mean a project can
 run for nothing. But "free" stops being true the moment you point workers at a
 paid endpoint, or the brain at a provider with a real invoice — and nobody wants
 to find that out from a statement. So Kollektiv answers three questions up
@@ -65,7 +65,7 @@ The estimate is arithmetic on the plan and **your** prices:
 | Already-spent money | the local ledger |
 
 The response says `estimate_only: true` and never presents itself as a quote.
-Worker calls default to **$0** because Arena accounts and local models cost
+Worker calls default to **$0** because local models and free-tier keys cost
 nothing; point workers at a paid endpoint and set
 `BUDGET_WORKER_PRICE_IN_PER_MTOK` / `..._OUT_PER_MTOK` to make the estimate
 honest again.
@@ -107,8 +107,7 @@ project_id | day | runs | tasks | brain_calls | tokens in/out | usd | estimated
   report usage, and the row is flagged `estimated: true` so nobody reads a
   number as a measurement it is not.
 * The ledger stores tokens and dollars only — never prompts, files, briefs or
-  identifiers. It is local, never uploaded, and it is the same promise the
-  sponsor ledger makes.
+  identifiers. It is local and never uploaded.
 * `GET /budget`, the `budget_report` MCP tool and `kollektiv budget` all read it.
   `/health` deliberately does **not**: health must answer instantly and never
   query.
@@ -130,5 +129,4 @@ project_id | day | runs | tasks | brain_calls | tokens in/out | usd | estimated
 
 * [Configuration](configuration.md) — every `BUDGET_*` variable
 * [API, MCP and CLI](api.md) — `GET /budget`, `GET /projects/{id}/estimate`
-* [Monetization](monetization.md) — the same "local, honest, no telemetry" shape
-  as the sponsor ledger
+* [Bring your own key](byok.md) — which keys the workers use and how they are stored

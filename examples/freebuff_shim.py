@@ -34,8 +34,9 @@ WORKER_WORKDIR=/srv/kollektiv/workspace WORKER_TOKEN=local-dev-token \\
 then register the worker in ``.env``:
 
 ```jsonc
-ARENA_ACCOUNTS='[{"name":"freebuff","session_token":"local-dev-token",
-                  "base_url":"http://127.0.0.1:8099/v1","model":"freebuff"}]'
+ARENA_ACCOUNTS='[{"name":"freebuff","provider":"custom","account_id":"freebuff",
+                  "base_url":"http://127.0.0.1:8099/v1","model":"freebuff",
+                  "api_key_env":"WORKER_TOKEN"}]'
 ```
 
 Configuration (all optional except the command, which the operator must verify):

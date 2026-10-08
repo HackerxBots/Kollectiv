@@ -31,7 +31,7 @@ from src.agents.names import AGENT_NAMES, assign_names, base_name, unique_name
 from src.api.routes import create_app
 
 ACCOUNTS = [
-    {"email": f"worker{index}@example.com", "session_token": f"tok-{index}"} for index in range(1, 11)
+    {"account_id": f"worker{index}", "provider": "custom", "base_url": f"https://worker{index}.example.com/v1"} for index in range(1, 11)
 ]
 
 
@@ -58,7 +58,7 @@ def test_names_are_stable_and_unique() -> None:
     assert first.names == second.names, "names must not shuffle between restarts"
     assert len(set(first.names.values())) == 6
     for name in first.names.values():
-        assert name in AGENT_NAMES, f"{name!r} is not a curated agent name"
+        assert base_name(name) in AGENT_NAMES, f"{name!r} is not a curated agent name"
 
 
 def test_operator_names_win_and_duplicates_are_suffixed() -> None:

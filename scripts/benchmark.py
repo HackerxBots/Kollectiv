@@ -174,7 +174,6 @@ def benchmark(quick: bool = False, repeat: int = 3) -> Tuple[List[Result], Dict[
             GITHUB_REPO="",
             ARENA_ACCOUNTS="[]",
             TERABOX_ACCOUNTS="[]",
-            SPONSORS_ENABLED=False,
             CRON_ENABLED=False,
         )
         planner = BudgetPlanner(settings)

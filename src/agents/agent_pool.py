@@ -281,8 +281,8 @@ class AgentPool:
         await self.ensure_initialized()
         if not self._agents:
             raise ConfigurationError(
-                "No worker agents configured. Set ARENA_ACCOUNTS in .env to a JSON list of "
-                "accounts (email + session_token or base_url + key)."
+                "No worker agents configured. Add one with `kollektiv login --provider <name>` "
+                "(it writes ARENA_ACCOUNTS for you); see docs/byok.md."
             )
 
         attempts = max_attempts or (int(self.settings.AGENT_MAX_RETRIES) + 1)
@@ -311,7 +311,7 @@ class AgentPool:
                     attempts,
                 )
                 return await asyncio.wait_for(
-                    candidate.send_prompt(prompt, use_agent_mode=True, system_prompt=WORKER_SYSTEM_PROMPT),
+                    candidate.send_prompt(prompt, system_prompt=WORKER_SYSTEM_PROMPT),
                     timeout=attempt_timeout,
                 )
             except TimeoutError:

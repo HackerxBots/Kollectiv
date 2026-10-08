@@ -68,7 +68,6 @@ def settings(tmp_path: Path) -> Settings:
         GITHUB_WEBHOOK_SECRET="webhook-secret",
         BRAIN_API_KEY="",
         BRAIN_PROVIDER="deepseek",
-        ARENA_BASE_URL="https://arena.example.com",
         TERABOX_BASE_URL="https://openapi.terabox.com",
     )
 
@@ -77,8 +76,8 @@ def settings(tmp_path: Path) -> Settings:
 def agent_settings(settings: Settings) -> Settings:
     """Settings already carrying two worker agent accounts."""
     accounts = [
-        {"email": "worker1@example.com", "session_token": "tok-1"},
-        {"email": "worker2@example.com", "session_token": "tok-2"},
+        {"name": "Vega", "provider": "custom", "base_url": "https://worker1.example.com/v1"},
+        {"name": "Terra", "provider": "custom", "base_url": "https://worker2.example.com/v1"},
     ]
     return settings.model_copy(update={"ARENA_ACCOUNTS": json.dumps(accounts)}, deep=True)
 

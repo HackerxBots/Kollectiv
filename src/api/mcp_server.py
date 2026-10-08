@@ -412,43 +412,6 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
             return _json({"error": str(exc)})
         return _json(removed)
 
-    @server.tool()
-    async def sponsor_line(context: str = "waiting") -> str:
-        """Return the opt-in sponsor line for a dead-time moment, if enabled.
-
-        A no-op unless the deployment set ``SPONSORS_ENABLED=true``: the answer
-        is ``{"line": null}`` and nothing is fetched, shown or recorded. Drawing
-        a line accrues it in the local ledger, which never leaves the machine.
-
-        Args:
-            context: Dead-time context: ``waiting``, ``between-tasks`` or
-                ``rate-limit``. Any other value deliberately yields no line.
-        """
-        from src.sponsors.line import SponsorLineMux
-
-        try:
-            line = await SponsorLineMux(settings=resolved).next_line(context=context)
-        except Exception as exc:  # noqa: BLE001 - a broken sponsor must not break a tool call
-            LOGGER.error("sponsor_line failed: %s", exc)
-            return _json({"error": str(exc)})
-        return _json({"line": line})
-
-    @server.tool()
-    async def sponsor_ledger() -> str:
-        """Return the local sponsor ledger: impressions, cents earned, threshold.
-
-        The tally lives in this deployment's own database. Nothing is sent
-        anywhere by this call, and ``kollektiv sponsors forget`` deletes it.
-        """
-        from src.sponsors.ledger import SponsorLedger
-
-        try:
-            summary = await SponsorLedger(resolved).summary()
-        except Exception as exc:  # noqa: BLE001 - tools report, never raise
-            LOGGER.error("sponsor_ledger failed: %s", exc)
-            return _json({"error": str(exc)})
-        return _json(summary)
-
     # Stash helpers for tests / embedding.
     server.kollektiv_state = state  # type: ignore[attr-defined]
     server.get_orchestrator = get_orchestrator  # type: ignore[attr-defined]

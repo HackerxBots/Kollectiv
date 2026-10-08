@@ -13,7 +13,7 @@
 
 It is optional by design (`GATEWAY_ENABLED=false`): the plain MCP server and the
 HTTP API stay first-class, and this gateway is an addition, not a dependency.
-The reasoning, including the business half, is in ``docs/monetization.md``.
+Design notes and the policy model are in ``docs/gateway.md``.
 """
 
 from __future__ import annotations

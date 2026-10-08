@@ -199,6 +199,5 @@ deployment mode.
 
 * [api.md](api.md) — the REST API, the MCP server and the CLI
 * [connectors.md](connectors.md) — the services the gateway exposes
-* [monetization.md](monetization.md) — why the gateway exists in the business
-  sense (it is the thing that can be paid for without taking anything away)
+* [byok.md](byok.md) — the keys the workers behind the gateway use
 * [configuration.md](configuration.md) — every `GATEWAY_*` variable
