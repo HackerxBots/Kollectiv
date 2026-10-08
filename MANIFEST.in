@@ -1,0 +1,19 @@
+# The wheel carries the dashboard through [tool.setuptools.package-data] in
+# pyproject.toml; the sdist needs its own list. web/ is a static site (Cloudflare
+# Pages deploys it directly), not a Python package, which is why both lists exist.
+include web/index.html web/_headers web/_redirects web/README.md web/sw.js
+recursive-include web/assets *
+
+# Documentation and community files belong in the sdist so a maintainer can
+# build and release from it without cloning.
+include CHANGELOG.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md DECISIONS.md
+include docker-compose.yml Dockerfile .env.example
+recursive-include docs *.md
+recursive-include scripts *.py
+recursive-include examples *.py *.md
+recursive-include .github *.yml *.md
+# Desktop shell sources and the sidecar recipe (no target/, no sidecar binaries).
+include desktop/package.json desktop/package-lock.json desktop/README.md
+recursive-include desktop/src-tauri *.json *.json5 *.toml *.rs *.png *.ico *.icns *.md
+include sidecar/kollektiv-sidecar.spec sidecar/sidecar_entry.py
+recursive-include sidecar *.md

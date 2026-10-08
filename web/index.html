@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en" data-theme="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Kollektiv — mission control</title>
+  <meta name="description" content="Kollektiv: a multi-agent collaborative dev team orchestrator. Projects, agents, connectors and pooled storage — free to run, self-hosted, no telemetry." />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#05060f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- No telemetry, no external CDNs: fonts and icons are system/local. -->
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/favicon.svg" />
+  <link rel="manifest" href="assets/manifest.webmanifest" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div class="kv-grain" aria-hidden="true"></div>
+
+  <div class="kv-shell">
+    <!--
+      Sidebar: primary navigation. The links are hash routes handled by
+      assets/app.js, so the page works from any static host (Cloudflare Pages,
+      GitHub Pages, or the API itself at /ui). Under 900px it slides in from
+      the left; the tab bar at the bottom of the page does the same job with a
+      thumb.
+    -->
+    <aside class="kv-sidebar" id="sidebar">
+      <a class="kv-brand" href="#/overview" aria-label="Kollektiv overview">
+        <img src="assets/favicon.svg" alt="" width="38" height="38" />
+        <span><strong>Kollektiv</strong><span>mission control</span></span>
+      </a>
+
+      <nav class="kv-nav" aria-label="Sections">
+        <a href="#/overview" data-route="overview">Overview</a>
+        <a href="#/projects" data-route="projects">Projects <span class="kv-kbd">g p</span></a>
+        <a href="#/connectors" data-route="connectors">Connectors <span class="kv-kbd">g c</span></a>
+        <a href="#/agents" data-route="agents">Agents &amp; storage <span class="kv-kbd">g a</span></a>
+      </nav>
+
+      <div class="kv-sidebar-foot">
+        <span class="kv-status-dot" id="conn-state" data-state=""><i></i> API</span>
+        <span class="kv-status-dot" id="connectors-state" data-state=""><i></i> Connectors</span>
+        <button class="kv-btn ghost small" id="tour-start" type="button">Show me around</button>
+        <button class="kv-btn ghost small" id="theme-toggle" type="button" title="Toggle light/dark (t)">Theme</button>
+        <!-- Progressive web app: installs as a real window. The button appears
+             only when the browser offers an install prompt; the hint covers
+             iOS Safari, which never fires beforeinstallprompt. -->
+        <button class="kv-btn ghost small" id="install-app" type="button" hidden>Install app</button>
+        <span class="kv-hint" id="install-hint" hidden>On iPhone: Share &rarr; Add to Home Screen</span>
+        <!-- Desktop shell only: which API came with the installer, if any. -->
+        <span class="kv-hint" id="shell-note" hidden></span>
+      </div>
+    </aside>
+
+    <main class="kv-main">
+      <!-- Topbar: API target, global search (command palette), refresh -->
+      <div class="kv-topbar">
+        <button class="kv-icon-btn" id="menu-toggle" type="button" aria-label="Open navigation" aria-controls="sidebar">☰</button>
+        <h1>Mission control <em id="api-label">not connected</em></h1>
+        <div class="kv-spacer"></div>
+
+        <div class="kv-api-field">
+          <label class="kv-hidden" for="api-input">API base URL</label>
+          <input class="kv-input" id="api-input" size="24" placeholder="http://localhost:8000" spellcheck="false" />
+          <button class="kv-btn small" id="api-connect" type="button">Connect</button>
+        </div>
+
+        <button class="kv-search-btn" id="palette-open" type="button" aria-haspopup="dialog">
+          Search or run a command… <span class="kv-kbd">⌘K</span>
+        </button>
+      </div>
+
+      <!-- Health / warnings -->
+      <div id="banner-slot"></div>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Overview                                                          -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="overview">
+        <header>
+          <h2>Overview</h2>
+          <span class="kv-hint">Live subsystem health. Anything degraded names the setting that fixes it.</span>
+          <div class="kv-spacer"></div>
+          <button class="kv-btn ghost small" id="refresh-all" type="button">Refresh</button>
+        </header>
+
+        <div class="kv-grid cols-4">
+          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-cyan)">
+            <div class="kv-spark">◎</div>
+            <div class="kv-label">API</div>
+            <div class="kv-value" id="stat-api">—</div>
+            <div class="kv-sub" id="stat-api-sub">connecting…</div>
+          </div>
+          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-lime)">
+            <div class="kv-spark">▤</div>
+            <div class="kv-label">Storage</div>
+            <div class="kv-value" id="stat-storage">—</div>
+            <div class="kv-sub" id="stat-storage-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-grape)">
+            <div class="kv-spark">◈</div>
+            <div class="kv-label">Agents</div>
+            <div class="kv-value" id="stat-agents">—</div>
+            <div class="kv-sub" id="stat-agents-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-pink)">
+            <div class="kv-spark">✷</div>
+            <div class="kv-label">Brain</div>
+            <div class="kv-value" id="stat-brain">—</div>
+            <div class="kv-sub" id="stat-brain-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-peach)">
+            <div class="kv-spark">⌥</div>
+            <div class="kv-label">GitHub</div>
+            <div class="kv-value" id="stat-github">—</div>
+            <div class="kv-sub" id="stat-github-sub">—</div>
+          </div>
+          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-sky)">
+            <div class="kv-spark">◍</div>
+            <div class="kv-label">Connectors</div>
+            <div class="kv-value" id="stat-connectors">—</div>
+            <div class="kv-sub" id="stat-connectors-sub">—</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Projects                                                          -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="projects">
+        <header>
+          <h2>New project</h2>
+          <span class="kv-hint">A brief becomes a dependency-ordered plan, then parallel work.</span>
+        </header>
+
+        <form class="kv-card kv-stack" id="project-form" style="--kv-tint: var(--kv-accent)">
+          <div class="kv-grid cols-3">
+            <div class="kv-field">
+              <label for="p-name">Name (optional)</label>
+              <input class="kv-input" id="p-name" placeholder="shortener" autocomplete="off" />
+            </div>
+            <div class="kv-field">
+              <label for="p-agents">Agents</label>
+              <select class="kv-select" id="p-agents">
+                <option>1</option><option>2</option><option selected>3</option>
+                <option>4</option><option>6</option><option>8</option>
+              </select>
+            </div>
+            <div class="kv-field">
+              <label for="p-run">After planning</label>
+              <select class="kv-select" id="p-run">
+                <option value="plan">Just plan it</option>
+                <option value="run">Plan and run</option>
+              </select>
+            </div>
+          </div>
+          <div class="kv-field">
+            <label for="p-desc">What should it build?</label>
+            <textarea class="kv-textarea" id="p-desc" rows="3"
+              placeholder="Build a URL shortener: FastAPI service, SQLite storage, CLI and pytest tests"></textarea>
+          </div>
+          <div class="kv-row end">
+            <span class="kv-hint" id="create-status"></span>
+            <button class="kv-btn" type="submit" id="create-btn">Create project ✦</button>
+          </div>
+        </form>
+
+        <header style="margin-top:26px">
+          <h2>Projects</h2>
+          <span class="kv-hint" id="projects-hint">—</span>
+          <div class="kv-spacer"></div>
+          <button class="kv-btn ghost small" id="sync-now" type="button">Run sync now</button>
+        </header>
+
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead>
+              <tr><th>Project</th><th>Status</th><th>Tasks</th><th>Progress</th><th class="kv-nowrap">Actions</th></tr>
+            </thead>
+            <tbody id="projects-body">
+              <tr><td colspan="5"><div class="kv-skel" style="height:16px"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Connectors                                                        -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="connectors">
+        <header>
+          <h2>Connectors</h2>
+          <span class="kv-hint">Services Kollektiv can call. Probing checks reachability without side effects.</span>
+          <div class="kv-spacer"></div>
+          <button class="kv-btn ghost small" id="probe-all" type="button">Probe all</button>
+        </header>
+
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead>
+              <tr><th>Service</th><th>Status</th><th>Actions</th><th class="kv-nowrap">Run</th></tr>
+            </thead>
+            <tbody id="connectors-body">
+              <tr><td colspan="4"><div class="kv-skel" style="height:16px"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <!-- Agents & storage                                                  -->
+      <!-- ---------------------------------------------------------------- -->
+      <section class="kv-section" data-view="agents">
+        <header>
+          <h2>Worker agents</h2>
+          <span class="kv-hint">Pooled endpoints. Each worker is a model you reach with your own API key.</span>
+        </header>
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead><tr><th>Agent</th><th>Status</th><th>Done</th><th>Failures</th><th>Last error</th></tr></thead>
+            <tbody id="agents-body"><tr><td colspan="5" class="kv-muted">—</td></tr></tbody>
+          </table>
+        </div>
+
+        <header style="margin-top:26px">
+          <h2>Shared drive</h2>
+          <span class="kv-hint">One logical drive: R2 buckets or TeraBox accounts pooled, routed by free space.</span>
+        </header>
+        <div class="kv-table-wrap">
+          <table class="kv-table">
+            <thead><tr><th>Account</th><th>Healthy</th><th>Used</th><th>Free</th><th>Bucket</th></tr></thead>
+            <tbody id="storage-body"><tr><td colspan="5" class="kv-muted">—</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="kv-section">
+        <p class="kv-hint">
+          Kollektiv is MIT licensed · <a href="https://github.com/HackerxBots/Kollektiv" rel="noreferrer">source</a> ·
+          docs at <span class="kv-mono">/docs</span> · deploy this folder free on Cloudflare Pages.
+          <br />
+          <strong>No telemetry, no analytics, no tracking</strong> — this page talks only to your API; nothing is
+          collected, sold or phoned home.
+        </p>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Mobile navigation: thumb-sized, bottom, glass -->
+  <nav class="kv-tabbar" aria-label="Sections">
+    <a href="#/overview" data-route="overview"><i>◎</i>Overview</a>
+    <a href="#/projects" data-route="projects"><i>▤</i>Projects</a>
+    <a href="#/connectors" data-route="connectors"><i>◍</i>Connect</a>
+    <a href="#/agents" data-route="agents"><i>◈</i>Agents</a>
+  </nav>
+
+  <!-- Project detail drawer (opened from the projects table) -->
+  <div class="kv-scrim" id="drawer-scrim" data-open="false"></div>
+  <aside class="kv-drawer" id="drawer" data-open="false" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <header>
+      <h3 id="drawer-title">Project</h3>
+      <span class="kv-pill info" id="drawer-status" data-tip="Live status">—</span>
+      <div class="kv-spacer"></div>
+      <span class="kv-status-dot" id="drawer-live" data-state="" data-tip="Live stream (SSE)"><i></i></span>
+      <button class="kv-btn ghost small" id="drawer-run" type="button">Run</button>
+      <button class="kv-btn ghost small" id="drawer-replan" type="button">Replan</button>
+      <button class="kv-btn ghost small" id="drawer-handoff" type="button">Handoff</button>
+      <button class="kv-btn ghost small icon" id="drawer-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <div class="kv-drawer-body" id="drawer-body">
+      <div class="kv-skel" style="height:80px"></div>
+    </div>
+  </aside>
+
+  <!-- Command palette -->
+  <div class="kv-palette" id="palette" hidden role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="kv-palette-scrim" data-close-palette></div>
+    <div class="kv-palette-box">
+      <input id="palette-input" placeholder="Type a command or project…" autocomplete="off" spellcheck="false" />
+      <div class="kv-palette-list" id="palette-list" role="listbox"></div>
+      <div class="kv-palette-foot">
+        <span><span class="kv-kbd">↑</span> <span class="kv-kbd">↓</span> navigate</span>
+        <span><span class="kv-kbd">↵</span> run</span>
+        <span><span class="kv-kbd">esc</span> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation dialog for dangerous connector actions -->
+  <dialog class="kv-dialog" id="confirm-dialog">
+    <h3 id="confirm-title">Confirm</h3>
+    <p class="kv-soft" id="confirm-message"></p>
+    <div class="kv-row end">
+      <button class="kv-btn ghost" id="confirm-cancel" type="button">Cancel</button>
+      <button class="kv-btn danger" id="confirm-ok" type="button">Run it</button>
+    </div>
+  </dialog>
+
+  <!-- First-run onboarding: three steps, skippable, remembered locally -->
+  <div class="kv-onboard" id="onboard" hidden role="dialog" aria-modal="true" aria-labelledby="onboard-title">
+    <div class="kv-onboard-card">
+      <div class="kv-onboard-art" aria-hidden="true"></div>
+
+      <div class="kv-onboard-step" data-step="1" data-active="true">
+        <h2 id="onboard-title">Welcome to Kollektiv</h2>
+        <p>Describe what you want to build. Kollektiv plans it into dependency-ordered tasks, then runs
+          them across as many free worker accounts as you have — in parallel, with shared state.</p>
+        <ul class="kv-onboard-list">
+          <li><span class="kv-onboard-ico">✦</span><span><strong>Plan, then parallel work.</strong> One brief becomes
+            a wave of tasks an agent pool picks up.</span></li>
+          <li><span class="kv-onboard-ico">◈</span><span><strong>Nothing lost between sessions.</strong> Every run
+            leaves a handoff: what is done, what is next, what blocks it.</span></li>
+          <li><span class="kv-onboard-ico">◍</span><span><strong>Your tools.</strong> Gmail, Calendar, Drive, Notion,
+            GitHub and any REST API become callable from the dashboard or MCP.</span></li>
+        </ul>
+      </div>
+
+      <div class="kv-onboard-step" data-step="2">
+        <h2>Point it at your API</h2>
+        <p>This page is static and talks to exactly one origin — yours. Paste the API base URL (the default is
+          <span class="kv-mono">http://localhost:8000</span>, or the same host when this is served from
+          <span class="kv-mono">/ui</span>).</p>
+        <div class="kv-field">
+          <label for="onboard-api">API base URL</label>
+          <input class="kv-input" id="onboard-api" placeholder="http://localhost:8000" spellcheck="false" />
+        </div>
+        <p class="kv-hint" style="margin-top:12px">No telemetry, no analytics: the only requests this page makes
+          are to that address.</p>
+      </div>
+
+      <div class="kv-onboard-step" data-step="3">
+        <h2>Keyboard first</h2>
+        <p>Everything is reachable without the mouse, and a few shortcuts are worth learning on day one.</p>
+        <ul class="kv-onboard-list">
+          <li><span class="kv-onboard-ico">⌘</span><span><span class="kv-kbd">⌘K</span> / <span class="kv-kbd">Ctrl K</span>
+            command palette — jump to a view or run a project.</span></li>
+          <li><span class="kv-onboard-ico">g</span><span><span class="kv-kbd">g</span> then <span class="kv-kbd">p</span>,
+            <span class="kv-kbd">c</span> or <span class="kv-kbd">a</span> — go to a section.</span></li>
+          <li><span class="kv-onboard-ico">t</span><span><span class="kv-kbd">t</span> theme, <span class="kv-kbd">r</span>
+            refresh, <span class="kv-kbd">esc</span> close.</span></li>
+        </ul>
+      </div>
+
+      <div class="kv-row">
+        <div class="kv-onboard-dots" aria-hidden="true">
+          <span class="kv-onboard-dot" data-dot="1" data-active="true"></span>
+          <span class="kv-onboard-dot" data-dot="2"></span>
+          <span class="kv-onboard-dot" data-dot="3"></span>
+        </div>
+        <div class="kv-spacer"></div>
+        <button class="kv-btn ghost small" id="onboard-skip" type="button">Skip</button>
+        <button class="kv-btn ghost small" id="onboard-back" type="button">Back</button>
+        <button class="kv-btn" id="onboard-next" type="button">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="kv-toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+  <script type="module" src="assets/app.js"></script>
+</body>
+</html>

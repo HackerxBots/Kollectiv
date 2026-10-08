@@ -1,0 +1,120 @@
+name: Release
+
+# Publishing a v* tag cuts a release: build the sdist/wheel, check that the
+# changelog documents the version, then create the GitHub release with notes
+# taken from CHANGELOG.md and the artifacts attached.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)release, e.g. v0.2.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, pathlib, re
+
+          text = pathlib.Path("pyproject.toml").read_text()
+          version = re.search(r'^version = "([^"]+)"', text, re.M).group(1)
+          # On a tag push the tag IS the release name; on workflow_dispatch the
+          # caller supplies it; otherwise fall back to v<version>.
+          if os.environ.get("REF_TYPE") == "tag":
+              tag = os.environ["REF_NAME"]
+          else:
+              tag = os.environ.get("INPUT_TAG") or f"v{version}"
+          print(f"version={version}")
+          print(f"tag={tag}")
+          print(f"sha={os.environ.get('GITHUB_SHA', '')}")
+          PY
+          echo "Resolved ${{ steps.version.outputs.tag }} (${{ steps.version.outputs.sha }})"
+
+      - name: Verify the tag matches the packaged version
+        # v0.3.0 and the beta tags v0.3.0-beta.1 / -beta.2 / -rc.1 all map to 0.3.0.
+        run: |
+          case "${{ steps.version.outputs.tag }}" in
+            "v${{ steps.version.outputs.version }}"|"v${{ steps.version.outputs.version }}-"*)
+              echo "tag is consistent with the packaged version";;
+            *) echo "tag/version mismatch"; exit 1;;
+          esac
+
+      - name: Verify the changelog documents this version
+        run: |
+          grep -q "## \[${{ steps.version.outputs.version }}\]" CHANGELOG.md \
+            || { echo "CHANGELOG.md has no section for ${{ steps.version.outputs.version }}"; exit 1; }
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Extract release notes from the changelog
+        run: |
+          python - "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.tag }}" <<'PY'
+          import os, pathlib, re, sys
+
+          version, tag = sys.argv[1], sys.argv[2]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pattern = re.compile(rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|\Z)", re.M | re.S)
+          match = pattern.search(text)
+          body = match.group(1).strip() if match else ""
+          repo = os.environ.get("GITHUB_REPOSITORY", "HackerxBots/Kollektiv")
+          server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+          policy = f"{server}/{repo}/blob/main/docs/operations.md#releases-versioning-and-the-readme"
+          beta = (
+              "\n> **Beta release.** Interfaces and configuration may still change between\n"
+              f"> beta tags; see the [release policy]({policy}).\n"
+          )
+          header = f"## Kollektiv {tag}\n{beta}\n"
+          extra = (
+              "\n\n---\n\n"
+              "**Install**\n\n```bash\npip install kollektiv\n# or from source\n"
+              "pip install \"kollektiv[postgres]\"\n```\n\n"
+              "Artifacts below: sdist + wheel. See the README for the free-tier setup "
+              "and `CHANGELOG.md` for the full history.\n"
+          )
+          pathlib.Path("release-notes.md").write_text(header + body + extra, encoding="utf-8")
+          PY
+          cat release-notes.md
+
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          # Pin a newly created tag to the commit being built instead of
+          # letting the action default to the base branch.
+          target_commitish: ${{ steps.version.outputs.sha }}
+          fail_on_unmatched_files: true
+          name: Kollektiv ${{ steps.version.outputs.tag }}
+          body_path: release-notes.md
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          # Tags stay beta (`v0.4.0-beta.1`) and the notes say so, but the
+          # release is not a GitHub "pre-release": pre-releases are skipped by
+          # the sidebar's "Latest" widget, and we want people to find them.
+          prerelease: false

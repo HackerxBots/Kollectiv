@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Needed so the failure report can be posted back onto the pull request.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        # Tests are included on purpose: a test that references an attribute the
+        # code no longer has is rot, and mypy is the cheapest place to catch it.
+        run: mypy src config examples scripts tests sidecar
+
+      - name: Tests
+        run: pytest -q --junitxml=pytest-report.xml -rf
+        env:
+          # Tests are hermetic; these keep any accidental retry fast.
+          KOLLEKTIV_RETRY_BASE_DELAY: "0.01"
+          KOLLEKTIV_RETRY_MAX_DELAY: "0.05"
+
+      - name: Summarise failures on the runner
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import pathlib, xml.etree.ElementTree as ET
+          path = pathlib.Path("pytest-report.xml")
+          if not path.exists():
+              print("no pytest report was produced")
+              raise SystemExit(0)
+          root = ET.parse(path).getroot()
+          failures = [case for case in root.iter("testcase")
+                      if case.find("failure") is not None or case.find("error") is not None]
+          print(f"### {len(failures)} failing test(s)")
+          for case in failures[:25]:
+              node = case.find("failure") if case.find("failure") is not None else case.find("error")
+              message = (node.get("message") or "").strip().splitlines()[:1]
+              print(f"- `{case.get('classname')}.{case.get('name')}` — {message}")
+          PY
+
+      - name: Comment the failures on the pull request
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          path = pathlib.Path("pytest-report.xml")
+          lines = ["### CI test failures", ""]
+          if path.exists():
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  node = case.find("failure") if case.find("failure") is not None else case.find("error")
+                  if node is None:
+                      continue
+                  detail = "\n".join((node.text or "").strip().splitlines()[-12:])
+                  lines += [f"<details><summary><code>{case.get('classname')}.{case.get('name')}</code></summary>",
+                            "", "```", detail, "```", "</details>", ""]
+          else:
+              lines.append("No pytest report was produced (collection error or install failure).")
+          pathlib.Path("/tmp/ci-report.md").write_text("\n".join(lines)[:60000])
+          PY
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file /tmp/ci-report.md
+
+      - name: Upload the pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-${{ matrix.python-version }}
+          path: pytest-report.xml
+          if-no-files-found: ignore
+
+      - name: Verify the dashboard is self-contained
+        run: |
+          test -f web/index.html
+          ! grep -q '<script src=' web/index.html
+
+  package:
+    name: Build the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Install the wheel and prove it works
+        # This step is the guard against "works editable, broken installed":
+        # a missing subpackage or a dashboard that stayed behind is only visible
+        # in a real install, so nothing here is allowed to fail silently.
+        run: |
+          python -m venv /tmp/wheel-test
+          /tmp/wheel-test/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/wheel-test/bin/python - <<'PY'
+          import pathlib
+          import web
+          from src.api.mcp_server import create_server
+          from src.api.routes import create_app
+
+          app = create_app()
+          mounted = {getattr(route, "path", None) for route in app.routes}
+          assert "/ui" in mounted, f"/ui is not mounted: {mounted}"
+
+          # ``web`` is a PEP 420 namespace package (a static site has no
+          # __init__.py), so its location comes from __path__, not __file__.
+          dashboard = pathlib.Path(next(iter(web.__path__))) / "index.html"
+          assert dashboard.is_file(), f"the wheel has no dashboard: {dashboard}"
+
+          server = create_server()
+          assert server is not None
+          print("wheel install OK: API app, MCP server and dashboard all import")
+          PY
+          /tmp/wheel-test/bin/kollektiv --help > /dev/null
+          /tmp/wheel-test/bin/kollektiv check --json | head -c 300
+
+      - name: Smoke-test the installed API
+        # The full deployment path in one job: start the *installed* server on a
+        # port, wait for /health, then run the same scripts/smoke.py an operator
+        # runs after a deploy. Ten checks, and it must exit 0.
+        run: |
+          /tmp/wheel-test/bin/python -m uvicorn src.api.routes:app \
+              --host 127.0.0.1 --port 8123 --log-level warning &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8123/health > /dev/null; then break; fi
+            sleep 2
+          done
+          python -m pip install --quiet httpx
+          python scripts/smoke.py --base-url http://127.0.0.1:8123

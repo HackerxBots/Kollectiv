@@ -1,0 +1,54 @@
+{
+  "name": "Kollektiv \u2014 mission control",
+  "short_name": "Kollektiv",
+  "id": "./index.html",
+  "description": "Dashboard for a self-hosted multi-agent dev-team orchestrator. No telemetry, no accounts: it talks only to the API you point it at.",
+  "start_url": "./index.html#/overview",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "background_color": "#05060f",
+  "theme_color": "#05060f",
+  "categories": [
+    "developer",
+    "productivity"
+  ],
+  "shortcuts": [
+    {
+      "name": "Overview",
+      "short_name": "Overview",
+      "url": "./index.html#/overview"
+    },
+    {
+      "name": "Projects",
+      "short_name": "Projects",
+      "url": "./index.html#/projects"
+    },
+    {
+      "name": "Connectors",
+      "short_name": "Connectors",
+      "url": "./index.html#/connectors"
+    }
+  ],
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

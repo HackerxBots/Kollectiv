@@ -1,0 +1,111 @@
+# Kollektiv: the HTTP API and the MCP tool server share one SQLite volume and
+# one workspace so both processes see the same projects, files and events.
+#
+#   cp .env.example .env   # fill in credentials first
+#   docker compose up --build
+#
+# API  -> http://localhost:8000/docs
+# MCP  -> http://localhost:8001/sse  (SSE transport for remote MCP clients)
+#
+# Free stack: Cloudflare R2 (storage), Neon (database), Clerk (auth) and Resend
+# (email) are all configured through .env and need no extra service here.
+# Prefer to keep everything on your own box instead? Run the optional
+# `local-postgres` profile: docker compose --profile local-postgres up --build
+# and set DATABASE_URL=postgresql+psycopg://kollektiv:kollektiv@postgres:5432/kollektiv
+# (the image then needs the postgres extra: KOLLEKTIV_EXTRAS=postgres).
+
+name: kollektiv
+
+x-kollektiv-env: &kollektiv-env
+  # Secrets come from .env; anything unset keeps the image defaults, and the
+  # app degrades gracefully (see `kollektiv check` / GET /health).
+  env_file:
+    - .env
+  environment:
+    ENVIRONMENT: ${ENVIRONMENT:-production}
+    DATABASE_URL: sqlite:////app/data/kollektiv.db
+    WORKSPACE_DIR: /app/data/workspace
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  volumes:
+    - kollektiv-data:/app/data
+  restart: unless-stopped
+
+services:
+  kollektiv-api:
+    container_name: kollektiv-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kollektiv:latest
+    command:
+      - python
+      - -m
+      - uvicorn
+      - src.api.routes:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    <<: *kollektiv-env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  kollektiv-mcp:
+    container_name: kollektiv-mcp
+    image: kollektiv:latest
+    depends_on:
+      kollektiv-api:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - src.api.mcp_server
+      - --transport
+      - sse
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    ports:
+      - "${MCP_PORT:-8001}:8001"
+    <<: *kollektiv-env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8001), timeout=5).close()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  # Optional self-hosted Postgres, for a fully offline deployment. Enable with
+  # `docker compose --profile local-postgres up`; the API keeps using SQLite
+  # unless you point DATABASE_URL at it.
+  postgres:
+    container_name: kollektiv-postgres
+    image: postgres:16-alpine
+    profiles: ["local-postgres"]
+    environment:
+      POSTGRES_USER: kollektiv
+      POSTGRES_PASSWORD: kollektiv
+      POSTGRES_DB: kollektiv
+    volumes:
+      - kollektiv-pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kollektiv"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  kollektiv-data:
+    driver: local
+  kollektiv-pgdata:
+    driver: local

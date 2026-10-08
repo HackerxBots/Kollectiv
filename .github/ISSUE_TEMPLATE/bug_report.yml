@@ -1,0 +1,64 @@
+name: Bug report
+description: Something did not work the way the documentation says it should.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please **do not paste secrets** (tokens, keys,
+        webhook URLs) — replace them with `***`.
+
+        Security problems go through [SECURITY.md](../blob/main/SECURITY.md),
+        never a public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. `kollektiv login --provider ...`
+        2. `kollektiv run "..."`
+        3. see error in ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Run `kollektiv check --json` and paste the result (it redacts secrets).
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: With `LOG_LEVEL=DEBUG` if you can. Secrets are masked automatically — check before pasting.
+      render: shell
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - CLI
+        - HTTP API
+        - MCP server
+        - Dashboard
+        - Storage (R2 / TeraBox)
+        - Connectors
+        - Agents / worker pool
+        - GitHub sync
+        - Docs
+        - Other
+    validations:
+      required: true
