@@ -17,7 +17,7 @@ the list below is a menu, not a dependency.
 | --- | --- |
 | What is a "worker"? | One entry in `ARENA_ACCOUNTS`: a provider, a model, and a key you stored with `kollektiv login`. The pool runs several in parallel. |
 | What is a "runtime"? | The program behind that worker: a hosted API, a local model, or a whole CLI agent behind a small HTTP shim. |
-| Default | Your own Arena.ai account (the original plan), a hosted provider you have a key for, or a **local model** (Ollama, LM Studio) that needs no key and no internet. |
+| Default | `kollektiv login` defaults to your own Arena.ai account (the original plan). Free alternatives: a free-tier key (Groq) or a **local model** (Ollama, LM Studio), which needs no key and no internet. |
 | Optional | Groq, DeepSeek, OpenRouter, Gemini, Mistral, Together, or a CLI agent (Aider, OpenHands, ...) — see the menu. |
 
 ```bash

@@ -11,7 +11,7 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 | # | Suggestion | Verdict | Notes |
 | --- | --- | --- | --- |
 | 1 | Rename `ARENA_*` → `WORKER_*` | ❌ | Rejected: the variables keep the `ARENA_` prefix. The provider behind each worker is chosen per entry (`provider`), not by the name. |
-| 2 | `kollektiv login --provider …` presets | 🚀 | Shipped: bring your own key. Keys are stored encrypted per worker; DeepSeek, Groq, OpenRouter, OpenAI, Gemini, Mistral, Together, Ollama and LM Studio are presets, `arena` is a session worker on your own Arena.ai account (restored at the owner's request), and `custom` takes any OpenAI-compatible URL. Arena and bring-your-own-key both stay; the login default is still open. |
+| 2 | `kollektiv login --provider …` presets | 🚀 | Shipped: bring your own key. Keys are stored encrypted per worker; DeepSeek, Groq, OpenRouter, OpenAI, Gemini, Mistral, Together, Ollama and LM Studio are presets, `arena` is a session worker on your own Arena.ai account (restored at the owner's request), and `custom` takes any OpenAI-compatible URL. Arena and bring-your-own-key both stay. The login default is `arena`, as the owner asked. |
 | 3 | Role-based model routing (cheap planner, stronger reviewer) | ✅ | Issue #2. |
 | 4 | Per-run budget caps (tokens/cost) with abort + alert | 🟡 | Explained below; waiting on a decision. |
 | 5 | Per-project `.kollektiv.yml` (agents, models, protected paths) | 🟡 | Explained below; waiting on a decision. |

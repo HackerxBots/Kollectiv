@@ -616,7 +616,7 @@ async def cmd_accounts(args: argparse.Namespace) -> int:
     print("Workers (ARENA_ACCOUNTS)")
     print("========================")
     if not workers:
-        print("  none — run `kollektiv login --provider deepseek` (or any provider in docs/byok.md)")
+        print("  none — run `kollektiv login` (Arena.ai, your own account) or `kollektiv login --provider groq` (free-tier key)")
     for worker in workers:
         print(f"  {worker['name'] or '(unnamed)':<14} {worker['provider']:<12} {worker['account_id']:<14} {worker['state']}")
     attention = [worker["name"] or worker["account_id"] for worker in workers if worker["state"] in ATTENTION_STATES]
@@ -1515,7 +1515,7 @@ def build_parser() -> argparse.ArgumentParser:
     call.add_argument("--params", default="{}", help="JSON object of parameters")
     call.add_argument("--confirm", action="store_true", help="Allow dangerous actions")
     login = sub.add_parser("login", help="Register a worker on your own API key (BYOK)")
-    login.add_argument("--provider", default="deepseek", help=f"One of: {', '.join(sorted(PROVIDER_PRESETS))}")
+    login.add_argument("--provider", default="arena", help=f"One of: {', '.join(sorted(PROVIDER_PRESETS))}")
     login.add_argument("--name", default="", help="Display name for the worker (default: the provider)")
     login.add_argument("--account", default="", help="Stable id for the stored key (default: from --name)")
     login.add_argument("--token", default="", help="API key, or an Arena session token (otherwise prompted; KOLLEKTIV_TOKEN also works)")
@@ -1527,7 +1527,7 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--env-file", default=".env", help="Env file that receives the ARENA_ACCOUNTS entry")
     login.add_argument("--json", action="store_true", help="Machine-readable report")
     logout = sub.add_parser("logout", help="Remove a worker's stored key and its ARENA_ACCOUNTS entry")
-    logout.add_argument("--provider", default="deepseek", help="Provider of the worker to remove")
+    logout.add_argument("--provider", default="arena", help="Provider of the worker to remove")
     logout.add_argument("--account", default="", help="Account id of the worker (default: the provider name)")
     logout.add_argument("--env-file", default=".env", help="Env file that holds ARENA_ACCOUNTS")
     accounts = sub.add_parser("accounts", help="List registered workers and stored keys (masked)")
