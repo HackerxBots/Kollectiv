@@ -218,6 +218,9 @@
           <h2>Worker agents</h2>
           <span class="kv-hint">Pooled endpoints. Each worker is a model you reach with your own API key.</span>
         </header>
+        <div class="kv-health" id="health-bar" aria-live="polite">
+          <span class="kv-muted">Checking worker health…</span>
+        </div>
         <div class="kv-table-wrap">
           <table class="kv-table">
             <thead><tr><th>Agent</th><th>Status</th><th>Done</th><th>Failures</th><th>Last error</th></tr></thead>

@@ -1067,3 +1067,14 @@ a:hover { color: var(--kv-text); }
   body::before, body::after, .kv-grain, .kv-sidebar, .kv-tabbar, .kv-toasts { display: none !important; }
   .kv-card { border-color: #ccc; box-shadow: none; }
 }
+
+/* Worker health bar (agents view) */
+.kv-health { display: grid; gap: 12px; margin: 0 0 18px; }
+.kv-health-summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.kv-health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.kv-health-worker { display: grid; gap: 8px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--kv-accent-2) 25%, transparent); background: color-mix(in srgb, var(--kv-accent-2) 6%, transparent); }
+.kv-health-worker[data-state="needs_key"], .kv-health-worker[data-state="needs_login"], .kv-health-worker[data-state="session_expired"], .kv-health-worker[data-state="degraded"] { border-color: color-mix(in srgb, var(--kv-bad) 50%, transparent); }
+.kv-health-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; min-width: 0; }
+.kv-health-track { height: 6px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--kv-accent-2) 15%, transparent); }
+.kv-health-fill { height: 100%; width: 0; border-radius: inherit; background: var(--kv-accent-2); transition: width 0.4s ease; }
+@media (prefers-reduced-motion: reduce) { .kv-health-fill { transition: none; } }

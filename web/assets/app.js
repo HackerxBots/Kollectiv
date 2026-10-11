@@ -47,6 +47,7 @@ const store = {
   projects: [],
   connectors: [],
   agents: [],
+  agentHealth: null,
   storage: null,
   openProject: null,
   stream: null,
@@ -251,7 +252,65 @@ function renderConnectors() {
   }).join("");
 }
 
+const HEALTH_TONE = { ready: "ok", busy: "info", cooling_down: "warn" };
+const HEALTH_LABEL = {
+  ready: "ready",
+  busy: "busy",
+  cooling_down: "cooling down",
+  needs_key: "needs key",
+  needs_login: "needs login",
+  session_expired: "session expired",
+  degraded: "degraded",
+};
+
+// Summary line and one card per worker: state, share of the work, and a warning
+// when one worker carries most of it. Built from /agents/health only: no keys,
+// tokens or provider calls are involved.
+function renderHealthBar() {
+  const bar = $("#health-bar");
+  if (!bar) return;
+  const health = store.agentHealth;
+  if (!health) {
+    bar.innerHTML = '<span class="kv-muted">Worker health is unavailable right now.</span>';
+    return;
+  }
+  if (!health.count) {
+    bar.innerHTML = '<span class="kv-muted">No workers yet. Add one with <code class="kv-mono">kollektiv login</code>.</span>';
+    return;
+  }
+  const workers = health.agents || [];
+  const attention = health.needs_attention || [];
+  const hot = health.count > 1 && health.tasks_done >= 5
+    ? workers.filter((agent) => agent.load_share > 0.6)
+    : [];
+  const summary = [
+    attention.length
+      ? `<span class="kv-pill bad">${attention.length} need${attention.length === 1 ? "s" : ""} attention</span> <span class="kv-muted">${esc(attention.join(", "))}</span>`
+      : `<span class="kv-pill ok">no action needed</span>`,
+    hot.length
+      ? `<span class="kv-pill warn">${esc(hot.map((a) => a.name || a.account_id).join(", "))} carries most of the load</span>`
+      : "",
+  ].join(" ");
+  const cards = workers.map((agent) => {
+    const state = agent.state || "unknown";
+    const share = Math.round((agent.load_share || 0) * 100);
+    return `<div class="kv-health-worker" data-state="${esc(state)}">
+        <div class="kv-health-head"><strong>${esc(agent.name || agent.account_id)}</strong>
+          ${pill(HEALTH_LABEL[state] || state, { tone: HEALTH_TONE[state] || "bad", tip: `State: ${state}` })}</div>
+        <div class="kv-muted kv-mono">${esc(agent.provider || "")} · ${num(agent.tasks_done ?? 0)} done · ${share}% of load</div>
+        <div class="kv-health-track" role="img" aria-label="${share}% of the load"><div class="kv-health-fill"></div></div>
+      </div>`;
+  }).join("");
+  bar.innerHTML = `<div class="kv-health-summary">${summary}</div><div class="kv-health-grid">${cards}</div>`;
+  // Widths are set through the CSSOM, which the stylesheet CSP allows (inline style attributes are not).
+  const fills = bar.querySelectorAll(".kv-health-fill");
+  workers.forEach((agent, index) => {
+    if (fills[index]) fills[index].style.width = `${Math.round((agent.load_share || 0) * 100)}%`;
+  });
+}
+
 function renderAgentsAndStorage() {
+  renderHealthBar();
   const agentsBody = $("#agents-body");
   const agents = store.agents || [];
   agentsBody.innerHTML = agents.length
@@ -395,6 +454,10 @@ async function loadAgentsAndStorage() {
     const agents = await api("/agents/status");
     store.set({ agents: agents.agents || [] });
   } catch { /* report via the stat card */ }
+  try {
+    const health = await api("/agents/health");
+    store.set({ agentHealth: health });
+  } catch { /* the bar says it could not load */ }
   try {
     const storage = await api("/storage/status");
     store.set({ storage });

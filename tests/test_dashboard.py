@@ -258,3 +258,17 @@ def test_dashboard_documents_the_api_base() -> None:
     assert "authorization" in source.lower(), "send the Clerk/bearer token when present"
     assert 'location.pathname.startsWith("/ui")' in source, "detect same-origin hosting under /ui"
     assert '"/auth/me"' not in source, "the dashboard only calls documented endpoints"
+
+
+def test_dashboard_shows_the_worker_health_bar() -> None:
+    """The agents view has a health bar fed by /agents/health, with no inline styles."""
+    html = _read("index.html")
+    js = _read("assets/app.js")
+    css = _read("assets/styles.css")
+    assert 'id="health-bar"' in html, "the agents view needs a health bar container"
+    assert '"/agents/health"' in js, "the bar should read the health endpoint"
+    assert re.search(r"function renderHealthBar\(", js), "renderHealthBar should exist"
+    assert ".kv-health-fill" in css, "the load bar needs its style"
+    # The CSP is style-src 'self': widths must be set through the CSSOM, not style attributes.
+    block = js[js.index("const HEALTH_TONE"): js.index("function renderAgentsAndStorage")]
+    assert 'style="' not in block, "the health bar must not use inline style attributes"
