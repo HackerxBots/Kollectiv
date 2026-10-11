@@ -873,6 +873,10 @@ class Orchestrator:
         """Return the agent pool status."""
         return await self.agent_pool.get_pool_status(probe=probe)
 
+    async def get_agents_health(self) -> Dict[str, Any]:
+        """Return the health panel for every worker (states, cooldowns, load share)."""
+        return self.agent_pool.health()
+
     async def get_storage_status(self) -> Dict[str, Any]:
         """Return the TeraBox pool quota summary."""
         try:

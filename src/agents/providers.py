@@ -15,6 +15,11 @@ Two kinds of entry:
     A model you run yourself (Ollama, LM Studio). No key and no internet are
     needed for the model itself; the endpoint is on your machine.
 
+``session``
+    Arena.ai, on your own account. You log in once with your e-mail and password
+    (sent to the login endpoint, never stored) or paste a session token from your
+    browser. The session is stored encrypted, and it expires. Kollectiv does not
+    drive a browser and does not get past verification or rate limits.
 ``custom`` is any other OpenAI-compatible endpoint you point at with ``base_url``.
 
 Model names change faster than endpoints. Every value here can be overridden per
@@ -102,6 +107,14 @@ PROVIDER_PRESETS: Dict[str, Dict[str, str]] = {
         "kind": "local",
         "env": "",
         "hint": "start the local server in LM Studio; no key is needed",
+    },
+    "arena": {
+        "label": "Arena.ai (your own account, session login)",
+        "base_url": "",
+        "model": "",
+        "kind": "session",
+        "env": "",
+        "hint": "your Arena e-mail and password (used once, never stored), or a session token copied from your browser",
     },
     "custom": {
         "label": "Any OpenAI-compatible endpoint",

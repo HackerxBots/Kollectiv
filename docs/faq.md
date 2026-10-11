@@ -51,7 +51,8 @@ optional free dashboard on Pages. Nothing calls home, no feature is gated and
 every hosted free tier in the docs can be replaced by something you run
 yourself (see [Self-hosting checklist](deployment.md#self-hosting-checklist)).
 
-**Which models can the workers use?** Any you hold a key for. Each worker is one
+**Which models can the workers use?** Any you hold a key for, or your own Arena.ai
+account (`provider: arena`, logged in with `kollektiv login`). Each worker is one
 provider, model and key: DeepSeek, Groq, OpenRouter, OpenAI, Gemini, Mistral,
 Together, a local Ollama or LM Studio server, or any OpenAI-compatible endpoint
 (`provider: custom`). A shim around a CLI agent (OpenHands, Aider, OpenCode, Goose,

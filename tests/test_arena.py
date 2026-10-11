@@ -7,6 +7,7 @@ the encrypted token store; none of them ever travels anywhere but the provider.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, List, cast
 
 import httpx
@@ -57,8 +58,9 @@ def test_provider_presets_cover_hosted_and_local_options() -> None:
 def test_resolve_provider_is_case_insensitive_and_strict() -> None:
     """Unknown names fail with the full list of choices."""
     assert resolve_provider("DeepSeek")["label"] == "DeepSeek"
+    assert resolve_provider("Arena")["kind"] == "session"
     with pytest.raises(ConfigurationError) as excinfo:
-        resolve_provider("arena")
+        resolve_provider("nope")
     assert "deepseek" in str(excinfo.value)
 
 
@@ -467,3 +469,160 @@ async def test_session_manager_ensure_ready_sessions(db_engine: Any) -> None:
         assert calls["reset"] >= 1
     finally:
         await manager.stop()
+
+
+# ----------------------------------------------------------------------
+# Arena session workers (provider "arena") and the health panel
+# ----------------------------------------------------------------------
+async def test_arena_login_keeps_an_encrypted_session_and_never_the_password(settings: Any, db_engine: Any) -> None:
+    """Login posts e-mail and password once; the session is stored encrypted, the password is not."""
+    seen: List[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"session_token": "sess-ARENA-SECRET", "expires_in": 3600})
+
+    store = TokenStore(settings.fernet_secret, engine=db_engine)
+    agent = ArenaClient(
+        {"name": "Nova", "provider": "arena", "account_id": "nova"},
+        settings=settings,
+        token_store=store,
+        client=mock_client(handler),
+    )
+    assert await agent.login("me@example.com", "pw-PRIVATE-1") == "sess-ARENA-SECRET"
+    assert seen[0].url.path == "/api/auth/login"
+    assert json.loads(seen[0].content) == {"email": "me@example.com", "password": "pw-PRIVATE-1"}
+    stored = store.get_token("arena", "nova")
+    assert stored["api_key"] == "sess-ARENA-SECRET" and stored["expires_at"] > time.time()
+    assert "pw-PRIVATE-1" not in str(stored)
+    with db_engine.connect() as connection:
+        raw = connection.exec_driver_sql("SELECT payload FROM token_records").fetchall()
+    assert raw and "sess-ARENA-SECRET" not in str(raw) and "pw-PRIVATE-1" not in str(raw)
+
+
+async def test_login_retries_a_flaky_server_but_not_a_rejected_password(settings: Any, db_engine: Any, monkeypatch: Any) -> None:
+    """Two 503s then a token: the login succeeds. A 401 is reported once, not retried."""
+    monkeypatch.setenv("KOLLEKTIV_RETRY_BASE_DELAY", "0")
+    monkeypatch.setenv("KOLLEKTIV_RETRY_MAX_DELAY", "0")
+    store = TokenStore(settings.fernet_secret, engine=db_engine)
+    calls: List[int] = []
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) < 3:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, json={"token": "sess-after-retry"})
+
+    agent = ArenaClient({"name": "Nova", "provider": "arena", "account_id": "nova"}, settings=settings,
+                        token_store=store, client=mock_client(flaky))
+    assert await agent.login("a@example.com", "pw") == "sess-after-retry"
+    assert len(calls) == 3
+
+    calls.clear()
+
+    def rejected(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(401, text="no")
+
+    agent = ArenaClient({"name": "Nova", "provider": "arena", "account_id": "nova"}, settings=settings,
+                        token_store=store, client=mock_client(rejected))
+    with pytest.raises(AuthenticationError, match="Check the e-mail and password"):
+        await agent.login("a@example.com", "wrong")
+    assert len(calls) == 1
+
+
+async def test_a_missing_login_route_is_explained(settings: Any, db_engine: Any) -> None:
+    """404 on the login route says which setting to change, and the worker stays logged out."""
+    agent = ArenaClient(
+        {"name": "Nova", "provider": "arena", "account_id": "nova"},
+        settings=settings,
+        token_store=TokenStore(settings.fernet_secret, engine=db_engine),
+        client=mock_client(lambda request: httpx.Response(404)),
+    )
+    with pytest.raises(AuthenticationError, match="does not exist"):
+        await agent.login("a@example.com", "pw")
+    assert agent.health_state() == "needs_login"
+
+
+async def test_session_worker_sends_the_agent_envelope_with_its_session(settings: Any, db_engine: Any) -> None:
+    """A logged-in Arena worker posts the agent envelope to ARENA_CHAT_PATH with its session."""
+    seen: List[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"text": "built the parser"})
+
+    agent = ArenaClient(
+        {"name": "Nova", "provider": "arena", "account_id": "nova", "base_url": "https://arena.example.com"},
+        settings=settings,
+        token_store=TokenStore(settings.fernet_secret, engine=db_engine),
+        client=mock_client(handler),
+    )
+    agent.store_session("sess-1")
+    assert await agent.send_prompt("Write the parser", system_prompt="be brief") == "built the parser"
+    request = seen[0]
+    assert request.url.path == "/api/chat"
+    assert request.headers["Authorization"] == "Bearer sess-1"
+    body = json.loads(request.content)
+    assert body["prompt"] == "Write the parser" and body["agent_mode"] is True
+    assert body["system_prompt"] == "be brief"
+
+
+async def test_an_expired_session_says_to_log_in_again(settings: Any, db_engine: Any) -> None:
+    """A stored session past its expiry is refused with the exact command, and the state says so."""
+    store = TokenStore(settings.fernet_secret, engine=db_engine)
+    store.save_token("arena", "old", {"api_key": "sess-old", "provider": "arena", "kind": "session",
+                                      "expires_at": time.time() - 5})
+    agent = ArenaClient({"name": "Old", "provider": "arena", "account_id": "old"}, settings=settings,
+                        token_store=TokenStore(settings.fernet_secret, engine=db_engine))
+    with pytest.raises(AuthenticationError, match="kollektiv login --provider arena --name Old"):
+        await agent.authenticate()
+    assert agent.health_state() == "session_expired"
+
+
+async def test_a_session_worker_without_a_session_says_how_to_log_in(settings: Any, db_engine: Any) -> None:
+    """No session stored: the state is needs_login and the error names the command."""
+    agent = ArenaClient({"name": "Vega", "provider": "arena"}, settings=settings,
+                        token_store=TokenStore(settings.fernet_secret, engine=db_engine))
+    assert agent.health_state() == "needs_login"
+    with pytest.raises(AuthenticationError, match="kollektiv login --provider arena --name Vega"):
+        await agent.authenticate()
+
+
+async def test_health_panel_names_each_workers_state_and_load(settings: Any, db_engine: Any) -> None:
+    """The panel shows every worker's state, who needs attention, and the share of work each carries."""
+    store = TokenStore(settings.fernet_secret, engine=db_engine)
+    store.save_token("deepseek", "vega", {"api_key": "sk-vega-SECRET", "provider": "deepseek"})
+
+    def factory(account: Any, cfg: Any) -> ArenaClient:
+        data = account if isinstance(account, dict) else account.model_dump()
+        return ArenaClient(data, settings=cfg, client=mock_client(lambda request: chat_reply()), token_store=store)
+
+    accounts = [
+        {"name": "Vega", "provider": "deepseek", "account_id": "vega"},
+        {"name": "Terra", "provider": "ollama", "account_id": "terra"},
+        {"name": "Nova", "provider": "arena", "account_id": "nova"},
+        {"name": "Atlas", "provider": "groq", "account_id": "atlas"},
+    ]
+    pool = AgentPool(accounts, settings=settings, client_factory=factory)
+    await pool.initialize()
+    by_id = {agent.account_id: agent for agent in pool.agents}
+    by_id["vega"].tasks_done = 3
+    by_id["terra"].tasks_done = 1
+
+    health = pool.health()
+    assert health["states"] == {"ready": 2, "needs_login": 1, "needs_key": 1}
+    assert health["needs_attention"] == ["Nova", "Atlas"]
+    shares = {row["name"]: row["load_share"] for row in health["agents"]}
+    assert shares == {"Vega": 0.75, "Terra": 0.25, "Nova": 0.0, "Atlas": 0.0}
+    assert "sk-vega-SECRET" not in json.dumps(health)
+    await pool.close()
+
+
+async def test_a_worker_in_cooldown_is_shown_as_cooling_down(settings: Any, db_engine: Any) -> None:
+    """After a rate limit the panel says cooling_down with the seconds left, not ready."""
+    agent = ArenaClient({"name": "Vega", "provider": "ollama"}, settings=settings,
+                        token_store=TokenStore(settings.fernet_secret, engine=db_engine))
+    agent.apply_rate_limit(60)
+    row = agent.health()
+    assert row["state"] == "cooling_down" and 0 < row["cooldown_seconds"] <= 60

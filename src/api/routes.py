@@ -14,6 +14,7 @@ Endpoints
 ``GET  /projects/{id}/files``       files stored for the project
 ``POST /projects/{id}/upload``      archive a local file to TeraBox
 ``GET  /agents/status``             worker pool status
+``GET  /agents/health``             worker health panel (states, load share, attention)
 ``GET  /storage/status``            TeraBox pool quota
 ``POST /sync``                      trigger the cron sync manually
 ``POST /webhooks/github``           GitHub webhook receiver
@@ -541,6 +542,14 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             "available": len([agent for agent in agents if agent.get("status") == "idle"]),
             "agents": agents,
         }
+
+    @router.get("/agents/health", tags=["agents"])
+    async def agents_health(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
+        """Return the health panel: each worker's state, cooldown, session expiry and load share.
+
+        Nothing here is a key or a token, and no call is made to a provider.
+        """
+        return await orchestrator.get_agents_health()
 
     @router.get("/storage/status", tags=["storage"])
     async def storage_status(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:

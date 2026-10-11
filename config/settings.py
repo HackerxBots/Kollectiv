@@ -379,6 +379,11 @@ class Settings(BaseSettings):
     #: JSON list of workers, e.g. [{"name":"Vega","provider":"deepseek"}]. Keys are
     #: never stored here: run ``kollektiv login`` (see docs/byok.md).
     ARENA_ACCOUNTS: str = "[]"
+    #: Arena.ai session workers (provider ``arena``). These paths are placeholders:
+    #: point them at the endpoint you actually use. Kollectiv does not verify them.
+    ARENA_BASE_URL: str = "https://arena.ai"
+    ARENA_LOGIN_PATH: str = "/api/auth/login"
+    ARENA_CHAT_PATH: str = "/api/chat"
     #: Default model for a worker whose entry names none.
     ARENA_MODEL: str = ""
     ARENA_REQUEST_TIMEOUT: float = 300.0

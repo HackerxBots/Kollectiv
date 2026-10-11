@@ -38,9 +38,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from config.settings import Settings, get_settings
+from src.agents.arena_client import ATTENTION_STATES, ArenaClient
 from src.agents.providers import PROVIDER_PRESETS, resolve_provider
 from src.utils.crypto import generate_secret_key
-from src.utils.errors import BudgetError, ConfigurationError
+from src.utils.errors import AuthenticationError, BudgetError, ConfigurationError
 from src.utils.logger import configure_logging, get_logger
 
 LOGGER = get_logger(__name__)
@@ -379,6 +380,8 @@ async def cmd_login(args: argparse.Namespace) -> int:
     kind = preset["kind"]
     name = args.name or provider
     account_id = args.account or re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-") or provider
+    if kind == "session":
+        return await _login_arena(args, settings, name, account_id)
 
     key = ""
     if args.key_env:
@@ -418,10 +421,7 @@ async def cmd_login(args: argparse.Namespace) -> int:
         entry["base_url"] = args.base_url
     if args.key_env:
         entry["api_key_env"] = args.key_env
-    workers = _read_worker_list(settings.ARENA_ACCOUNTS)
-    workers = [w for w in workers if str(w.get("account_id") or w.get("name") or "") != account_id]
-    workers.append(entry)
-    set_env_value(args.env_file, "ARENA_ACCOUNTS", json.dumps(workers, separators=(",", ":")))
+    _register_worker(args.env_file, settings, entry)
 
     preview = mask_secret(key) if key else ("from " + args.key_env if args.key_env else "none needed")
     report: Dict[str, Any] = {
@@ -442,6 +442,96 @@ async def cmd_login(args: argparse.Namespace) -> int:
         print(f"  wrote ARENA_ACCOUNTS to {args.env_file}; keys never go into the env file")
         print(f"  check it: {report['next']}")
     return 0
+
+
+async def _login_arena(args: argparse.Namespace, settings: Settings, name: str, account_id: str) -> int:
+    """Log in to an Arena.ai session worker on the operator's own account.
+
+    Two ways in. The e-mail and password are sent once to ``ARENA_LOGIN_PATH``, and
+    the password is not stored. Or a session token, copied from the operator's own
+    browser, is passed with ``--token`` or ``KOLLEKTIV_TOKEN``. Either way the
+    session is stored encrypted. Kollectiv never opens a browser and never handles
+    a verification challenge. If the service asks for one, complete it in your own
+    browser and paste the new session token.
+    """
+    import getpass
+
+    from src.db.models import bind_engine
+    from src.utils.token_store import TokenStore
+
+    store = TokenStore(settings.fernet_secret, engine=bind_engine(settings))
+    entry: Dict[str, str] = {"name": name, "provider": "arena", "account_id": account_id}
+    if args.base_url:
+        entry["base_url"] = args.base_url
+    client = ArenaClient(entry, settings=settings, token_store=store)
+    try:
+        token = (args.token or os.environ.get("KOLLEKTIV_TOKEN", "")).strip()
+        if token:
+            client.store_session(token, expires_in=args.expires_in or None)
+            how = "session token (stored encrypted)"
+        else:
+            if not sys.stdin.isatty():
+                _print(
+                    {
+                        "error": "No session token and stdin is not a terminal.",
+                        "next": "run `kollektiv login --provider arena` interactively, "
+                        "or pass --token / set KOLLEKTIV_TOKEN",
+                    },
+                    True,
+                )
+                return 2
+            print("Arena.ai (your own account)")
+            print("  Your password is sent once to the login route and is not stored.")
+            print("  Or paste a session token from your own browser with --token.")
+            email = (args.email or input("  e-mail: ")).strip()
+            password = getpass.getpass("  password (hidden): ")
+            if not email or not password:
+                _print({"error": "Both an e-mail and a password are needed."}, True)
+                return 2
+            await client.login(email, password)
+            how = "e-mail login (password not stored)"
+    except (AuthenticationError, ConfigurationError) as exc:
+        _print({"error": str(exc)}, True)
+        return 2
+    finally:
+        await client.close()
+
+    _register_worker(args.env_file, settings, entry)
+    report: Dict[str, Any] = {
+        "registered": True,
+        "name": name,
+        "account_id": account_id,
+        "provider": "arena",
+        "session": how,
+        "env_file": args.env_file,
+        "next": "kollektiv accounts",
+    }
+    if args.json:
+        _print(report, True)
+    else:
+        print(f"Registered Arena worker {name!r}: {how}.")
+        print(f"  wrote ARENA_ACCOUNTS to {args.env_file}; the session is kept encrypted in the database")
+        print(f"  check it: {report['next']}")
+    return 0
+
+
+def _register_worker(env_file: str, settings: Settings, entry: Dict[str, str]) -> None:
+    """Write a worker into ``ARENA_ACCOUNTS``, replacing any entry with the same account id.
+
+    The current list is read from ``env_file`` itself, so writing to a different file
+    than the one the settings were loaded from never drops the workers already there.
+    """
+    account_id = entry["account_id"]
+    current = settings.ARENA_ACCOUNTS
+    path = Path(env_file)
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("ARENA_ACCOUNTS="):
+                current = line.split("=", 1)[1].strip().strip("'\"")
+    workers = _read_worker_list(current)
+    workers = [w for w in workers if str(w.get("account_id") or w.get("name") or "") != account_id]
+    workers.append(entry)
+    set_env_value(env_file, "ARENA_ACCOUNTS", json.dumps(workers, separators=(",", ":")))
 
 
 def _read_worker_list(raw: str) -> List[Dict[str, Any]]:
@@ -504,10 +594,22 @@ async def cmd_accounts(args: argparse.Namespace) -> int:
                 "expires_at": str(record.get("expires_at") or ""),
             }
         )
-    workers = [
-        {"name": w.get("name", ""), "provider": w.get("provider", ""), "account_id": w.get("account_id", "")}
-        for w in _read_worker_list(settings.ARENA_ACCOUNTS)
-    ]
+    workers: List[Dict[str, Any]] = []
+    for entry in _read_worker_list(settings.ARENA_ACCOUNTS):
+        client = ArenaClient(entry, settings=settings, token_store=store)
+        try:
+            health = client.health()
+        finally:
+            await client.close()
+        workers.append(
+            {
+                "name": entry.get("name", ""),
+                "provider": entry.get("provider", ""),
+                "account_id": client.account_id,
+                "state": health["state"],
+                "session_expires_in": health["session_expires_in"],
+            }
+        )
     if args.json:
         _print({"count": len(rows), "keys": rows, "workers": workers}, True)
         return 0
@@ -516,7 +618,10 @@ async def cmd_accounts(args: argparse.Namespace) -> int:
     if not workers:
         print("  none — run `kollektiv login --provider deepseek` (or any provider in docs/byok.md)")
     for worker in workers:
-        print(f"  {worker['name'] or '(unnamed)':<14} {worker['provider']:<12} {worker['account_id']}")
+        print(f"  {worker['name'] or '(unnamed)':<14} {worker['provider']:<12} {worker['account_id']:<14} {worker['state']}")
+    attention = [worker["name"] or worker["account_id"] for worker in workers if worker["state"] in ATTENTION_STATES]
+    if attention:
+        print(f"  needs attention: {', '.join(attention)}  (see `kollektiv login --provider <name>`)")
     print()
     print("Stored keys (encrypted with SECRET_KEY)")
     print("=======================================")
@@ -1413,7 +1518,9 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument("--provider", default="deepseek", help=f"One of: {', '.join(sorted(PROVIDER_PRESETS))}")
     login.add_argument("--name", default="", help="Display name for the worker (default: the provider)")
     login.add_argument("--account", default="", help="Stable id for the stored key (default: from --name)")
-    login.add_argument("--token", default="", help="API key (otherwise prompted; KOLLEKTIV_TOKEN also works)")
+    login.add_argument("--token", default="", help="API key, or an Arena session token (otherwise prompted; KOLLEKTIV_TOKEN also works)")
+    login.add_argument("--email", default="", help="Arena login e-mail (provider arena; prompted when missing)")
+    login.add_argument("--expires-in", type=int, default=0, help="Seconds until a pasted Arena session token expires (0 = unknown)")
     login.add_argument("--key-env", default="", help="Read the key from this variable, e.g. DEEPSEEK_API_KEY (nothing stored)")
     login.add_argument("--base-url", default="", help="Override the provider endpoint (required for custom)")
     login.add_argument("--model", default="", help="Override the provider's default model")

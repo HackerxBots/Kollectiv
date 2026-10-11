@@ -22,7 +22,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from config.settings import Settings, get_settings
-from src.agents.arena_client import ArenaClient
+from src.agents.arena_client import ATTENTION_STATES, ArenaClient
 from src.agents.names import assign_names
 from src.utils.errors import ArenaError, AuthenticationError, ConfigurationError, RateLimitError
 from src.utils.logger import get_logger
@@ -443,6 +443,32 @@ class AgentPool:
     def snapshot(self) -> List[Dict[str, Any]]:
         """Return a synchronous snapshot of pool statistics."""
         return [agent.stats() for agent in self._agents.values()]
+
+    def health(self) -> Dict[str, Any]:
+        """Return the health panel: every worker's state, and how the load is shared.
+
+        Built from local facts only (no network call), so it is safe to poll.
+        ``load_share`` is each worker's part of all tasks done so far, which shows
+        whether one account carries most of the work.
+
+        Returns:
+            ``{count, states, tasks_done, needs_attention, agents}``, where
+            ``states`` counts workers per state and ``needs_attention`` lists the
+            names that need a person to act (a key, a login, or a fix).
+        """
+        rows = [agent.health() for agent in self._agents.values()]
+        total = sum(int(row["tasks_done"]) for row in rows)
+        states: Dict[str, int] = {}
+        for row in rows:
+            row["load_share"] = round(int(row["tasks_done"]) / total, 3) if total else 0.0
+            states[str(row["state"])] = states.get(str(row["state"]), 0) + 1
+        return {
+            "count": len(rows),
+            "states": states,
+            "tasks_done": total,
+            "needs_attention": [row["name"] for row in rows if row["state"] in ATTENTION_STATES],
+            "agents": rows,
+        }
 
 
 __all__ = ["AgentPool", "AgentTaskError", "WORKER_SYSTEM_PROMPT"]

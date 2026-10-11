@@ -9,14 +9,15 @@ on GitHub links to the section below for its version.
 
 ### Changed
 
-- **Bring your own key (breaking).** Every worker is now an OpenAI-compatible
-  API reached with a key you hold. Workers take `provider`, `model`, `base_url`
+- **Bring your own key (breaking).** API workers are reached with a key you hold,
+  through an OpenAI-compatible API. Arena.ai session workers are the exception. Workers take `provider`, `model`, `base_url`
   and an optional `api_key_env`; keys live encrypted in the token store, written
   by `kollektiv login`. DeepSeek is the default brain, and Groq is the fallback.
   Local models (Ollama, LM Studio) need no key and no internet. See
-  [Bring your own key](docs/byok.md). **Migration:** entries that still carry
-  `session_token` or `email` are no longer used. Run `kollektiv login --provider
-  <p> --name <n>` for each worker, or set `api_key_env`.
+  [Bring your own key](docs/byok.md). **Migration:** `session_token` and `email`
+  entries in `ARENA_ACCOUNTS` are no longer read. Run `kollektiv login --provider
+  <p> --name <n>` for each worker, or set `api_key_env`. Arena workers log in with
+  `kollektiv login --provider arena`.
 - `_post_json` in the worker client retries transport errors and 5xx responses
   (three attempts in all, exponential backoff). A 429 still sets the worker's
   cooldown and is not retried, and a rejected key is still forgotten.
@@ -27,9 +28,6 @@ on GitHub links to the section below for its version.
 
 ### Removed
 
-- **The Arena session-token and browser-bridge worker path.** It drove a web
-  chat through an account login, which is not an API and falls outside the
-  providers' terms. No code path does this now.
 - **Every monetization surface:** the sponsor line and its catalogue, the signed
   claims and payout relay, the sponsor ledger, the `/sponsors/*` endpoints, the
   `sponsor_line`/`sponsor_ledger` MCP tools, the `kollektiv sponsors` commands,
@@ -39,8 +37,24 @@ on GitHub links to the section below for its version.
   The `sponsor_ledger` table is no longer declared. An existing table in an old
   database is left alone, and nothing reads it.
 
+### Fixed
+
+- `kollektiv login` keeps the other workers when `--env-file` points at a file other
+  than the one the settings were loaded from. The list is read from the target file.
+
 ### Added
 
+- **Arena.ai session workers, restored as an option.** `provider: arena` runs a
+  worker on your own Arena.ai account. `kollektiv login --provider arena` sends
+  your e-mail and password once to `ARENA_LOGIN_PATH` (the password is not stored),
+  or stores a session token pasted with `--token`. The session is kept encrypted
+  with its expiry. The endpoint paths (`ARENA_BASE_URL`, `ARENA_LOGIN_PATH`,
+  `ARENA_CHAT_PATH`) are placeholders to match your endpoint. Kollectiv does not
+  drive a browser or handle verification challenges.
+- **Health panel.** `GET /agents/health`, and the state column of `kollektiv
+  accounts`, show each worker's state (`ready`, `busy`, `cooling_down`,
+  `needs_key`, `needs_login`, `session_expired`, `degraded`), its share of the
+  work so far, and who needs attention. Local state only, with no key shown.
 - **Bring your own key, documented end to end.** `docs/byok.md` covers the
   provider table, `kollektiv login` / `logout` / `accounts`, `--key-env`, the
   rules, and Docker `host.docker.internal`.

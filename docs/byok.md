@@ -41,7 +41,7 @@ Kollectiv follows the same split:
 | Where the key is kept | `~/.local/share/opencode/auth.json` or an env var | Encrypted in your database, or an env var you name |
 
 We do not sell model access, we do not resell anyone's subscription, and we do
-not log in to web chat interfaces on anyone's behalf. Workers talk to
+not log in to web chat interfaces on anyone's behalf (the Arena.ai session worker is the one exception, and it uses your own login). Workers talk to
 **documented APIs** only (see [the rules](#rules)).
 
 ## What needs the internet
@@ -78,6 +78,7 @@ disagree. Each one can be overridden per worker with `model` and `base_url`.
 | `together` | hosted | api.together.xyz (`TOGETHER_API_KEY`) | `deepseek-ai/DeepSeek-V3` |
 | `ollama` | **local** | none; run `ollama pull <model>` first | `qwen2.5-coder:7b` |
 | `lmstudio` | **local** | none; start LM Studio's local server | `local-model` |
+| `arena` | Arena.ai on your own account (session login) | your e-mail and password once, or a session token | `ARENA_BASE_URL` (see [Agent runtimes](agent-runtimes.md#arenaai-session-workers-your-own-account)) |
 | `custom` | any OpenAI-compatible endpoint | you | you set `base_url` and `model` |
 
 Model names change faster than endpoints. If a provider answers "model not
@@ -131,10 +132,12 @@ or the environment. Restarting the API also works.
 
 ## Rules
 
-1. **Documented APIs only.** Workers call OpenAI-compatible `/chat/completions`
-   endpoints. Kollectiv does not log in to web chat UIs, replay browser sessions,
-   or scrape an interface. The earlier Arena session-token and browser-bridge
-   code was removed for exactly this reason.
+1. **Documented APIs, or your own account.** API workers call OpenAI-compatible
+   `/chat/completions` endpoints. The one exception is an Arena.ai session worker,
+   which uses an account you log in to yourself (see
+   [Agent runtimes](agent-runtimes.md#arenaai-session-workers-your-own-account)).
+   Kollectiv never drives a browser, never solves or passes a verification
+   challenge for you, and never gets past a rate limit.
 2. **Keys go to one place: the provider you named.** A key is sent only in the
    `Authorization` header to that provider's base URL. It is never written to
    logs, to project state, to a commit or to the dashboard.

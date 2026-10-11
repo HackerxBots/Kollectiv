@@ -17,7 +17,7 @@ the list below is a menu, not a dependency.
 | --- | --- |
 | What is a "worker"? | One entry in `ARENA_ACCOUNTS`: a provider, a model, and a key you stored with `kollektiv login`. The pool runs several in parallel. |
 | What is a "runtime"? | The program behind that worker: a hosted API, a local model, or a whole CLI agent behind a small HTTP shim. |
-| Default | A hosted provider you already have a key for, or a **local model** (Ollama, LM Studio) that needs no key and no internet. |
+| Default | Your own Arena.ai account (the original plan), a hosted provider you have a key for, or a **local model** (Ollama, LM Studio) that needs no key and no internet. |
 | Optional | Groq, DeepSeek, OpenRouter, Gemini, Mistral, Together, or a CLI agent (Aider, OpenHands, ...) — see the menu. |
 
 ```bash
@@ -27,14 +27,42 @@ kollektiv accounts                                  # workers and masked keys
 kollektiv check --json | jq .subsystems.agents      # are they ready?
 ```
 
-### Why Arena.ai web accounts are not a worker type
+### Arena.ai session workers (your own account)
 
-Earlier versions of Kollectiv could drive a web chat through an account's login
-session. That path is gone. A web session is not an API: it has no documented
-contract, it can change or end without notice, and replaying it is a way of using
-a service outside its terms. Every worker now calls a documented,
-OpenAI-compatible API with a key you hold. If a service offers such an API, point a
-`provider: custom` worker at its base URL.
+`provider: arena` runs a worker on **your own Arena.ai account**. This is the
+original plan: many sessions, each on an account its owner logged in to, working
+on one project together.
+
+```bash
+kollektiv login --provider arena --name Nova
+#   e-mail and password are sent once to ARENA_LOGIN_PATH and not stored, or
+kollektiv login --provider arena --name Nova --token <session token from your browser>
+kollektiv accounts        # Nova  arena  nova  ready | needs_login | session_expired
+```
+
+What Kollectiv does, and what it does not:
+
+* The session is stored encrypted with `SECRET_KEY`, together with its expiry.
+  When it runs out, the worker reports `session_expired` and the pool routes
+  around it until you log in again.
+* A worker posts `{prompt, model, agent_mode}` to `ARENA_CHAT_PATH` on
+  `ARENA_BASE_URL`, with its session as a bearer token.
+* **The paths are placeholders.** `/api/auth/login` and `/api/chat` are the
+  defaults the project started with. Set them to the endpoint you actually use.
+  Kollectiv does not verify them against the service.
+* **Verification challenges are yours to complete.** Kollectiv does not open a
+  browser, does not solve or pass a challenge on your behalf, and does not hand
+  work back to a script after one. If the service asks you to verify, do it in
+  your own browser, then paste the new session token with `--token`.
+* **Rate limits are respected.** A 429 puts that worker in cooldown, and the pool
+  gives its task to another worker. Kollectiv does not spread work across extra
+  accounts to get past a limit.
+* **Terms are your responsibility.** Check that Arena's terms allow what you run
+  before you run it, and especially before you run many accounts at once.
+
+The health panel (`GET /agents/health`, and the state column in `kollektiv
+accounts`) shows each worker's state, its share of the work so far, and who needs
+attention. It reads local state only and never shows a key or a session.
 
 ### The full menu (optional)
 
@@ -52,7 +80,7 @@ OpenAI-compatible API with a key you hold. If a service offers such an API, poin
 
 #### Wiring one in
 
-Every worker is OpenAI-compatible HTTP (`provider` + `model` + a key), so hosted
+Every API worker is OpenAI-compatible HTTP (`provider` + `model` + a key), so hosted
 and local endpoints need no special code. `kollektiv login` writes these entries
 for you; this is what they look like in `.env` (no keys in the file):
 

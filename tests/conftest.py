@@ -482,6 +482,16 @@ class FakeAgentPool:
         """Pretend all sessions refreshed."""
         return {"checked": self.size, "refreshed": self.size, "failed": 0, "details": []}
 
+    def health(self) -> Dict[str, Any]:
+        """A health panel shaped like the real pool's, one ready row per fake worker."""
+        rows = [
+            {"account_id": agent.account_id, "name": self.names[agent.account_id], "state": "ready",
+             "load_share": 0.0, "last_error": ""}
+            for agent in self._agents
+        ]
+        return {"count": len(rows), "states": {"ready": len(rows)} if rows else {}, "tasks_done": 0,
+                "needs_attention": [], "agents": rows}
+
     def snapshot(self) -> List[Dict[str, Any]]:
         """Return a synchronous status snapshot."""
         return [agent.stats() for agent in self._agents]

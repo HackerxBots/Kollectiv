@@ -299,7 +299,8 @@ def test_login_presets_are_the_shared_provider_table() -> None:
     from src.api.cli import PROVIDER_PRESETS
 
     assert PROVIDER_PRESETS is SHARED
-    assert "arena" not in PROVIDER_PRESETS, "Arena web sessions are not an API and are not supported"
+    assert PROVIDER_PRESETS["arena"]["kind"] == "session", "Arena is a login-session worker, next to the API ones"
+    assert PROVIDER_PRESETS["deepseek"]["kind"] == "key"
 
 
 # ----------------------------------------------------------------------

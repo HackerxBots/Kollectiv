@@ -146,6 +146,10 @@ class StubOrchestrator:
         """Return agent statuses."""
         return await self.agent_pool.get_pool_status(probe=probe)
 
+    async def get_agents_health(self) -> Dict[str, Any]:
+        """Return the health panel for the agents."""
+        return self.agent_pool.health()
+
     async def get_storage_status(self) -> Dict[str, Any]:
         """Return the fake quota."""
         return await self.pool.get_total_quota()
@@ -244,6 +248,12 @@ async def test_agents_storage_and_sync_endpoints(api_client: Any) -> None:
     assert agents.status_code == 200
     assert agents.json()["count"] == 1
 
+    health = await api_client.get("/agents/health")
+    assert health.status_code == 200
+    panel = health.json()
+    assert panel["count"] == 1 and set(panel) >= {"states", "needs_attention", "agents"}
+    assert "api_key" not in str(panel) and "token" not in str(panel).lower()
+
     storage = await api_client.get("/storage/status")
     assert storage.status_code == 200
     assert storage.json()["total_gb"] == 10.0
@@ -269,7 +279,7 @@ async def test_openapi_schema_documents_routes(api_app: Any) -> None:
     """The OpenAPI schema includes the documented endpoints."""
     schema = api_app.openapi()
     paths = set(schema["paths"])
-    assert {"/health", "/projects", "/sync", "/agents/status", "/storage/status"} <= paths
+    assert {"/health", "/projects", "/sync", "/agents/status", "/agents/health", "/storage/status"} <= paths
     assert "/webhooks/github" in paths
 
 

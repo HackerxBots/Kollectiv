@@ -54,9 +54,9 @@ history live in a single shared `PROJECT_STATE.md` on pooled free storage, so
 any session — including the next one — can pick the project up exactly where it
 stopped.
 
-It is a **coordinator, not a worker**: give it your own API keys (DeepSeek, Groq,
-OpenRouter, Gemini and more), a local model through Ollama or LM Studio, or a shim
-around a CLI agent like Aider, and it will
+It is a **coordinator, not a worker**: give it your own Arena.ai accounts, your own
+API keys (DeepSeek, Groq, OpenRouter, Gemini and more), a local model through Ollama
+or LM Studio, or a shim around a CLI agent like Aider, and it will
 keep them all busy, route around the slow or throttled ones, and keep the state
 that makes the effort compound.
 
@@ -120,7 +120,7 @@ own policy and its own audit trail ([gateway docs](docs/gateway.md)).
 
 | Capability | Variable(s) | Free source |
 | --- | --- | --- |
-| Worker agents | `ARENA_ACCOUNTS` (JSON list) + `kollektiv login` | Your own API key per worker (bring your own key), or none for a local model |
+| Worker agents | `ARENA_ACCOUNTS` (JSON list) + `kollektiv login` | Your Arena.ai account (session login), or your own API key per worker, or none for a local model |
 | Brain (planner/reviewer) | `BRAIN_API_KEY` (+ optional `BRAIN_BASE_URL`) | DeepSeek by default, Groq as a fallback; local models work |
 | Shared storage | `R2_*` or `TERABOX_ACCOUNTS` | Cloudflare R2 (10 GB, no egress) or TeraBox |
 | Database | `DATABASE_URL` | SQLite by default; Neon Postgres free tier for a server |
@@ -143,7 +143,7 @@ Full reference: [Configuration](docs/configuration.md) and `.env.example`.
 - [Deploy checklist](docs/deploy-checklist.md) — accounts, CLIs, hosts that actually fit, and `scripts/smoke.py`
 - [Deployment and the free stack](docs/deployment.md) — Compose, bare metal, free hosting, self-hosting checklist
 - [Bring your own key](docs/byok.md) — providers, local models, what needs the internet
-- [Agent runtimes](docs/agent-runtimes.md) — workers, shims and the optional CLI-agent menu
+- [Agent runtimes](docs/agent-runtimes.md) — Arena.ai session workers, workers, shims and the optional CLI-agent menu
 - [Connectors](docs/connectors.md) — Google, Notion, GitHub, Telegram, Discord, Slack, Linear, WhatsApp, any REST API
 - [API, MCP and CLI](docs/api.md) — endpoints, tools and commands
 - [MCP gateway](docs/gateway.md) — one MCP URL for a team: per-client tokens, policies, audit

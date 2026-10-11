@@ -10,8 +10,8 @@ secrets are always redacted.
 
 ### 1. Worker agents (`ARENA_ACCOUNTS`)
 
-A JSON list; each entry becomes one worker in the pool. Every worker is an
-OpenAI-compatible endpoint reached with **your own key** (bring your own key —
+A JSON list; each entry becomes one worker in the pool. Every API worker is an
+OpenAI-compatible endpoint reached with **your own key**; `arena` is the session worker described below (bring your own key —
 see [BYOK](byok.md) for the providers and the rules):
 
 ```jsonc
@@ -25,7 +25,7 @@ see [BYOK](byok.md) for the providers and the rules):
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `provider` | yes | A key of the provider table: `deepseek`, `groq`, `openrouter`, `openai`, `gemini`, `mistral`, `together`, `ollama`, `lmstudio`, `custom`. |
+| `provider` | yes | A key of the provider table: `deepseek`, `groq`, `openrouter`, `openai`, `gemini`, `mistral`, `together`, `ollama`, `lmstudio`, `arena` (session login on your own Arena.ai account), `custom`. |
 | `name` | no | The display name on the dashboard. Empty = a friendly name is picked for you. |
 | `account_id` | no | Stable id for the stored key. Derived from the name when empty. |
 | `model` | no | Overrides the provider's default model. |
@@ -35,6 +35,8 @@ see [BYOK](byok.md) for the providers and the rules):
 
 Keys are **never** in this list. `kollektiv login` stores them encrypted with
 `SECRET_KEY`, or you name a variable in `api_key_env`. Related keys:
+`ARENA_BASE_URL`, `ARENA_LOGIN_PATH` and `ARENA_CHAT_PATH` are the endpoint for
+`arena` session workers. They are placeholders to match the endpoint you use.
 `ARENA_MODEL` (default model for a worker that names none),
 `ARENA_REQUEST_TIMEOUT`, `ARENA_MAX_CONCURRENCY`, `ARENA_RATE_LIMIT_COOLDOWN`.
 
@@ -47,7 +49,7 @@ four-agent limit, and `MAX_AGENT_COUNT` (64) only bounds how many a *single
 project's plan* will spread work across.
 
 > **Use endpoints you are allowed to use.** Kollektiv does not scrape services,
-> log in to web chat interfaces, bypass paywalls or evade rate limits. When a
+> bypass paywalls or evade rate limits. The Arena.ai session worker uses an account you log in to yourself; see [Agent runtimes](agent-runtimes.md#arenaai-session-workers-your-own-account). When a
 > provider answers `429`, that worker goes into cooldown and the task is routed
 > to another worker — the orchestrator never sleeps through a rate limit.
 

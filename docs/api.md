@@ -22,6 +22,7 @@ Run it with `kollektiv serve-api`, `kollektiv-api`, or
 | `GET` | `/budget` | — | The local ledger: today, all time, caps and prices |
 | `POST` | `/projects/{id}/upload` | `{file_path}` or multipart | `{path, size, url}` |
 | `GET` | `/agents/status` | `?probe=true` | `{count, available, agents:[{account_id, name, status, …}]}` |
+| `GET` | `/agents/health` | — | `{count, states, tasks_done, needs_attention, agents:[{name, state, load_share, cooldown_seconds, session_expires_in, last_error, …}]}`. Local state only; never a key or a session. |
 | `GET` | `/links` | — | `{count, links: [{link_id, agent_id, agent_name, connector, …}]}` |
 | `POST` | `/links` | `{agent_id, connector, note?, created_by?}` | `201` the link; `404` unknown agent/connector, `409` already linked |
 | `DELETE` | `/links/{link_id}` | — | `{removed: true, …}`; `404` when it is gone |

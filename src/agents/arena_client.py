@@ -7,16 +7,26 @@ environment variable that holds its key (``api_key_env``). The key itself is
 never written to ``.env``: ``kollektiv login`` stores it encrypted with
 ``SECRET_KEY`` and the worker reads it from there.
 
-This is the same bring-your-own-key model OpenCode uses: the software is free,
-and every call goes to a provider you already have an account with. Kollectiv
-does not log in to web chat UIs, does not replay browser sessions and does not
-pool anybody else's subscription.
+There are two kinds of worker:
+
+* **API workers** (the default): a hosted provider or a local model, reached
+  with a key. This is the same bring-your-own-key model OpenCode uses.
+* **Arena session workers** (``provider: arena``): an Arena.ai account you log in
+  to yourself. ``kollektiv login --provider arena`` sends your e-mail and password
+  once to ``ARENA_LOGIN_PATH`` (the password is never stored), or stores a session
+  token you copied from your own browser. The session is kept encrypted and it
+  expires. The worker then calls ``ARENA_CHAT_PATH`` with that session.
+
+Kollectiv does not drive a browser, does not solve or get around verification
+challenges, and does not get past rate limits. When a session expires or a
+provider says no, the worker reports it and the pool routes around it. You
+decide whether the service's terms allow the way you use it.
 
 Key lookup order, first hit wins:
 
 1. ``api_key=`` passed to the constructor (embedding and tests only).
 2. The environment variable named by ``api_key_env`` (or the provider default,
-   e.g. ``DEEPSEEK_API_KEY``).
+   e.g. ``DEEPSEEK_API_KEY``). Not used by session workers.
 3. The encrypted token store, under ``(provider, account_id)``.
 
 Usage::
@@ -55,6 +65,17 @@ LOGGER = get_logger(__name__)
 #: Default cooldown after a rate limit response, in seconds.
 DEFAULT_COOLDOWN_SECONDS = 300
 
+#: Health states that mean a person has to act (see :meth:`ArenaClient.health_state`).
+ATTENTION_STATES = frozenset({"needs_key", "needs_login", "session_expired", "degraded"})
+
+
+def _as_float(value: Any) -> float:
+    """Read a number from stored JSON, defaulting to ``0.0``."""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
 
 class ArenaClient:
     """One worker agent that answers prompts through a provider API.
@@ -85,7 +106,12 @@ class ArenaClient:
         self.account_id: str = str(self.account.get("account_id") or self.account.get("id") or self._derive_id())
         #: Operator-chosen display name; the pool fills it when empty (see names.py).
         self.name: str = str(self.account.get("name") or "")
-        self.base_url: str = str(self.account.get("base_url") or self.preset["base_url"] or "").rstrip("/")
+        self.base_url: str = str(
+            self.account.get("base_url")
+            or self.preset["base_url"]
+            or (self.settings.ARENA_BASE_URL if self.preset["kind"] == "session" else "")
+            or ""
+        ).rstrip("/")
         self.model: str = str(self.account.get("model") or self.preset["model"] or self.settings.ARENA_MODEL or "")
         self.api_key_env: str = str(self.account.get("api_key_env") or self.preset.get("env") or "")
         self.max_concurrency: int = int(
@@ -95,6 +121,8 @@ class ArenaClient:
         #: Runtime copy of the key; cleared on auth failure so a re-login is picked up.
         self.api_key: str = api_key or ""
         self.key_source: str = "argument" if api_key else "none"
+        #: Unix time when an Arena session expires; ``0`` means no known expiry.
+        self.session_expires_at: float = 0.0
 
         self._store = token_store
         self._owns_client = client is None
@@ -186,13 +214,48 @@ class ArenaClient:
         value = str(stored.get("api_key") or "") if stored else ""
         if value:
             self.api_key, self.key_source = value, "store"
+            self.session_expires_at = _as_float(stored.get("expires_at"))
         return value
+
+    def session_expired(self) -> bool:
+        """Return ``True`` when this is a session worker whose session has run out."""
+        return (
+            self.preset["kind"] == "session"
+            and self.session_expires_at > 0
+            and time.time() >= self.session_expires_at
+        )
+
+    def store_session(self, token: str, expires_in: Optional[float] = None) -> None:
+        """Keep a session token for this worker, encrypted, with its expiry.
+
+        Args:
+            token: The session token returned by a login, or pasted from a browser.
+            expires_in: Seconds until it expires. ``None`` or ``0`` means unknown.
+
+        Raises:
+            ConfigurationError: When the encrypted store cannot be written.
+        """
+        expires_at = time.time() + float(expires_in) if expires_in and expires_in > 0 else 0.0
+        self.api_key, self.key_source = token, "store"
+        self.session_expires_at = expires_at
+        self.authenticated = True
+        try:
+            self._token_store().save_token(
+                self.provider,
+                self.account_id,
+                {"api_key": token, "provider": self.provider, "kind": "session", "expires_at": expires_at},
+            )
+        except Exception as exc:
+            LOGGER.error("Could not store the session for %s: %s", self.label, exc)
+            raise ConfigurationError(f"Could not store the session for {self.label}: {exc}") from exc
 
     def is_authenticated(self) -> bool:
         """Return ``True`` when the worker has what it needs to send a request.
 
         Hosted providers need a key. Local and custom endpoints may run without one.
         """
+        if self.preset["kind"] == "session":
+            return bool(self.api_key) and not self.session_expired()
         if self.api_key:
             return True
         return self.preset["kind"] != "key"
@@ -225,6 +288,19 @@ class ArenaClient:
                 f"No API key for worker {self.label}. Run `kollektiv login --provider {self.provider}`{hint}.",
                 account=self.label,
             )
+        if self.preset["kind"] == "session":
+            login_hint = f"kollektiv login --provider arena --name {self.name or self.account_id}"
+            if not key:
+                raise AuthenticationError(
+                    f"Arena worker {self.label} is not logged in. Run `{login_hint}`.",
+                    account=self.label,
+                )
+            if self.session_expired():
+                self.api_key, self.key_source, self.authenticated = "", "none", False
+                raise AuthenticationError(
+                    f"The Arena session for {self.label} has expired. Run `{login_hint}` again.",
+                    account=self.label,
+                )
         self.authenticated = True
         return key
 
@@ -294,7 +370,12 @@ class ArenaClient:
         temperature: Optional[float],
         timeout: Optional[float],
     ) -> str:
-        """Call the provider's OpenAI-compatible ``/chat/completions`` endpoint."""
+        """Call the provider's OpenAI-compatible ``/chat/completions`` endpoint.
+
+        Session workers post the Arena envelope to ``ARENA_CHAT_PATH`` instead.
+        """
+        if self.preset["kind"] == "session":
+            return await self._chat_session(prompt, system_prompt, timeout)
         messages: List[Dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -315,6 +396,18 @@ class ArenaClient:
         message = choices[0].get("message") or {}
         content = message.get("content") or choices[0].get("text") or ""
         return self._coerce_text(content)
+
+    async def _chat_session(self, prompt: str, system_prompt: Optional[str], timeout: Optional[float]) -> str:
+        """Send one prompt to an Arena session endpoint and return its text."""
+        payload: Dict[str, Any] = {"prompt": prompt, "model": self.model or "default", "agent_mode": True}
+        if system_prompt:
+            payload["system_prompt"] = system_prompt
+        url = f"{self.base_url}{self.settings.ARENA_CHAT_PATH}"
+        data = await self._post_json(url, payload, context="agent chat", timeout=timeout)
+        for field in ("text", "response", "content", "output", "message"):
+            if data.get(field):
+                return self._coerce_text(data[field])
+        raise ArenaError(f"Arena returned no text: {str(data)[:200]}", agent=self.label)
 
     @staticmethod
     def _coerce_text(content: Any) -> str:
@@ -399,9 +492,131 @@ class ArenaClient:
             raise ArenaTransientError(f"{context} returned non-JSON: {response.text[:200]}") from exc
         return data if isinstance(data, dict) else {"data": data}
 
+    async def login(self, email: str, password: str) -> str:
+        """Log in to an Arena session worker and keep the session, encrypted.
+
+        The password is sent once to ``ARENA_LOGIN_PATH`` and is not stored. The
+        response must carry a token under ``session_token``, ``access_token`` or
+        ``token`` (optionally ``expires_in`` seconds).
+
+        Args:
+            email: Account e-mail address.
+            password: Account password, used for this request only.
+
+        Returns:
+            The session token (also kept on this worker).
+
+        Raises:
+            ConfigurationError: When this worker is not an Arena session worker.
+            AuthenticationError: When the endpoint is missing, rejects the login or
+                returns no token.
+        """
+        if self.preset["kind"] != "session":
+            raise ConfigurationError(f"Worker {self.label} is not an Arena session worker.")
+        if not self.base_url:
+            raise ConfigurationError(f"Worker {self.label} has no base_url; set ARENA_BASE_URL.")
+        url = f"{self.base_url}{self.settings.ARENA_LOGIN_PATH}"
+        data = await self._send_login(url, {"email": email, "password": password})
+        inner = data.get("data")
+        token = (
+            data.get("session_token")
+            or data.get("access_token")
+            or data.get("token")
+            or (inner.get("session_token") if isinstance(inner, dict) else "")
+            or ""
+        )
+        if not token:
+            raise AuthenticationError(
+                f"Login response contained no session token: {str(data)[:200]}",
+                account=self.label,
+            )
+        expires_in = data.get("expires_in")
+        self.store_session(str(token), float(expires_in) if isinstance(expires_in, (int, float)) else None)
+        LOGGER.info("Logged in Arena worker %s", self.label)
+        return str(token)
+
+    @async_retry(max_retries=2, base_delay=1.0, max_delay=8.0, exclude=(RateLimitError,))
+    async def _send_login(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """POST the login request. Transport errors and 5xx are retried; 4xx are not."""
+        try:
+            response = await self._client.post(
+                url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=self.settings.ARENA_REQUEST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            raise ArenaTransientError(f"login request to {url} failed: {exc}", agent=self.label) from exc
+        if response.status_code >= 500:
+            raise ArenaTransientError(
+                f"login failed with HTTP {response.status_code}",
+                agent=self.label,
+                status=response.status_code,
+            )
+        if response.status_code in (404, 405):
+            raise AuthenticationError(
+                f"The login endpoint {url} does not exist. Set ARENA_LOGIN_PATH to the route you use, "
+                "or log in with a session token (kollektiv login --provider arena --token ...).",
+                account=self.label,
+                status=response.status_code,
+            )
+        if response.status_code >= 400:
+            raise AuthenticationError(
+                f"Login rejected with HTTP {response.status_code}. Check the e-mail and password.",
+                account=self.label,
+                status=response.status_code,
+            )
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise AuthenticationError("Login response was not JSON", account=self.label) from exc
+        return data if isinstance(data, dict) else {}
+
     # ------------------------------------------------------------------
     # Health
     # ------------------------------------------------------------------
+    def health_state(self) -> str:
+        """Name the state of this worker, from local facts only (no network call).
+
+        ``cooling_down`` after a rate limit, ``needs_key`` for a hosted worker without
+        a key, ``needs_login`` / ``session_expired`` for a session worker, ``busy``
+        while a task runs, ``degraded`` after a failed call, otherwise ``ready``.
+        """
+        if self.is_rate_limited():
+            return "cooling_down"
+        if self.preset["kind"] == "key" and not self._load_key():
+            return "needs_key"
+        if self.preset["kind"] == "session":
+            if not self._load_key():
+                return "needs_login"
+            if self.session_expired():
+                return "session_expired"
+        if self.busy:
+            return "busy"
+        if self.last_error:
+            return "degraded"
+        return "ready"
+
+    def health(self) -> Dict[str, Any]:
+        """Return one row for the health panel. Never includes a key or a token."""
+        now = time.time()
+        return {
+            "account_id": self.account_id,
+            "name": self.name or self.label,
+            "provider": self.provider,
+            "kind": self.preset["kind"],
+            "model": self.model,
+            "state": self.health_state(),
+            "key_source": self.key_source if self.api_key else "none",
+            "in_flight": 1 if self.busy else 0,
+            "tasks_done": self.tasks_done,
+            "tasks_failed": self.tasks_failed,
+            "cooldown_seconds": max(0, int(self.cooldown_until - now)),
+            "session_expires_in": max(0, int(self.session_expires_at - now)) if self.session_expires_at else None,
+            "last_error": self.last_error,
+            "load_share": 0.0,
+        }
+
     async def get_session_status(self, probe: bool = False) -> Dict[str, Any]:
         """Report whether this worker can take a task.
 
