@@ -39,7 +39,7 @@ def test_a_good_entry_is_accepted() -> None:
     "change",
     [
         {"url": "http://acme.example/offer"},  # not https
-        {"url": "https://user:pw@acme.example/offer"},  # credentials in the link
+        {"url": "https://acme.example@evil.example/offer"},  # user info in the link
         {"url": "javascript:alert(1)"},
         {"text": "Error: rate limit reached, upgrade now"},  # reads like an error
         {"text": "Warning: your usage is high"},
