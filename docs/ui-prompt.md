@@ -78,7 +78,8 @@ look like 2014 Bootstrap, and any animation over ~350 ms.
 > | `POST /projects/{id}/replan` | `{revision, new_tasks[]}` |
 > | `GET /projects/{id}/status` | `{project_name,status,tasks:[{id,title,status,assigned_agent,score,error}],files[],history[],last_commit,queued_tasks,pool}` |
 > | `GET /projects/{id}/handoff` | resume briefing: `progress`, `next_actions[]`, `blockers[]`, `markdown` |
-> | `GET /projects/{id}/events/stream` | **SSE**: `event: state` frames with `{status,tasks,files,history,last_commit,queued_tasks}` + keep-alive comments |
+> | `GET /projects/{id}/events/stream` | **SSE**: `event: state` frames with `{status,tasks,files,history,last_commit,queued_tasks}` + keep-alive comments. With a token, add `?ticket=` from the next row (EventSource cannot send headers) |
+> | `POST /auth/stream-ticket` | `{ticket, expires_in: 60}`: a single-purpose ticket for opening one stream, from a normal Bearer call |
 > | `GET /projects/{id}/files/{path}/url` | `{url}` (presigned download) |
 > | `GET /connectors` | `{count, configured[], connectors:[{name,category,description,configured,detail,actions[],dangerous_actions[]}]}` |
 > | `POST /connectors/{name}/call` | `{action, params, confirm}` |

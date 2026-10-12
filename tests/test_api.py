@@ -588,3 +588,22 @@ async def test_user_keys_are_stored_encrypted_and_never_returned(api_app: Any, a
     assert (await api_client.put("/me/keys/groq", json={"api_key": "short"}, headers=alice)).status_code == 400
     assert (await api_client.put("/me/keys/arena", json={"api_key": "x" * 20}, headers=alice)).status_code == 404
     assert (await api_client.get("/me/keys")).status_code == 401
+
+
+async def test_stream_ticket_is_needed_and_only_opens_a_project_stream(api_app: Any, api_client: Any) -> None:
+    """A ticket is issued to a signed-in user, is refused without sign-in, and works only on a stream."""
+    alice = _sign_in(api_app, "user_alice")
+    assert (await api_client.post("/auth/stream-ticket")).status_code == 401
+
+    issued = await api_client.post("/auth/stream-ticket", headers=alice)
+    assert issued.status_code == 200
+    ticket = issued.json()["ticket"]
+    assert ticket and issued.json()["expires_in"] == 60
+
+    # Not a stream path: a ticket is ignored, so the request is still anonymous.
+    assert (await api_client.get(f"/projects?ticket={ticket}")).status_code == 401
+    # A bad ticket on a stream path is refused.
+    assert (await api_client.get("/projects/prj_x/events/stream?ticket=nope")).status_code == 401
+    # A good ticket authenticates the stream; the owner check then answers 404 for a project
+    # that does not exist, which returns at once instead of holding the stream open.
+    assert (await api_client.get(f"/projects/prj_missing/events/stream?ticket={ticket}")).status_code == 404

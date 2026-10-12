@@ -653,10 +653,36 @@ function confirmDialog(message, title = "Confirm action") {
 /* ------------------------------------------------------------------ *
  * Live project stream (Server-Sent Events)
  * ------------------------------------------------------------------ */
-function startStream(projectId) {
+// EventSource cannot send the Authorization header. When a token is set, the
+// stream opens with a short-lived ticket from POST /auth/stream-ticket instead.
+// With no token (open local mode) the stream URL is used as it is.
+let streamGeneration = 0;
+let streamRetries = 0;
+
+async function streamUrl(projectId) {
+  const base = `${store.base}/projects/${encodeURIComponent(projectId)}/events/stream`;
+  const token = STORAGE.token;
+  if (!token) return base;
+  try {
+    const res = await fetch(`${store.base}/auth/stream-ticket`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return base;
+    const body = await res.json();
+    return body.ticket ? `${base}?ticket=${encodeURIComponent(body.ticket)}` : base;
+  } catch {
+    return base;
+  }
+}
+
+async function startStream(projectId) {
   stopStream();
   if (!("EventSource" in window)) return;
-  const url = `${store.base}/projects/${projectId}/events/stream`;
+  const generation = streamGeneration;
+  const url = await streamUrl(projectId);
+  // The drawer may have closed, or moved to another project, while the ticket was fetched.
+  if (generation !== streamGeneration) return;
   const source = new EventSource(url);
   store.stream = source;
   $("#drawer-live").dataset.state = "warn";
@@ -667,13 +693,21 @@ function startStream(projectId) {
       store.openProject = { ...current, ...payload };
       renderDrawer();
       $("#drawer-live").dataset.state = "ok";
+      streamRetries = 0;
     } catch { /* ignore malformed frames */ }
   });
   source.addEventListener("error", () => {
     $("#drawer-live").dataset.state = "bad";
+    // A ticket expires after 60 seconds, and the browser then stops retrying on its own.
+    // Ask for a fresh ticket and reopen, a few times at most.
+    if (source.readyState === EventSource.CLOSED && store.stream === source && streamRetries < 5) {
+      streamRetries += 1;
+      setTimeout(() => { if (store.stream === source) startStream(projectId); }, 1500);
+    }
   });
 }
 function stopStream() {
+  streamGeneration += 1;
   if (store.stream) { store.stream.close(); store.stream = null; }
   const live = $("#drawer-live");
   if (live) live.dataset.state = "";

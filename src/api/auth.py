@@ -28,6 +28,8 @@ import base64
 import hashlib
 import hmac
 import json
+import re
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -308,6 +310,54 @@ class ClerkVerifier:
         return validate_claims(payload, self.settings)
 
 
+#: Seconds a stream ticket stays valid. ``EventSource`` cannot send an
+#: ``Authorization`` header, so a browser opens a project stream with a ticket
+#: issued by a normal authenticated call.
+STREAM_TICKET_TTL_SECONDS = 60.0
+
+#: The only path a stream ticket can open.
+_STREAM_PATH = re.compile(r"^/projects/[^/]+/events/stream$")
+
+
+class StreamTicketStore:
+    """In-memory, short-lived tickets for opening a project event stream.
+
+    A ticket is issued to a signed-in user, is valid for ``ttl`` seconds, and
+    works only on a project event stream. The owner check still runs on the
+    stream, so a ticket cannot reach another user's project. Tickets do not
+    survive a restart.
+    """
+
+    def __init__(self, ttl: float = STREAM_TICKET_TTL_SECONDS, clock: Any = time.monotonic) -> None:
+        self.ttl = float(ttl)
+        self._clock = clock
+        self._tickets: Dict[str, Tuple[str, float]] = {}
+
+    def issue(self, subject: str) -> str:
+        """Create a ticket for ``subject`` and drop any expired ones."""
+        now = self._clock()
+        self._tickets = {key: value for key, value in self._tickets.items() if value[1] > now}
+        ticket = secrets.token_urlsafe(32)
+        self._tickets[ticket] = (subject, now + self.ttl)
+        return ticket
+
+    def redeem(self, ticket: str) -> Optional[str]:
+        """Return the subject a live ticket belongs to, or ``None``."""
+        entry = self._tickets.get(ticket)
+        if entry is None:
+            return None
+        subject, expires = entry
+        if self._clock() >= expires:
+            self._tickets.pop(ticket, None)
+            return None
+        return subject
+
+
+def is_stream_path(path: str) -> bool:
+    """Return ``True`` for ``/projects/{id}/events/stream``."""
+    return bool(_STREAM_PATH.match(path))
+
+
 def bearer_token(request: Request) -> str:
     """Extract a bearer token from the ``Authorization`` header.
 
@@ -411,6 +461,7 @@ def install_auth(app: Any, settings: Optional[Settings] = None) -> Optional[Cler
     resolved = settings or get_settings()
     app.state.auth_required = bool(resolved.AUTH_REQUIRED)
     app.state.settings_used_for_auth = resolved
+    app.state.stream_tickets = StreamTicketStore()
     verifier: Optional[ClerkVerifier] = None
     if resolved.is_clerk_configured:
         verifier = ClerkVerifier(resolved)
@@ -443,6 +494,12 @@ def install_auth(app: Any, settings: Optional[Settings] = None) -> Optional[Cler
             except Exception as exc:  # noqa: BLE001 - never break the request pipeline
                 LOGGER.error("Token verification failed on %s: %s", path, exc)
                 request.state.auth_error = "token verification failed"
+        stream_ticket = request.query_params.get("ticket")
+        if stream_ticket and getattr(request.state, "user", None) is None and is_stream_path(path):
+            store = getattr(request.app.state, "stream_tickets", None)
+            subject = store.redeem(stream_ticket) if store is not None else None
+            if subject:
+                request.state.user = ClerkUser(subject=subject)
         needs_auth = (
             request.app.state.auth_required
             and not is_public_path(path)

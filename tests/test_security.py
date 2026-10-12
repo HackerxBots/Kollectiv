@@ -48,3 +48,24 @@ def test_upload_refuses_files_over_the_size_cap(tmp_path: Path) -> None:
         assert "MAX_UPLOAD_MB" in str(exc)
     else:
         raise AssertionError("an oversized upload was not refused")
+
+
+def test_stream_ticket_expires_after_its_ttl() -> None:
+    from src.api.auth import StreamTicketStore
+
+    clock = _Clock()
+    store = StreamTicketStore(ttl=60, clock=clock)
+    ticket = store.issue("user_alice")
+    clock.now = 59.0
+    assert store.redeem(ticket) == "user_alice"
+    clock.now = 60.0
+    assert store.redeem(ticket) is None
+    assert store.redeem("never-issued") is None
+
+
+def test_stream_path_matcher_is_strict() -> None:
+    from src.api.auth import is_stream_path
+
+    assert is_stream_path("/projects/prj_1/events/stream")
+    assert not is_stream_path("/projects/prj_1/status")
+    assert not is_stream_path("/projects//events/stream/extra")

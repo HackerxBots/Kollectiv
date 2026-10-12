@@ -777,6 +777,18 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         return report
 
+    @router.post("/auth/stream-ticket", tags=["system"])
+    async def issue_stream_ticket(request: Request, user: Any = Depends(auth_dependency)) -> Dict[str, Any]:
+        """Issue a short-lived ticket for opening a project event stream from a browser.
+
+        ``EventSource`` cannot send the Authorization header, so the dashboard calls this
+        with its Bearer token and passes the ticket as ``?ticket=`` on the stream URL.
+        """
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to open a live stream.")
+        store = request.app.state.stream_tickets
+        return {"ticket": store.issue(user.subject), "expires_in": int(store.ttl)}
+
     @router.get("/auth/me", tags=["system"])
     async def whoami(user: Any = Depends(auth_dependency)) -> Dict[str, Any]:
         """Return the authenticated identity (or an anonymous marker)."""

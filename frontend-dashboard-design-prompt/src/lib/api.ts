@@ -179,18 +179,64 @@ export function makeLiveClient(base: string): ApiClient {
     storageStatus: () => fetchJson<StorageStatus>(b, "/storage/status"),
     sync: () => fetchJson<SyncResponse>(b, "/sync", { method: "POST", body: "{}" }),
     stream(id, onState, onError) {
-      const es = new EventSource(`${b}/projects/${encodeURIComponent(id)}/events/stream`);
-      es.addEventListener("state", (ev) => {
-        try {
-          onState(JSON.parse((ev as MessageEvent).data) as ProjectStatus);
-        } catch {
-          /* malformed frame — ignore */
-        }
-      });
-      es.onerror = () => onError?.();
-      return () => es.close();
+      // EventSource cannot send the Authorization header, so with a token the stream
+      // opens with a short-lived ticket. A ticket expires after 60 s, and the browser then
+      // stops retrying, so we ask for a fresh one and reopen (a few times at most).
+      let es: EventSource | null = null;
+      let closed = false;
+      let retries = 0;
+      const open = async () => {
+        const url = await streamTicketUrl(b, id);
+        if (closed) return;
+        es = new EventSource(url);
+        es.addEventListener("state", (ev) => {
+          retries = 0;
+          try {
+            onState(JSON.parse((ev as MessageEvent).data) as ProjectStatus);
+          } catch {
+            /* malformed frame — ignore */
+          }
+        });
+        es.onerror = () => {
+          onError?.();
+          if (es?.readyState === EventSource.CLOSED && !closed && retries < 5) {
+            retries += 1;
+            window.setTimeout(() => {
+              if (!closed) void open();
+            }, 1500);
+          }
+        };
+      };
+      void open();
+      return () => {
+        closed = true;
+        es?.close();
+      };
     },
   };
+}
+
+/** Stream URL for a project, with a fresh ticket when a token is set (see `stream`). */
+async function streamTicketUrl(base: string, id: string): Promise<string> {
+  const direct = `${base}/projects/${encodeURIComponent(id)}/events/stream`;
+  let token = "";
+  try {
+    token = localStorage.getItem(LS_TOKEN) || "";
+  } catch {
+    /* storage unavailable */
+  }
+  if (!token) return direct;
+  try {
+    const res = await fetch(`${base}/auth/stream-ticket`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return direct;
+    const body = (await res.json()) as { ticket?: string };
+    return body.ticket ? `${direct}?ticket=${encodeURIComponent(body.ticket)}` : direct;
+  } catch {
+    return direct;
+  }
 }
 
 /** Try the real API; fall back is decided by the caller. */
