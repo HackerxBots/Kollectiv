@@ -516,3 +516,75 @@ async def test_responses_carry_baseline_security_headers(api_client: Any) -> Non
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-frame-options"] == "DENY"
+
+
+class _FakeVerifier:
+    """Stands in for Clerk: the bearer token is the user's subject."""
+
+    async def verify(self, token: str) -> ClerkUser:
+        return ClerkUser(subject=token)
+
+
+def _sign_in(api_app: Any, subject: str) -> Dict[str, str]:
+    """Turn on auth for this app and return the headers that sign ``subject`` in."""
+    api_app.state.auth_required = True
+    api_app.state.clerk_verifier = _FakeVerifier()
+    api_app.dependency_overrides.clear()
+    return {"Authorization": f"Bearer {subject}"}
+
+
+def _set_admins(api_app: Any, admin_ids: str) -> None:
+    api_app.state.settings_used_for_auth = api_app.state.settings_used_for_auth.model_copy(
+        update={"ADMIN_USER_IDS": admin_ids}
+    )
+
+
+async def test_admin_routes_only_for_listed_owners(api_app: Any, api_client: Any) -> None:
+    """With auth on, only the admin list reaches admin routes; everyone else gets 403."""
+    _set_admins(api_app, "user_owner")
+    other = _sign_in(api_app, "user_other")
+    assert (await api_client.get("/agents/status", headers=other)).status_code == 403
+    assert (await api_client.post("/sync", headers=other)).status_code == 403
+
+    owner = _sign_in(api_app, "user_owner")
+    assert (await api_client.get("/agents/status", headers=owner)).status_code == 200
+    assert (await api_client.post("/sync", headers=owner)).status_code == 200
+
+
+async def test_empty_admin_list_closes_admin_routes_to_everyone(api_app: Any, api_client: Any) -> None:
+    """Fail closed: with auth on and no admins listed, even a signed-in user is refused."""
+    _set_admins(api_app, "")
+    headers = _sign_in(api_app, "user_owner")
+    assert (await api_client.post("/sync", headers=headers)).status_code == 403
+
+
+async def test_session_cookie_is_not_a_credential(api_app: Any, api_client: Any) -> None:
+    """Cookies cannot authenticate; only the Authorization header can (CSRF protection)."""
+    _sign_in(api_app, "user_owner")
+    cookie_only = await api_client.get("/auth/me", headers={"Cookie": "__session=user_owner"})
+    assert cookie_only.status_code == 401
+    header = await api_client.get("/auth/me", headers={"Authorization": "Bearer user_owner"})
+    assert header.status_code == 200
+
+
+async def test_user_keys_are_stored_encrypted_and_never_returned(api_app: Any, api_client: Any) -> None:
+    """A user stores a key, sees that it is stored, and can delete it; the key never comes back."""
+    alice = _sign_in(api_app, "user_alice")
+    secret = "gsk_test_key_1234567890"
+    stored = await api_client.put("/me/keys/groq", json={"api_key": secret}, headers=alice)
+    assert stored.status_code == 200 and stored.json() == {"provider": "groq", "stored": True}
+
+    listing = await api_client.get("/me/keys", headers=alice)
+    assert secret not in listing.text
+    groq = next(item for item in listing.json()["providers"] if item["provider"] == "groq")
+    assert groq["stored"] is True
+
+    bob = _sign_in(api_app, "user_bob")
+    bob_list = (await api_client.get("/me/keys", headers=bob)).json()["providers"]
+    assert next(item for item in bob_list if item["provider"] == "groq")["stored"] is False, "keys are per user"
+
+    alice = _sign_in(api_app, "user_alice")
+    assert (await api_client.delete("/me/keys/groq", headers=alice)).json()["deleted"] is True
+    assert (await api_client.put("/me/keys/groq", json={"api_key": "short"}, headers=alice)).status_code == 400
+    assert (await api_client.put("/me/keys/arena", json={"api_key": "x" * 20}, headers=alice)).status_code == 404
+    assert (await api_client.get("/me/keys")).status_code == 401

@@ -226,6 +226,14 @@ class Settings(BaseSettings):
     CLERK_AUTHORIZED_PARTIES: str = ""
     #: ``false`` keeps the API open (handy for local development and tests).
     AUTH_REQUIRED: bool = False
+    #: Clerk user ids allowed to run admin actions (comma-separated). With auth on,
+    #: an empty list closes admin routes to everyone. With auth off (single-user
+    #: local mode) every caller is the owner.
+    ADMIN_USER_IDS: str = ""
+    #: Write requests (POST/PUT/PATCH/DELETE) allowed per minute per client address. 0 disables.
+    RATE_LIMIT_WRITES_PER_MINUTE: int = 60
+    #: Largest local file the API will archive to shared storage, in MB.
+    MAX_UPLOAD_MB: int = 100
     #: Svix signing secret for Clerk webhooks (``whsec_…``).
     CLERK_WEBHOOK_SECRET: str = ""
 
@@ -452,6 +460,11 @@ class Settings(BaseSettings):
     def project_root(self) -> str:
         """Absolute path of the repository root as a string."""
         return str(PROJECT_ROOT)
+
+    @property
+    def admin_user_ids(self) -> set:
+        """``ADMIN_USER_IDS`` parsed into a set of Clerk user ids."""
+        return {part.strip() for part in (self.ADMIN_USER_IDS or "").split(",") if part.strip()}
 
     @property
     def workspace_path(self) -> Path:
@@ -756,6 +769,8 @@ class Settings(BaseSettings):
             )
         elif self.storage_backend == "terabox" and not self.is_terabox_configured:
             warnings.append("STORAGE_BACKEND=terabox but no usable TERABOX_ACCOUNTS are configured.")
+        if self.AUTH_REQUIRED and not self.admin_user_ids:
+            warnings.append("AUTH_REQUIRED is true but ADMIN_USER_IDS is empty; admin actions are closed to everyone.")
         if self.AUTH_REQUIRED and self.CORS_ORIGINS.strip() == "*":
             warnings.append("CORS_ORIGINS is '*' while AUTH_REQUIRED is true; list your dashboard origin.")
         if self.AUTH_REQUIRED and not self.is_clerk_configured:

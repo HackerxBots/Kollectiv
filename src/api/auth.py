@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from config.settings import Settings, get_settings
@@ -309,13 +309,18 @@ class ClerkVerifier:
 
 
 def bearer_token(request: Request) -> str:
-    """Extract a bearer token from the ``Authorization`` header (or ``__session``)."""
+    """Extract a bearer token from the ``Authorization`` header.
+
+    Cookies are deliberately not read: a browser attaches cookies to cross-site
+    requests, so cookie credentials would make the API open to CSRF. A header
+    cannot be set cross-site without a CORS preflight, so header-only auth is
+    the protection.
+    """
     header = request.headers.get("authorization") or ""
     scheme, _, value = header.partition(" ")
     if scheme.lower() == "bearer" and value.strip():
         return value.strip()
-    cookie = request.cookies.get("__session")
-    return cookie or ""
+    return ""
 
 
 def is_public_path(path: str) -> bool:
@@ -375,6 +380,25 @@ async def auth_dependency(request: Request) -> Optional[ClerkUser]:
     except ConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     request.state.user = user
+    return user
+
+
+async def admin_dependency(
+    request: Request, user: Optional[ClerkUser] = Depends(auth_dependency)
+) -> Optional[ClerkUser]:
+    """Allow an admin route only for the owner(s) listed in ``ADMIN_USER_IDS``.
+
+    With auth off (single-user local mode) every caller is the owner, so the local
+    workflow is unchanged. With auth on, a signed-in user must be on the list, and
+    everyone else gets 403. An empty list closes admin routes to everyone (fail closed).
+    """
+    if not request.app.state.auth_required:
+        return user
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    settings = request.app.state.settings_used_for_auth
+    if user.subject not in settings.admin_user_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only.")
     return user
 
 

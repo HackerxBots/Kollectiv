@@ -703,6 +703,9 @@ class Orchestrator:
             raise PermissionError("uploads are limited to files inside the project workspace")
         if not os.path.isfile(local_path):
             raise FileNotFoundError(f"Local file not found: {local_path}")
+        limit_bytes = int(self.settings.MAX_UPLOAD_MB) * 1024 * 1024
+        if os.path.getsize(local_path) > limit_bytes:
+            raise ValueError(f"file is larger than MAX_UPLOAD_MB ({self.settings.MAX_UPLOAD_MB} MB)")
         project_segment = safe_path_segment(project_id, label="project id")
         remote = (
             f"{self.pool.remote_root.rstrip('/')}/"

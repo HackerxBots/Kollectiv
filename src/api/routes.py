@@ -42,6 +42,7 @@ from pydantic import BaseModel, Field
 from config.settings import Settings, get_settings
 from src import __version__
 from src.api.auth import (
+    admin_dependency,
     auth_dependency,
     install_auth,
     parse_svix_headers,
@@ -125,6 +126,23 @@ class RunResponse(BaseModel):
     results: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class UserKeyRequest(BaseModel):
+    """Body for ``PUT /me/keys/{provider}``. The key is stored encrypted and never returned."""
+
+    api_key: str
+
+
+#: Token-store service name for keys a signed-in user stores on this server.
+USER_KEY_SERVICE = "user-keys"
+
+
+def _key_providers() -> List[str]:
+    """Provider names that take an API key (not a session login)."""
+    from src.agents.providers import PROVIDER_PRESETS
+
+    return sorted(name for name, preset in PROVIDER_PRESETS.items() if preset.get("kind") == "key")
+
+
 class UploadRequest(BaseModel):
     """Body for ``POST /projects/{id}/upload``."""
 
@@ -193,6 +211,23 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    from src.api.ratelimit import WriteRateLimiter
+
+    write_limiter = WriteRateLimiter(resolved.RATE_LIMIT_WRITES_PER_MINUTE)
+
+    @application.middleware("http")
+    async def _rate_limit_writes(request: Request, call_next: Any) -> Any:
+        """Refuse write floods from one client address with 429."""
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            client = request.client.host if request.client else "unknown"
+            if not write_limiter.allow(client):
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"detail": "Too many requests. Wait a minute and try again."},
+                    headers={"Retry-After": "60"},
+                )
+        return await call_next(request)
+
     @application.middleware("http")
     async def _security_headers(request: Request, call_next: Any) -> Any:
         """Send baseline security headers on every response."""
@@ -432,7 +467,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         return estimate.to_dict()
 
-    @router.get("/budget", tags=["system"])
+    @router.get("/budget", tags=["system"], dependencies=[Depends(admin_dependency)])
     async def budget_report(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
         """Return the local spend ledger, today's position and the caps in force."""
         return await orchestrator.budget_report()
@@ -564,12 +599,14 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
         except FileNotFoundError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 - storage failures are 502s
             LOGGER.error("Upload failed for %s: %s", body.file_path, exc)
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         return {"project_id": project_id, "upload": result}
 
-    @router.get("/agents/status", tags=["agents"])
+    @router.get("/agents/status", tags=["agents"], dependencies=[Depends(admin_dependency)])
     async def agents_status(
         probe: bool = Query(default=False, description="Perform a liveness probe per agent"),
         orchestrator: Orchestrator = Depends(get_orchestrator),
@@ -582,7 +619,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             "agents": agents,
         }
 
-    @router.get("/agents/health", tags=["agents"])
+    @router.get("/agents/health", tags=["agents"], dependencies=[Depends(admin_dependency)])
     async def agents_health(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
         """Return the health panel: each worker's state, cooldown, session expiry and load share.
 
@@ -590,10 +627,52 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         """
         return await orchestrator.get_agents_health()
 
-    @router.get("/storage/status", tags=["storage"])
+    @router.get("/storage/status", tags=["storage"], dependencies=[Depends(admin_dependency)])
     async def storage_status(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
         """Return the TeraBox pool quota."""
         return await orchestrator.get_storage_status()
+
+    @router.get("/me/keys", tags=["account"])
+    async def list_my_keys(user: Any = Depends(auth_dependency)) -> Dict[str, Any]:
+        """Which providers you have a key stored for. Keys are never returned."""
+        from src.utils.token_store import TokenStore
+
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to manage your keys.")
+        store = TokenStore()
+        return {
+            "providers": [
+                {"provider": name, "stored": store.has_token(USER_KEY_SERVICE, f"{user.subject}:{name}")}
+                for name in _key_providers()
+            ]
+        }
+
+    @router.put("/me/keys/{provider}", tags=["account"])
+    async def store_my_key(
+        provider: str, body: UserKeyRequest, user: Any = Depends(auth_dependency)
+    ) -> Dict[str, Any]:
+        """Store your API key for a provider, encrypted. It is never shown again."""
+        from src.utils.token_store import TokenStore
+
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to store a key.")
+        if provider not in _key_providers():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown key provider: {provider}")
+        key = body.api_key.strip()
+        if len(key) < 8 or len(key) > 512 or any(char.isspace() for char in key):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That does not look like an API key.")
+        TokenStore().save_token(USER_KEY_SERVICE, f"{user.subject}:{provider}", {"api_key": key})
+        return {"provider": provider, "stored": True}
+
+    @router.delete("/me/keys/{provider}", tags=["account"])
+    async def delete_my_key(provider: str, user: Any = Depends(auth_dependency)) -> Dict[str, Any]:
+        """Remove your stored key for a provider."""
+        from src.utils.token_store import TokenStore
+
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to manage your keys.")
+        removed = TokenStore().delete_token(USER_KEY_SERVICE, f"{user.subject}:{provider}")
+        return {"provider": provider, "deleted": bool(removed)}
 
     @router.get("/connectors", tags=["connectors"])
     async def list_connectors(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
@@ -627,7 +706,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         links = await orchestrator.list_links()
         return {"count": len(links), "links": links}
 
-    @router.post("/links", status_code=status.HTTP_201_CREATED, tags=["links"])
+    @router.post("/links", status_code=status.HTTP_201_CREATED, tags=["links"], dependencies=[Depends(admin_dependency)])
     async def create_link(
         body: LinkCreate, orchestrator: Orchestrator = Depends(get_orchestrator)
     ) -> Dict[str, Any]:
@@ -646,7 +725,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    @router.delete("/links/{link_id}", tags=["links"])
+    @router.delete("/links/{link_id}", tags=["links"], dependencies=[Depends(admin_dependency)])
     async def delete_link(
         link_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)
     ) -> Dict[str, Any]:
@@ -660,7 +739,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         except KeyError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    @router.post("/connectors/{name}/call", tags=["connectors"])
+    @router.post("/connectors/{name}/call", tags=["connectors"], dependencies=[Depends(admin_dependency)])
     async def call_connector(
         name: str, payload: ConnectorCall, orchestrator: Orchestrator = Depends(get_orchestrator)
     ) -> Dict[str, Any]:
@@ -683,7 +762,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         return {"connector": name, "action": payload.action, "result": result}
 
-    @router.post("/connectors/{name}/probe", tags=["connectors"])
+    @router.post("/connectors/{name}/probe", tags=["connectors"], dependencies=[Depends(admin_dependency)])
     async def probe_connector(name: str, orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
         """Run the connector's read-only probe and report reachability + latency."""
         registry = getattr(orchestrator, "connectors", None)
@@ -763,7 +842,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         )
         return {"received": True, "verified": True, "type": event_type}
 
-    @router.post("/sync", tags=["sync"])
+    @router.post("/sync", tags=["sync"], dependencies=[Depends(admin_dependency)])
     async def trigger_sync(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
         """Trigger the cron sync manually."""
         try:
