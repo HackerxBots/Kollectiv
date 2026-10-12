@@ -423,6 +423,7 @@ on GitHub links to the section below for its version.
 ### Fixed
 
 - Dashboard: the Actions buttons on a mobile project card stay inside the card.
+- Dashboard: the connector Run select is wide enough for the longest action name, and its disabled state is visible.
 - Broken links: 14 files pointed at `github.com/HackerxBots/Kollektiv` (404). They now point at `Kollectiv`.
 - **`pip install kollektiv` installed a broken package.** `src/connectors` was
   missing from `[tool.setuptools] packages`, so the wheel failed at import with
