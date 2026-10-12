@@ -1,0 +1,36 @@
+# Native shell for the Kollektiv dashboard.
+#
+# This crate is *only* the window: it serves the same web/ dashboard that
+# Cloudflare Pages serves, in the operating system's own webview, with no bundled
+# Chromium (see docs/performance.md for the measured reason that matters). The
+# orchestrator stays Python; the Rust here is a launcher, not a rewrite.
+[package]
+name = "kollektiv-desktop"
+version = "0.4.0"
+description = "Kollektiv dashboard in a native window"
+authors = ["Kollektiv contributors"]
+edition = "2021"
+rust-version = "1.77.2"
+license = "MIT"
+repository = "https://github.com/HackerxBots/Kollectiv"
+
+[lib]
+# The mobile-ready crate layout Tauri v2 expects: main.rs only calls run().
+name = "kollektiv_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

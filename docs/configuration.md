@@ -1,0 +1,225 @@
+# Configuration
+
+> Part of the [Kollektiv documentation](README.md) · back to the [README](../README.md)
+
+## Configuration
+
+All settings come from `.env` (see `.env.example`, which documents every key).
+`kollektiv check --json` prints the resolved configuration plus warnings;
+secrets are always redacted.
+
+### 1. Worker agents (`ARENA_ACCOUNTS`)
+
+A JSON list; each entry becomes one worker in the pool. Every API worker is an
+OpenAI-compatible endpoint reached with **your own key**; `arena` is the session worker described below (bring your own key —
+see [BYOK](byok.md) for the providers and the rules):
+
+```jsonc
+[
+  {"name": "Vega",  "provider": "deepseek", "account_id": "vega"},
+  {"name": "Terra", "provider": "ollama",   "account_id": "terra", "model": "qwen2.5-coder:14b"},
+  {"name": "Atlas", "provider": "groq",     "account_id": "atlas", "api_key_env": "GROQ_API_KEY"},
+  {"name": "Bridge", "provider": "custom",  "base_url": "https://my-bridge.internal/v1", "model": "my-model"}
+]
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `provider` | yes | A key of the provider table: `deepseek`, `groq`, `openrouter`, `openai`, `gemini`, `mistral`, `together`, `ollama`, `lmstudio`, `arena` (session login on your own Arena.ai account), `custom`. |
+| `name` | no | The display name on the dashboard. Empty = a friendly name is picked for you. |
+| `account_id` | no | Stable id for the stored key. Derived from the name when empty. |
+| `model` | no | Overrides the provider's default model. |
+| `base_url` | `custom` only | Endpoint override. Other providers already know theirs. |
+| `api_key_env` | no | Name of the environment variable holding the key. Nothing is stored. |
+| `max_concurrency` | no | Parallel prompts for this worker (default 1). |
+
+Keys are **never** in this list. `kollektiv login` stores them encrypted with
+`SECRET_KEY`, or you name a variable in `api_key_env`. Related keys:
+`ARENA_BASE_URL`, `ARENA_LOGIN_PATH` and `ARENA_CHAT_PATH` are the endpoint for
+`arena` session workers. They are placeholders to match the endpoint you use.
+`ARENA_MODEL` (default model for a worker that names none),
+`ARENA_REQUEST_TIMEOUT`, `ARENA_MAX_CONCURRENCY`, `ARENA_RATE_LIMIT_COOLDOWN`.
+
+**Names, and how many agents you may have.** Each entry may carry a `name`
+("Reviewer", "Docs bot") — that is what the dashboard, `GET /agents/status` and
+`/health` show. Without one, the agent gets a stable friendly name derived from
+its account id (`Nova`, `Atlas`, `Vega` …), unique within the pool, so a restart
+never renames anyone. The pool serves **every** worker you list: there is no
+four-agent limit, and `MAX_AGENT_COUNT` (64) only bounds how many a *single
+project's plan* will spread work across.
+
+> **Use endpoints you are allowed to use.** Kollektiv does not scrape services,
+> bypass paywalls or evade rate limits. The Arena.ai session worker uses an account you log in to yourself; see [Agent runtimes](agent-runtimes.md#arenaai-session-workers-your-own-account). When a
+> provider answers `429`, that worker goes into cooldown and the task is routed
+> to another worker — the orchestrator never sleeps through a rate limit.
+
+### 2. Shared storage (`TERABOX_ACCOUNTS`)
+
+> **Experimental.** The TeraBox API behaviour is not confirmed against a real
+> account (see [Connectors](connectors.md) for the status of every connector).
+> Test uploads and a restore on your own account first.
+
+```json
+[
+  {"email": "box1@example.com", "password": "",
+   "access_token": "…", "refresh_token": "…"},
+  {"email": "box2@example.com", "refresh_token": "…"}
+]
+```
+
+Tokens come from the TeraBox Open Platform OAuth flow (access tokens last ~2
+days; the client refreshes them proactively, and `TokenStore` keeps them
+encrypted in SQLite). Without user tokens, set `TERABOX_APP_ID` /
+`TERABOX_APP_KEY` for the client-credentials grant.
+
+Uploads are sharded (`precreate` → `shard` → `merge`, default 4 MiB blocks) and
+downloads are streamed to disk. The pool routes each write to the account with
+the most free space and remembers which account holds what, so reads and
+deletes go straight to the owner. If TeraBox is unreachable the state document
+falls back to a local cache and the run continues in degraded mode.
+
+Related keys: `TERABOX_BASE_URL`, `TERABOX_REMOTE_ROOT`, `TERABOX_CHUNK_SIZE`,
+`TERABOX_MAX_FILE_SIZE`.
+
+### 3. GitHub (`GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_WEBHOOK_SECRET`)
+
+A fine-grained PAT with `contents`, `pull_requests` and `issues` write scope on
+the target repository. `GITHUB_REPO` is `owner/repo`; the shipped
+`owner/repo` placeholder is treated as *unconfigured* so nothing hammers the
+API with doomed requests.
+
+```bash
+# Repository → Settings → Webhooks → Add webhook
+#   Payload URL:  https://your-host/webhooks/github
+#   Content type: application/json
+#   Secret:       the same value as GITHUB_WEBHOOK_SECRET
+#   Events:       pushes, pull requests, issues
+```
+
+Signatures are verified with HMAC-SHA256 (`X-Hub-Signature-256`) using a
+constant-time comparison; unsigned or mismatched deliveries get `401` and are
+logged. **Every request is verified before it is parsed**, including pings.
+
+Related keys: `GITHUB_API_URL`, `GITHUB_DEFAULT_BRANCH`,
+`GITHUB_PUSH_AGENT_OUTPUT`, `GITHUB_REQUEST_TIMEOUT`.
+
+### 4. Brain (`BRAIN_*`)
+
+```bash
+BRAIN_PROVIDER=groq                     # groq (default, free tier) | deepseek | openai | …
+BRAIN_API_KEY=sk-…
+BRAIN_MODEL=llama-3.3-70b-versatile
+BRAIN_BASE_URL=https://api.groq.com/openai/v1
+
+BRAIN_FALLBACK_PROVIDER=groq            # used when the primary errors
+BRAIN_FALLBACK_API_KEY=gsk_…
+BRAIN_FALLBACK_MODEL=llama-3.3-70b-versatile
+```
+
+`BRAIN_TEMPERATURE`, `BRAIN_MAX_TOKENS` and `BRAIN_TIMEOUT` tune generation.
+Without `BRAIN_API_KEY` the heuristic planner, reviewer and summariser take
+over, which is what makes the test suite and offline runs possible.
+
+### 5. Connectors (`TELEGRAM_*`, `DISCORD_*`, `SLACK_*`, `LINEAR_*`, `WA_*`)
+
+All optional, all inert until filled in — see [Connectors](connectors.md) for
+what each one can do and which actions are dangerous.
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | — | Bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | — | Default destination chat id (per-call `chat_id` still wins) |
+| `TELEGRAM_BASE_URL` | `https://api.telegram.org` | Self-hosted Bot API server |
+| `DISCORD_BOT_TOKEN` | — | Bot token (Developer Portal → Bot) |
+| `DISCORD_DEFAULT_CHANNEL` | — | Default channel id for `send_message` |
+| `DISCORD_WEBHOOK_URL` | — | Incoming webhook; works without a bot token |
+| `DISCORD_API_VERSION` | `v10` | Pinned Discord API version |
+| `SLACK_BOT_TOKEN` | — | `xoxb-…` with `chat:write` |
+| `SLACK_DEFAULT_CHANNEL` | — | Default channel (`#general` or an id) |
+| `SLACK_WEBHOOK_URL` | — | Incoming webhook; works without a bot token |
+| `LINEAR_API_KEY` | — | Personal API key (`lin_api_…`) |
+| `LINEAR_TEAM_ID` | — | Default team for `create_issue` |
+| `WA_BACKEND` | inferred | `cloud` (official) or `bridge` (unofficial) |
+| `WA_DEFAULT_TO` | — | Default recipient number (digits, country code first) |
+| `WA_CLOUD_TOKEN`, `WA_PHONE_NUMBER_ID` | — | Cloud API credentials |
+| `WA_GRAPH_VERSION` | `v21.0` | Pinned Graph API version |
+| `WA_BRIDGE_URL`, `WA_BRIDGE_TOKEN` | — | The local linked-device bridge |
+| `WA_ALLOW_UNOFFICIAL` | `false` | **Required** for the bridge route: automating a personal number breaks Meta's terms and can get it banned |
+| `<SERVICE>_REQUEST_TIMEOUT` | `30.0` | Per-service HTTP timeout |
+
+### 6. MCP gateway (`GATEWAY_*`, optional)
+
+One MCP URL, per-client tokens, per-client policy and a local audit log; the
+full walkthrough is in [MCP gateway](gateway.md). Off unless you turn it on —
+`kollektiv-mcp` and the HTTP API stay first-class either way.
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `GATEWAY_ENABLED` | `false` | Master switch (or just run `kollektiv gateway serve`) |
+| `GATEWAY_HOST` / `GATEWAY_PORT` | `0.0.0.0` / `8010` | Bind address |
+| `GATEWAY_MCP_PATH` | `/mcp` | Where the MCP endpoint is mounted |
+| `GATEWAY_REQUIRE_TOKENS` | `true` | Refuse anonymous calls; `false` is development only |
+| `GATEWAY_POLICY_PATH` | — | JSON file overriding per-client policies (keep it in git) |
+| `GATEWAY_DEFAULT_CLIENT` | `dashboard` | The name `kollektiv gateway init` uses |
+| `GATEWAY_AUDIT_LIMIT` | `200` | Default rows for `GET /audit` |
+| `GATEWAY_ALLOWED_HOSTS` | — | Host-header allowlist; empty disables the MCP SDK's DNS-rebinding check (right for a bearer-token endpoint) |
+| `GATEWAY_ALLOWED_ORIGINS` | — | Origin allowlist; defaults to the hosts above |
+| `GATEWAY_MAX_BODY_BYTES` | `4194304` | Largest MCP request body |
+
+### 7. Budget (`BUDGET_*`, `PROJECT_CONFIG_PATH`, optional)
+
+Estimate a run before it happens, refuse to exceed a cap, and keep a local tally
+of tokens and dollars. The full page is [Budgets and `.kollektiv.yml`](budget.md);
+a project can also carry its own `budget.max_usd` in `.kollektiv.yml`.
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `BUDGET_ENABLED` | `true` | Estimation and the ledger; set `false` to ignore caps entirely |
+| `BUDGET_MAX_USD` | `0` | Refuse a project whose estimate is above this (0 = no cap) |
+| `BUDGET_DAILY_MAX_USD` | `0` | Refuse any run once today's recorded spend reaches this |
+| `BUDGET_WARN_AT` | `0.8` | Warn from this fraction of a cap |
+| `BUDGET_PRICE_IN_PER_MTOK` | `0.30` | Brain input price used by the estimate |
+| `BUDGET_PRICE_OUT_PER_MTOK` | `1.20` | Brain output price |
+| `BUDGET_WORKER_PRICE_IN_PER_MTOK` | `0` | Worker input price (free by default) |
+| `BUDGET_WORKER_PRICE_OUT_PER_MTOK` | `0` | Worker output price |
+| `BUDGET_PROMPT_OVERHEAD_TOKENS` | `900` | Per-task prompt overhead in the estimate |
+| `BUDGET_OUTPUT_TOKENS_PER_TASK` | `700` | Expected answer size per task |
+| `PROJECT_CONFIG_PATH` | — | Explicit `.kollektiv.yml` path (otherwise auto-found) |
+
+**Prices are yours, not ours.** The defaults are one cheap model's published
+rates; the estimate is only as honest as the numbers you put in, so check your
+provider's current pricing page and override them.
+
+### 8. Runtime
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `API_HOST` / `API_PORT` | `0.0.0.0` / `8000` | HTTP API bind address |
+| `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8001` | MCP bind address. A non-loopback host is refused unless `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true` (the MCP server has no auth) |
+| `MCP_ALLOW_UNAUTHENTICATED_REMOTE` | `false` | Accept a non-loopback MCP bind with no auth. Only where the port is reachable through a trusted layer |
+| `MCP_AUTH_TOKEN` | empty | Bearer token for a network MCP server. Clients send `Authorization: Bearer <token>`. Set this rather than opening the server without auth. |
+| `MCP_TRANSPORT` | `sse` | `stdio`, `sse` or `streamable-http` |
+| `CRON_INTERVAL_MINUTES` | `15` | Sync pass cadence |
+| `CRON_ENABLED` | `true` | Turn the scheduler off for one-shot runs |
+| `DATABASE_URL` | `sqlite:///./data/kollektiv.db` | SQLite (or any SQLAlchemy URL) |
+| `WORKSPACE_DIR` | `./data/workspace` | Where collected files are written |
+| `SECRET_KEY` | — | Fernet key for `TokenStore` (`kollektiv secret`) |
+| `LOG_LEVEL` | `INFO` | `DEBUG`…`CRITICAL` |
+| `ENVIRONMENT` | `development` | `development` / `production` |
+| `CORS_ORIGINS` | `*` in development | Comma-separated allowed origins |
+| `HTTP_SSL_VERIFY`, `SSL_CA_BUNDLE` | `true`, — | Corporate proxies / custom CAs |
+| `AUTO_INIT_DB` | `true` | Create tables on startup |
+| `MAX_RETRIES`, `RETRY_BASE_DELAY` | `3`, `1.0` | Retry policy for external calls |
+
+---
+
+## Sponsor line and support link
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SPONSORS_ENABLED` | `false` | Show the sponsor line. Turn on only after a real campaign is in `SPONSORS_FILE`. See [Sponsors](sponsors.md). |
+| `SPONSORS_FILE` | empty | JSON campaign file. Empty means no line. |
+| `SPONSOR_ROTATE_SECONDS` | `300` | How often the line changes (minimum 30). |
+| `SUPPORT_URL` | empty | Optional https link (for example a donation page) in the dashboard footer. Kollektiv does not load or track it. |
+
+---

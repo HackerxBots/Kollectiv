@@ -1,0 +1,15 @@
+# Cloudflare Pages redirects for the dashboard.
+# https://developers.cloudflare.com/pages/configuration/redirects/
+#
+# Routing is hash based (#/projects, #/connectors, ...), so no SPA fallback is
+# needed and every deep link is served by index.html directly.
+#
+# Uncomment this to proxy the API through Pages and avoid CORS entirely, then
+# open the dashboard once with ?api=/api (the choice is remembered in
+# localStorage):
+#
+# /api/*  https://your-api-host/:splat  200
+#
+# Or send bare visitors to the live API's own copy of the dashboard:
+#
+# /  https://your-api-host/ui/  302

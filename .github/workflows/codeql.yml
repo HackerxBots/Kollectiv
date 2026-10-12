@@ -1,0 +1,42 @@
+name: CodeQL
+
+# Static analysis for the API, connector layer and CLI. Runs on pull requests,
+# on main, and weekly so new queries catch old code too.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "27 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyse Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          # security-extended adds the stricter query pack; default is fine for
+          # pull requests, extended for the scheduled run.
+          queries: ${{ github.event_name == 'schedule' && 'security-extended' || 'security-and-quality' }}
+
+      - name: Perform analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"

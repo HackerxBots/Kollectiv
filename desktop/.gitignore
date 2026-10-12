@@ -1,0 +1,4 @@
+# Rust build output and the Tauri-generated schema bundle.
+src-tauri/target/
+src-tauri/gen/
+node_modules/

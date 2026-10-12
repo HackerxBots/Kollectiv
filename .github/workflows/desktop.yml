@@ -1,0 +1,199 @@
+# Build native installers: shell only, plus the sidecar-bundled variant.
+#
+# Two products, deliberately:
+#
+#   * "Kollektiv shell"  — the dashboard in a native window (5-15 MB). The user
+#     points it at an API running anywhere: their laptop, a VM, a tunnel.
+#   * "Kollektiv bundle" — the same window with the Python API as a Tauri sidecar
+#     (60-120 MB). One double-click, no terminal, nothing to install.
+#
+# Run it from Actions -> Desktop installers -> Run workflow, or push a tag like
+# desktop-v0.4.0 with `--pre` to build, or `desktop-v0.4.0` for a draft release.
+#
+# Signing is optional: without the APPLE_*/AZURE_*/TAURI_SIGNING_* secrets the
+# build still succeeds and uploads *unsigned* installers as workflow artifacts.
+# With them, the same steps sign and (on macOS) notarise. Secrets, by platform:
+#   Apple     : APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+#               APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#   Windows   : AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
+#               AZURE_KEY_VAULT_URI, AZURE_KEY_VAULT_CERTIFICATE
+#   Updater   : TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Create a draft release with this tag (e.g. desktop-v0.4.0); empty = artifacts only"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "desktop-v*"
+  # pull_request lets a fork prove the shell still compiles without anyone's
+  # signing secrets; the release step below is skipped for pull requests.
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "sidecar/**"
+      - ".github/workflows/desktop.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installers:
+    name: ${{ matrix.variant }} on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      # `--bundles` is explicit on purpose: rpm needs rpmbuild, AppImage needs
+      # FUSE tooling and msi needs WiX. `deb`, `app`/`dmg` and `nsis` are the
+      # formats the runners can produce without extra setup. Add the others
+      # locally (and to this list) once you install their toolchains.
+      matrix:
+        include:
+          - { platform: macos-latest, target: aarch64-apple-darwin, variant: shell, args: "--target aarch64-apple-darwin --bundles app,dmg" }
+          - { platform: macos-latest, target: x86_64-apple-darwin, variant: shell, args: "--target x86_64-apple-darwin --bundles app,dmg" }
+          - { platform: ubuntu-22.04, target: x86_64-unknown-linux-gnu, variant: shell, args: "--bundles deb" }
+          - { platform: windows-latest, target: x86_64-pc-windows-msvc, variant: shell, args: "--bundles nsis" }
+          - { platform: ubuntu-22.04, target: x86_64-unknown-linux-gnu, variant: bundle, args: "--config src-tauri/tauri.bundle.conf.json --bundles deb" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux webview dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./desktop/src-tauri -> target
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install
+
+      # --- bundle variant only: build the API sidecar ------------------------
+      - name: Set up Python (bundle only)
+        if: matrix.variant == 'bundle'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build the API sidecar (bundle only)
+        if: matrix.variant == 'bundle'
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          python -m pip install -e .
+          pyinstaller sidecar/kollektiv-sidecar.spec --noconfirm
+          mkdir -p desktop/src-tauri/binaries
+          # Tauri expects the sidecar named <name>-<target-triple>, one file.
+          cp dist/kollektiv-api "desktop/src-tauri/binaries/kollektiv-api-${{ matrix.target }}"
+
+      - name: Smoke-test the sidecar (bundle only)
+        if: matrix.variant == 'bundle'
+        shell: bash
+        run: |
+          # A frozen build is the one artifact a unit test cannot check: run it
+          # and wait for a real answer from /health before it goes in the bundle.
+          ./desktop/src-tauri/binaries/kollektiv-api-${{ matrix.target }} \
+            --host 127.0.0.1 --port 8791 --data-dir /tmp/kollektiv-smoke &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8791/health; then ok=1; break; fi
+            sleep 2
+          done
+          kill %1 2>/dev/null || true
+          test "${ok:-}" = "1" || { echo "the sidecar never answered"; exit 1; }
+
+      # --- optional signing -------------------------------------------------
+      # Secrets that are not configured arrive as empty strings, and Tauri takes
+      # a *present* APPLE_CERTIFICATE as an instruction to import it - which is
+      # how an unsigned macOS build fails at "SecKeychainItemImport". Export only
+      # the variables that actually have a value.
+      - name: Configure signing (optional)
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_KEY_VAULT_CERTIFICATE: ${{ secrets.AZURE_KEY_VAULT_CERTIFICATE }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          imported=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                      APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID AZURE_TENANT_ID AZURE_CLIENT_ID \
+                      AZURE_CLIENT_SECRET AZURE_KEY_VAULT_URI AZURE_KEY_VAULT_CERTIFICATE \
+                      TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            value="${!name:-}"
+            if [ -n "$value" ]; then
+              printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+              imported=$((imported + 1))
+            fi
+          done
+          echo "signing variables in play: $imported (0 = unsigned build, which is fine)"
+
+      # --- both variants: build the installers ------------------------------
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          # A release is created only for a real release tag or an explicit
+          # input. A smoke tag (`desktop-v…-smoke`) and a pull request build the
+          # installers and stop there.
+          tagName: ${{ (inputs.release_tag != '' && inputs.release_tag) || (startsWith(github.ref_name, 'desktop-v') && !contains(github.ref_name, 'smoke') && github.ref_name) || '' }}
+          releaseName: "Kollektiv ${{ matrix.variant }} ${{ github.ref_name }}"
+          releaseBody: |
+            Native installers for the Kollektiv dashboard.
+
+            * **shell** — the dashboard in a window; point it at an API you run (5–15 MB).
+            * **bundle** — the same, with the API bundled as a sidecar: one double-click, nothing else to install (60–120 MB).
+
+            Unsigned builds warn on first launch; see `desktop/README.md`.
+          releaseDraft: true
+          prerelease: true
+          args: ${{ matrix.args }}
+
+      - name: Keep the installers as artifacts
+        # Unsigned builds are the common case, and the artifacts are how you get
+        # them without configuring a single secret.
+        uses: actions/upload-artifact@v4
+        with:
+          name: kollektiv-${{ matrix.variant }}-${{ matrix.target }}
+          path: |
+            desktop/src-tauri/target/**/release/bundle/**/*.dmg
+            desktop/src-tauri/target/**/release/bundle/**/*.app.tar.gz
+            desktop/src-tauri/target/**/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/**/release/bundle/**/*.deb
+            desktop/src-tauri/target/**/release/bundle/**/*.rpm
+            desktop/src-tauri/target/**/release/bundle/**/*.msi
+            desktop/src-tauri/target/**/release/bundle/**/*.exe
+          if-no-files-found: warn
+          retention-days: 14
