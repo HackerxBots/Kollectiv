@@ -40,7 +40,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _git(tmp_path, "init", "-q")
     # An empty baseline: every finding is unreviewed.
     (tmp_path / ".secrets.baseline").write_text(json.dumps({"results": {}}), encoding="utf-8")
-    (tmp_path / "config.py").write_text('AWS = "AKIAZ7Q3X2M5N8P1R4T6"\n', encoding="utf-8")
+    # Built at runtime so this source file does not itself contain a key-shaped literal.
+    fake_key = "AKIA" + "Z7Q3X2M5N8P1R4T6"
+    (tmp_path / "config.py").write_text(f'AWS = "{fake_key}"\n', encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "leak")
     (tmp_path / "config.py").write_text('AWS = os.environ["AWS"]\n', encoding="utf-8")
