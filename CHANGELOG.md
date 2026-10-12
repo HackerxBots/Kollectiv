@@ -14,7 +14,7 @@ on GitHub links to the section below for its version.
 - MCP server: refuses a non-loopback bind without authentication. `MCP_HOST` defaults to `127.0.0.1`. `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true` is the explicit opt-in.
 - Live project streams: tickets work once and are redacted from the uvicorn access log.
 - `examples/aider_shim.py`: the shell mode is removed, and the prompt is passed as one argument.
-- CI: a TruffleHog secret scan runs on every push and pull request, limited to verified secrets.
+- CI: a secret scan (`detect-secrets`, reviewed baseline) runs on every push and pull request.
 
 ### Added
 

@@ -102,19 +102,21 @@ jobs:
           ! grep -q '<script src=' web/index.html
 
   secrets:
-    # Fails the build on a live credential in the history of the pull request or
-    # push. --only-verified keeps it to secrets that still work when checked, so a
-    # documented example key (such as AWS's AKIAIOSFODNN7EXAMPLE) does not block merges.
+    # Fails when a tracked file contains a secret that is not in .secrets.baseline.
+    # The baseline lists reviewed false positives (test fixtures, placeholders, the
+    # documented AWS example key). Add a new entry only after reviewing it. Scans the
+    # current tree, not history: a secret already in history must be rotated.
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
-      - name: Scan for verified secrets
-        uses: trufflesecurity/trufflehog@v3.99.2
-        with:
-          extra_args: --only-verified --fail
+          python-version: "3.11"
+      - name: Scan tracked files for new secrets
+        run: |
+          python -m pip install --quiet "detect-secrets==1.5.0"
+          git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline
 
   package:
     name: Build the distribution
