@@ -104,8 +104,9 @@ jobs:
   secrets:
     # Fails when a tracked file contains a secret that is not in .secrets.baseline.
     # The baseline lists reviewed false positives (test fixtures, placeholders, the
-    # documented AWS example key). Add a new entry only after reviewing it. Scans the
-    # current tree, not history: a secret already in history must be rotated.
+    # documented AWS example key). Add an entry only after reviewing it. Matching is by
+    # file and hash, not line number (scripts/secret_scan.py). Scans the current tree,
+    # not history: a secret already in history must be rotated.
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
@@ -117,7 +118,7 @@ jobs:
         run: |
           set -o pipefail
           python -m pip install --quiet "detect-secrets==1.5.0"
-          git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline 2>&1 | tee /tmp/secret-scan.txt
+          python scripts/secret_scan.py 2>&1 | tee /tmp/secret-scan.txt
 
       - name: Comment the secret-scan output on the pull request
         if: failure() && github.event_name == 'pull_request'
@@ -127,7 +128,7 @@ jobs:
           {
             echo "### Secret scan failed"
             echo ""
-            echo "Output of \`detect-secrets-hook\` (last 12000 characters):"
+            echo "Output of \`scripts/secret_scan.py\` (last 12000 characters):"
             echo ""
             echo '```'
             tail -c 12000 /tmp/secret-scan.txt 2>/dev/null || echo "(no output captured)"

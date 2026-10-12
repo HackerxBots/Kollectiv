@@ -47,6 +47,8 @@ dev = [
     "mypy>=1.10",
     "respx>=0.21",
     "types-aiofiles",
+    # Secret scan (scripts/secret_scan.py) against the reviewed .secrets.baseline.
+    "detect-secrets==1.5.0",
     # Cross-checks the hand-rolled SigV4 signer against the reference
     # implementation in tests/test_r2.py (skipped when absent).
     "botocore>=1.34",
