@@ -207,7 +207,7 @@ machine.
 ## 9. Going public
 
 Do this before you point a public address, a domain or a shared team at a
-Kollektiv server. Kollektiv is an alpha. Its local defaults are for one trusted
+Kollektiv server. Kollektiv is in beta. Its local defaults are for one trusted
 user on one machine, and they are open on purpose.
 
 - [ ] **Turn on auth.** `AUTH_REQUIRED=true` with your Clerk keys.

@@ -18,7 +18,6 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
@@ -123,8 +122,8 @@ class SessionManager:
             self._scheduler = None
         if self._task is not None:
             self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._task
+            # asyncio.wait returns once the cancelled task has finished, without re-raising its error.
+            await asyncio.wait([self._task])
             self._task = None
         LOGGER.info("SessionManager stopped")
 

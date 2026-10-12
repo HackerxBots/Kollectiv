@@ -55,6 +55,10 @@ project's plan* will spread work across.
 
 ### 2. Shared storage (`TERABOX_ACCOUNTS`)
 
+> **Experimental.** The TeraBox API behaviour is not confirmed against a real
+> account (see [Connectors](connectors.md) for the status of every connector).
+> Test uploads and a restore on your own account first.
+
 ```json
 [
   {"email": "box1@example.com", "password": "",

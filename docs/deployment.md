@@ -77,7 +77,7 @@ layer with two *providers*, plus a pooling pattern that applies to both:
 | Piece | What it is |
 | --- | --- |
 | **Provider: Cloudflare R2** | a bucket you own, S3 API, 10 GB free, no egress fees |
-| **Provider: TeraBox** | free consumer cloud drive; several free accounts can be pooled |
+| **Provider: TeraBox** | free consumer cloud drive; several free accounts can be pooled. **Experimental**: the documented API is not confirmed against a real account |
 | **Pattern: pooling ("9Drive style")** | many accounts/buckets presented as **one logical drive**, routed by free space, health and cooldown |
 
 ```bash
@@ -114,7 +114,9 @@ The storage layer pools accounts and presents them as **one drive**:
 
 TeraBox works the same way through `TERABOX_ACCOUNTS` (also 9Drive style: one
 logical drive, many free accounts, routed by free space) — see
-[Configuration](configuration.md#configuration).
+[Configuration](configuration.md#configuration). It is **experimental**: its
+API behaviour is not confirmed against a real account, so use Cloudflare R2 for
+anything you cannot lose, and keep a local copy until you have tested a restore.
 
 ---
 

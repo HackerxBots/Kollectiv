@@ -15,7 +15,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Kollektiv contributors" }]
 keywords = ["agents", "orchestration", "llm", "fastapi", "mcp", "github", "terabox"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",

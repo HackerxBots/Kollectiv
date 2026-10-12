@@ -10,7 +10,7 @@ git clone https://github.com/HackerxBots/Kollektiv.git
 cd Kollektiv
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q                 # 478 hermetic tests, ~40 s
+pytest -q                 # 481 hermetic tests, ~40 s
 kollektiv bootstrap       # prepares the database/workspace, prints the checklist
 kollektiv serve-api       # dashboard at http://localhost:8000/ui
 ```

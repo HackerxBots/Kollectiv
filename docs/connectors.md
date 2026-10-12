@@ -15,6 +15,14 @@ kollektiv call notion search --params '{"query": "roadmap"}'
 kollektiv call webhook notify --params '{"text": "deploy finished"}' --confirm
 ```
 
+> **Status: experimental.** Every connector is tested offline, with mocked HTTP.
+> None is checked against a live account in CI. Before you rely on one, run a
+> read-only action once against your own account (for example
+> `kollektiv call github recent_commits`). **TeraBox is the least verified**: its
+> documented API behaviour is not confirmed against a real account. See
+> [Deployment](deployment.md) and [Configuration](configuration.md) before you
+> use it as shared storage.
+
 ```bash
 curl -s localhost:8000/connectors | jq '.configured, .connectors[] | {name, detail}'
 curl -s -X POST localhost:8000/connectors/github/call \

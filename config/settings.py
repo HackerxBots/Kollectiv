@@ -38,6 +38,8 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from config.r2_accounts import r2_accounts_from_settings
+
 LOGGER = logging.getLogger(__name__)
 
 #: Repository root (the folder containing ``config/`` and ``src/``).
@@ -625,8 +627,6 @@ class Settings(BaseSettings):
     @property
     def r2_account_list(self) -> List[Dict[str, str]]:
         """Parsed ``R2_ACCOUNTS`` entries (empty when misconfigured)."""
-        from src.storage.r2_client import r2_accounts_from_settings
-
         return r2_accounts_from_settings(self)
 
     @property

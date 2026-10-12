@@ -741,8 +741,9 @@ def _retry_after(response: httpx.Response, default: float) -> float:
             if isinstance(body, dict) and body.get(key) is not None:
                 return max(float(body[key]), 1.0)
     except (ValueError, TypeError):
+        # A body that is not JSON (or not a dict) carries no retry hint; use the default.
         pass
     return max(float(default), 1.0)
 
 
-__all__ = ["ArenaClient", "DEFAULT_COOLDOWN_SECONDS"]
+__all__ = ["ATTENTION_STATES", "ArenaClient", "DEFAULT_COOLDOWN_SECONDS"]

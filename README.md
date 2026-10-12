@@ -14,11 +14,11 @@
 </div>
 
 <div align="center">
-  <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/status-alpha-orange?style=for-the-badge" alt="Project status alpha"></a>
+  <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/status-beta-orange?style=for-the-badge" alt="Project status beta"></a>
   <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollektiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="https://github.com/HackerxBots/Kollektiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-478%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-481%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Documentation"></a>
 </div>
 
@@ -76,7 +76,7 @@ that makes the effort compound.
 
 ## Status
 
-Kollektiv is an **alpha**. It is good for trying the workflow on your own machine. It is not yet hardened for a public deployment. Read the [going-public checklist](docs/deploy-checklist.md#9-going-public) before you expose it.
+Kollektiv is in **beta**. It is good for trying the workflow on your own machine. It is not yet hardened for a public deployment. Read the [going-public checklist](docs/deploy-checklist.md#9-going-public) before you expose it.
 
 | Area | Status | Evidence |
 | --- | --- | --- |

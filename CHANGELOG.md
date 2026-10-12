@@ -58,6 +58,13 @@ on GitHub links to the section below for its version.
   database is left alone, and nothing reads it.
 
 ### Fixed
+- The secret scan no longer fails on a clean tree. It matches on file and hash
+  (`scripts/secret_scan.py`), not on line number, because `detect-secrets-hook`
+  rewrote the baseline when line numbers moved.
+- Import cycle removed: `config.settings` no longer imports `src.storage` (the R2
+  account parser moved to `config/r2_accounts.py`). The four CodeQL notices on the
+  PR are fixed: empty `except` explained, `ATTENTION_STATES` exported, and a no-op
+  `await` replaced.
 
 - `kollektiv login` keeps the other workers when `--env-file` points at a file other
   than the one the settings were loaded from. The list is read from the target file.
