@@ -75,7 +75,38 @@ def configure_environment(data_dir: str = "") -> Path:
         if applied:
             print(f"Kollektiv: loaded {len(applied)} setting(s) from {candidate}", flush=True)
             break
+
+    # Production refuses to start without a signing secret. A desktop user never
+    # sets one, so each install makes its own on first run and keeps it locally.
+    if not os.environ.get("SECRET_KEY"):
+        os.environ["SECRET_KEY"] = install_secret(root)
     return root
+
+
+def install_secret(root: Path) -> str:
+    """Return this install's signing secret, creating it on the first run.
+
+    The secret is random per install, so no two installs share one, and it is
+    stored in the data directory with owner-only permissions.
+
+    Args:
+        root: The data directory (created by the caller).
+
+    Returns:
+        The secret, as stored in ``root / "secret.key"``.
+    """
+    import secrets
+
+    path = root / "secret.key"
+    if path.is_file():
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    value = secrets.token_urlsafe(48)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(value + "\n")
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:

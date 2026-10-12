@@ -65,6 +65,8 @@ on GitHub links to the section below for its version.
 - `Strict-Transport-Security` is sent in production only.
 - `ENVIRONMENT=production` refuses to start without `SECRET_KEY`, instead of falling
   back to the public development key.
+- The desktop sidecar creates a random signing secret on first run (`secret.key` in its
+  data directory, owner-only), so the production guard does not stop a desktop install.
 - The secret scan no longer fails on a clean tree. It matches on file and hash
   (`scripts/secret_scan.py`), not on line number, because `detect-secrets-hook`
   rewrote the baseline when line numbers moved.
