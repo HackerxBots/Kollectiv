@@ -101,7 +101,7 @@ use *"Mitigated: validated by `src/utils/paths.py`"*)
   file path of `GET /projects/{id}/files/{path}/url`. The API answers the
   resulting `ValueError` with `400` (see the handler in `src/api/routes.py`).
 - *Gateway fails open on a damaged policy* — a malformed stored policy, or a missing or unreadable `GATEWAY_POLICY_PATH`, now denies every tool. A `client` or unknown role gets the read-only preset. Tested.
-- *Standalone MCP server reachable without auth* — it binds to `127.0.0.1` by default and refuses a non-loopback bind unless `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true`. Tested.
+- *Standalone MCP server reachable without auth* — it binds to `127.0.0.1` by default and refuses a non-loopback bind unless `MCP_AUTH_TOKEN` is set (clients then send it as a bearer token) or `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true`. Tested.
 - *Command injection in `examples/aider_shim.py`* (`py/command-line-injection`) — the shim has no shell mode now. The prompt is one argv element. Tested.
 - *Live-stream tickets reusable and logged* — a ticket works once, and access-log lines have it redacted. Tested.
 - *Stack-trace exposure* (`py/stack-trace-exposure`) on `GET /health`, the

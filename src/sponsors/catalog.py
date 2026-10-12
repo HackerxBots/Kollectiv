@@ -3,6 +3,9 @@
 Read from ``SPONSORS_FILE`` (a JSON list, or ``{"sponsors": [...]}``). Nothing is
 fetched from the network. A bad entry is skipped and the reason is logged; it is
 never shown. Copy that could pass for the tool, the model or an error is refused.
+
+Each entry is a campaign: ``cpc_cents`` is what the sponsor pays per click, and
+``cap_clicks`` ends the campaign after that many clicks (0 means no cap).
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ MAX_ENTRIES = 50
 MAX_TEXT = 140
 MAX_NAME = 60
 MAX_URL = 300
+MAX_CPC_CENTS = 100_000  # 1,000 USD per click is far beyond any real campaign
+MAX_CAP_CLICKS = 10_000_000
 
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -37,22 +42,36 @@ _IMPERSONATION = re.compile(
 
 @dataclass(frozen=True)
 class SponsorLine:
-    """One validated sponsor line."""
+    """One validated sponsor campaign."""
 
     id: str
     sponsor: str
     text: str
     url: str
+    cpc_cents: int = 0
+    cap_clicks: int = 0
 
-    def as_dict(self) -> Dict[str, str]:
-        """Return the public JSON shape (the label is always ``Sponsored``)."""
+    def as_public(self) -> Dict[str, str]:
+        """Return what the dashboard receives.
+
+        The destination is deliberately not included: the dashboard links to
+        ``go``, which counts the click and then redirects, so a click is always
+        counted. The label is always ``Sponsored``.
+        """
         return {
             "label": LABEL,
             "id": self.id,
             "sponsor": self.sponsor,
             "text": self.text,
-            "url": self.url,
+            "go": f"/sponsors/go/{self.id}",
         }
+
+
+def _int_field(raw: Dict[str, Any], key: str, limit: int) -> Tuple[Optional[int], str]:
+    value = raw.get(key, 0)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > limit:
+        return None, f"{key} must be a whole number from 0 to {limit}"
+    return value, ""
 
 
 def validate_entry(raw: Any) -> Tuple[Optional[SponsorLine], str]:
@@ -88,7 +107,17 @@ def validate_entry(raw: Any) -> Tuple[Optional[SponsorLine], str]:
     if parts.scheme != "https" or not parts.netloc or "@" in parts.netloc:
         return None, "url must be https with no user name or password"
 
-    return SponsorLine(id=ident, sponsor=sponsor, text=text, url=url), ""
+    cpc, reason = _int_field(raw, "cpc_cents", MAX_CPC_CENTS)
+    if cpc is None:
+        return None, reason
+    cap, reason = _int_field(raw, "cap_clicks", MAX_CAP_CLICKS)
+    if cap is None:
+        return None, reason
+
+    return (
+        SponsorLine(id=ident, sponsor=sponsor, text=text, url=url, cpc_cents=cpc, cap_clicks=cap),
+        "",
+    )
 
 
 _cache: Dict[str, Tuple[float, List[SponsorLine]]] = {}

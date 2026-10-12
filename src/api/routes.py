@@ -346,14 +346,32 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
 
     @router.get("/sponsors/line", tags=["sponsors"])
     async def sponsor_line(response: Response) -> Dict[str, Any]:
-        """Return the one sponsor line for this moment, or ``{"line": null}``.
+        """Return the sponsor line for this moment (or ``{"line": null}``) and count the view.
 
         Takes no input, sets no cookie and stores nothing about the caller.
         """
-        from src.sponsors.line import current_line
+        from src.sponsors import current_line
 
         response.headers["Cache-Control"] = "no-store"
-        return {"line": current_line(resolved)}
+        return {"line": current_line(resolved, record_view=True)}
+
+    @router.get("/sponsors/go/{sponsor_id}", tags=["sponsors"])
+    async def sponsor_go(sponsor_id: str) -> Response:
+        """Count a click on a sponsor line and send the reader to the sponsor.
+
+        The redirect carries ``Referrer-Policy: no-referrer``, so the sponsor does
+        not learn which page sent the reader.
+        """
+        from src.sponsors import go_target
+
+        target = go_target(resolved, sponsor_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="no such sponsor")
+        return RedirectResponse(
+            target,
+            status_code=302,
+            headers={"Referrer-Policy": "no-referrer", "Cache-Control": "no-store"},
+        )
 
     @router.get("/health", tags=["system"])
     async def health(request: Request) -> Dict[str, Any]:

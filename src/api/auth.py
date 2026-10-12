@@ -54,6 +54,7 @@ PUBLIC_PATHS = (
     "/favicon.ico",
     "/webhooks/",
     "/sponsors/line",
+    "/sponsors/go",
     "/",
 )
 

@@ -340,6 +340,23 @@ class GatewayAuditRecord(SQLModel, table=True):
     detail: str = Field(default="", max_length=500)
 
 
+class SponsorEventRecord(SQLModel, table=True):
+    """One sponsor line shown (``view``) or clicked (``click``), counted on this server.
+
+    Holds no identity: no viewer, no cookie, no address, no project and no prompt.
+    It exists so the operator can invoice sponsors for clicks and stop a campaign
+    at its cap.
+    """
+
+    __tablename__ = "sponsor_events"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sponsor_id: str = Field(default="", index=True, max_length=40)
+    kind: str = Field(default="view", index=True, max_length=8)
+    cpc_cents: int = Field(default=0)
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 # ----------------------------------------------------------------------
 # Engine / session management
 # ----------------------------------------------------------------------

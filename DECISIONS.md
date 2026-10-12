@@ -48,13 +48,14 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 | 36 | Compatibility shim: import `kollektiv` alongside `src` | ✅ | Issue #26. |
 | 37 | Freebuff (free, ad-funded coding agent) as a worker | 🚀 | `examples/freebuff_shim.py`: strips ads/ANSI, converts its edits into the fenced-block contract, retries only git reads. Caveat shipped in the README: its terms expect a supervised session, so it is one worker you watch — not an unattended fleet. |
 | 38 | Use Freebuff to work on Kollektiv itself | ✅ | Free dev agent for contributors who cannot pay for one; it is just a CLI in your terminal, so nothing in the repository needs to change. |
-| 39 | Ad-supported "free" tools, Freebuff-style sponsor line | 🚀 | **Owner decision, 2026-10-12 (reverses the earlier ban).** One clearly labelled "Sponsored" line in the dashboard, text only, from a local file the operator curates (`SPONSORS_FILE`), shown only when `SPONSORS_ENABLED=true`. It rotates by the clock, not by viewer. It never tracks: no identifiers, no impression pings, no third-party scripts or pixels, and the link opens with `noopener noreferrer sponsored`. The paid tiers stay ruled out. See [sponsors.md](docs/sponsors.md). |
+| 39 | Ad-supported "free" tools, Freebuff-style sponsor line | 🚀 | **Owner decision, 2026-10-12 (reverses the earlier ban).** Kollectiv is free for everyone and has no paid tier. One labelled "Sponsored" line in the dashboard, text only, from a local campaign file the operator curates. Sponsors pay per click, and each campaign has a click cap. Views and clicks are counted on the operator's own server, with no identifier. Clicks go through `/sponsors/go/<id>` with `Referrer-Policy: no-referrer`. Freebuff's prompt-based targeting is not built, and neither is a revenue share. See [sponsors.md](docs/sponsors.md). |
 
 ## Non-negotiables (not up for a vote)
 
 - **Never merge the PR without an explicit "merge it".**
 - **No telemetry, ever** — no analytics, identifiers or usage pings, in the API,
   CLI or dashboard.
+  *Owner decision, 2026-10-12:* sponsor views and clicks are counted on the operator's own server, with no identifier. Nothing else is counted, and nothing is sent to a third party.
 - **Free on the critical path** — no paid service may become required to run
   Kollektiv, and the free path stays the default.
 - **Arena stays the default worker provider**; everything else is optional.
@@ -63,7 +64,7 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 
 ## Recorded 2026-10-12 (owner answers)
 
-- **Ads (rule 39 changed):** the owner asked for a Freebuff-style ad model. It is a sponsor line with the no-tracking rule kept as it is. The owner has not lifted the ban on telemetry, identifiers or usage pings, and that ban still applies.
+- **Ads (rule 39 changed, 2026-10-12):** the owner asked for Freebuff's ad model. Kollectiv is free for everyone and funded by a sponsor line paid per click, with a campaign cap, on by default. It counts views and clicks on the operator's own server with no identifier. Prompt-based targeting and a revenue share are not built.
 - **Brain:** Groq (free tier) is the default brain. Arena can also be the brain (`BRAIN_PROVIDER=arena`), using a separate Arena session stored under account `brain`.
 - **Storage layout:** per-user remote folders, `{root}/users/{owner}/{project}`.
 - **TeraBox:** the owner checked the Open Platform terms and says multi-account pooling is valid. Setup is in [terabox.md](docs/terabox.md).

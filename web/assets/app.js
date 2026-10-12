@@ -1230,7 +1230,7 @@ function loadSponsorLine() {
       document.getElementById("kv-sponsor-text").textContent = ` ${line.text}`;
       const link = document.getElementById("kv-sponsor-link");
       link.textContent = line.sponsor;
-      link.href = line.url;
+      link.href = `${store.base}${line.go}`;
       box.hidden = false;
     })
     .catch(() => {});

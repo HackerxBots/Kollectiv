@@ -91,6 +91,8 @@ services:
       WORKSPACE_DIR: /app/data/workspace
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MCP_ALLOW_UNAUTHENTICATED_REMOTE: "true"
+      # Optional: set MCP_AUTH_TOKEN in .env and clients must send it as a Bearer token.
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
     volumes:
       - kollektiv-data:/app/data
     healthcheck:

@@ -432,8 +432,9 @@ class Settings(BaseSettings):
     BRAIN_TEMPERATURE: float = 0.2
     BRAIN_MAX_TOKENS: int = 4096
     BRAIN_TIMEOUT: float = 120.0
-    # Sponsor line (off by default). A local, operator-curated catalogue; no tracking.
-    SPONSORS_ENABLED: bool = False
+    # Sponsor line, on by default and funded per click (Freebuff-style). It shows
+    # nothing until SPONSORS_FILE holds at least one campaign. Counts stay on this server.
+    SPONSORS_ENABLED: bool = True
     SPONSORS_FILE: str = ""
     SPONSOR_ROTATE_SECONDS: int = 300
 
@@ -449,6 +450,8 @@ class Settings(BaseSettings):
     #: The standalone MCP server has no auth. A non-loopback bind is refused unless this is
     #: true. Set it only where the port is reachable through a trusted, authenticated layer.
     MCP_ALLOW_UNAUTHENTICATED_REMOTE: bool = False
+    #: Bearer token a remote MCP client must send. Empty means no token (see MCP_ALLOW_UNAUTHENTICATED_REMOTE).
+    MCP_AUTH_TOKEN: str = ""
     MCP_TRANSPORT: str = "sse"
 
     # ------------------------------------------------------------------

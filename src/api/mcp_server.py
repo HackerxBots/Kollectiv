@@ -26,6 +26,7 @@ same decorator API used below.
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 from typing import Any, Dict, List, Optional
 
@@ -422,15 +423,75 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
-def remote_exposure_refused(transport: str, host: str, allow_unauthenticated: bool) -> bool:
+def remote_exposure_refused(
+    transport: str,
+    host: str,
+    allow_unauthenticated: bool,
+    has_token: bool = False,
+) -> bool:
     """Return ``True`` when the server would be reachable from other machines without auth.
 
     stdio never opens a network port, so it is always allowed. A network transport on
-    a non-loopback address is refused unless the operator has explicitly accepted that.
+    a non-loopback address is allowed when it has a bearer token (``MCP_AUTH_TOKEN``).
+    Otherwise it is refused unless the operator has explicitly accepted that.
     """
     if transport == "stdio":
         return False
+    if has_token:
+        return False
     return host not in LOOPBACK_HOSTS and not allow_unauthenticated
+
+
+class BearerAuthMiddleware:
+    """ASGI wrapper: every HTTP or WebSocket request must carry ``Authorization: Bearer <token>``.
+
+    The comparison is constant-time. Lifespan events pass through, so the wrapped app still
+    starts. Nothing about the request is logged, and the token is never echoed back.
+    """
+
+    def __init__(self, app: Any, token: str) -> None:
+        self.app = app
+        self._expected = f"Bearer {token}".encode()
+
+    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+        supplied = b""
+        for name, value in scope.get("headers") or []:
+            if name.lower() == b"authorization":
+                supplied = value
+                break
+        if hmac.compare_digest(supplied, self._expected):
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        body = b'{"error":"unauthorized"}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"www-authenticate", b"Bearer"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+
+def serve_with_token(server: Any, transport: str, host: str, port: int, token: str) -> None:
+    """Serve an SSE or streamable-HTTP MCP app behind the bearer-token check."""
+    import uvicorn
+
+    if transport == "sse":
+        app = server.sse_app()
+    else:
+        app = server.streamable_http_app()
+    uvicorn.run(BearerAuthMiddleware(app, token), host=host, port=port, log_level="info")
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -458,11 +519,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
     configure_logging(args.log_level)
     settings = get_settings()
-    if remote_exposure_refused(args.transport, args.host, settings.MCP_ALLOW_UNAUTHENTICATED_REMOTE):
+    token = (settings.MCP_AUTH_TOKEN or "").strip()
+    if remote_exposure_refused(
+        args.transport, args.host, settings.MCP_ALLOW_UNAUTHENTICATED_REMOTE, has_token=bool(token)
+    ):
         LOGGER.error(
-            "Refusing to serve MCP on %s:%s without authentication. Bind to 127.0.0.1, put the "
-            "gateway in front (docs/gateway.md), or set MCP_ALLOW_UNAUTHENTICATED_REMOTE=true "
-            "where the port is reachable only through a trusted layer.",
+            "Refusing to serve MCP on %s:%s without authentication. Set MCP_AUTH_TOKEN (clients send "
+            "'Authorization: Bearer <token>'), bind to 127.0.0.1, put the gateway in front "
+            "(docs/gateway.md), or set MCP_ALLOW_UNAUTHENTICATED_REMOTE=true where the port is "
+            "reachable only through a trusted layer.",
             args.host,
             args.port,
         )
@@ -480,6 +545,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         if args.transport == "stdio":
             server.run("stdio")
+        elif token:
+            serve_with_token(server, args.transport, args.host, args.port, token)
         else:
             # ``run`` forwards host/port to the underlying ASGI transport.
             try:

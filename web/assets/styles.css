@@ -1137,3 +1137,6 @@ a:hover { color: var(--kv-text); }
 
 /* Sponsor line (opt-in, text only). */
 .kv-sponsor-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; }
+
+/* The Brain value can be long ("heuristic", a provider name): keep it inside its card. */
+#stat-brain { font-size: 24px; white-space: nowrap; }

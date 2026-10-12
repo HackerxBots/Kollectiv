@@ -1112,6 +1112,47 @@ async def cmd_estimate(args: argparse.Namespace) -> int:
     return 0 if estimate.verdict != "over" else 3
 
 
+async def cmd_sponsors(args: argparse.Namespace) -> int:
+    """Show the sponsor line that is live now, or the per-sponsor ledger (views, clicks, owed)."""
+    from config.settings import get_settings
+    from src.db.models import init_db
+    from src.sponsors import ledger
+    from src.sponsors.catalog import load_catalog
+    from src.sponsors.line import current_line
+
+    settings = get_settings()
+    lines = load_catalog(settings.SPONSORS_FILE)
+    if args.action == "line":
+        live = current_line(settings)
+        if live is None:
+            print("no sponsor line is live (sponsors off, no campaigns, or every campaign is at its cap)")
+            return 0
+        print(f"{live['label']}: {live['sponsor']} — {live['text']}")
+        return 0
+
+    init_db()
+    rows = ledger.summary(lines)
+    if args.json:
+        _print({"campaigns": rows}, True)
+        return 0
+    if not rows:
+        print(f"no campaigns in {settings.SPONSORS_FILE or '(SPONSORS_FILE is not set)'}")
+        return 0
+    print(f"{'sponsor':<24} {'views':>8} {'clicks':>8} {'cap':>8} {'owed':>12}")
+    total = 0
+    for row in rows:
+        cap = str(row["cap_clicks"]) if row["cap_clicks"] else "none"
+        flag = "  (capped)" if row["capped"] else ""
+        total += row["owed_cents"]
+        print(
+            f"{row['sponsor'][:24]:<24} {row['views']:>8} {row['clicks']:>8} {cap:>8} "
+            f"${row['owed_cents'] / 100:>10.2f}{flag}"
+        )
+    print(f"{'total owed':<24} {'':>8} {'':>8} {'':>8} ${total / 100:>10.2f}")
+    print("Invoice sponsors from these totals. Kollectiv sends no payments and no data to anyone.")
+    return 0
+
+
 async def cmd_budget(args: argparse.Namespace) -> int:
     """Show the local spend ledger: tokens and dollars, per project and today."""
     from src.orchestrator.app import Orchestrator
@@ -1478,6 +1519,9 @@ def build_parser() -> argparse.ArgumentParser:
     estimate.add_argument("--json", action="store_true")
 
     budget = sub.add_parser("budget", help="Local spend ledger: tokens, dollars, caps")
+    sponsors = sub.add_parser("sponsors", help="Sponsor line: the live line, or the ledger of views, clicks and owed amounts")
+    sponsors.add_argument("action", nargs="?", choices=["line", "ledger"], default="ledger")
+    sponsors.add_argument("--json", action="store_true")
     budget.add_argument("--json", action="store_true")
 
     init_config = sub.add_parser("init-config", help="Write a commented .kollektiv.yml")
@@ -1590,6 +1634,7 @@ COMMANDS = {
     "gateway": cmd_gateway,
     "estimate": cmd_estimate,
     "budget": cmd_budget,
+    "sponsors": cmd_sponsors,
     "keys": cmd_keys,
     "links": cmd_links,
     "link": cmd_link,
