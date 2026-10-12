@@ -7,8 +7,9 @@
 ### Releases, versioning and the README
 
 Kollektiv ships small and often, and documents every step. **Everything is a
-beta tag for now:** the interfaces still move, so every tag is `v0.3.0-beta.1`,
-`v0.3.0-beta.2`, … and the release notes open with a beta warning. The release
+`-beta.N` tag for now, and the project is alpha:** the interfaces still move, so
+every tag is `v0.3.0-beta.1`, `v0.3.0-beta.2`, … and the release notes open with
+an alpha warning. The release
 itself is published as a *normal* GitHub release (not a pre-release) so it shows
 up in the sidebar's "Latest" widget instead of hiding — the tag is the honest
 signal, and the README is updated in the same PR as the change.
@@ -18,8 +19,9 @@ signal, and the README is updated in the same PR as the change.
   behaviour changes, `PATCH` (`v0.3.1-beta.1`) for fixes only.
 - **Changelog first.** `CHANGELOG.md` is updated in the same PR; the release
   workflow refuses to publish a tag whose version has no changelog section.
-- **Beta tags, findable releases:** the workflow keeps `vX.Y.Z-beta.N` tagging
-  and a beta banner in the notes, attaches the sdist + wheel, and publishes the
+- **Tags, findable releases:** the workflow keeps `vX.Y.Z-beta.N` tagging (the
+  suffix is for version continuity; the status is alpha, see the README) and an
+  alpha banner in the notes, attaches the sdist + wheel, and publishes the
   release so it is listed (pre-releases are skipped by "Latest").
 - **The README is part of the release.** The peak block (release name, test
   count) and the tool/table sections change with it; the checklist in
