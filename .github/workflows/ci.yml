@@ -115,8 +115,25 @@ jobs:
           python-version: "3.11"
       - name: Scan tracked files for new secrets
         run: |
+          set -o pipefail
           python -m pip install --quiet "detect-secrets==1.5.0"
-          git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline
+          git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline 2>&1 | tee /tmp/secret-scan.txt
+
+      - name: Comment the secret-scan output on the pull request
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### Secret scan failed"
+            echo ""
+            echo "Output of \`detect-secrets-hook\` (last 12000 characters):"
+            echo ""
+            echo '```'
+            tail -c 12000 /tmp/secret-scan.txt 2>/dev/null || echo "(no output captured)"
+            echo '```'
+          } > /tmp/secret-scan.md
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file /tmp/secret-scan.md
 
   package:
     name: Build the distribution
