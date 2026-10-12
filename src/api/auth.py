@@ -28,6 +28,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import time
@@ -342,13 +343,17 @@ class StreamTicketStore:
         return ticket
 
     def redeem(self, ticket: str) -> Optional[str]:
-        """Return the subject a live ticket belongs to, or ``None``."""
-        entry = self._tickets.get(ticket)
+        """Consume a ticket and return its subject, or ``None``.
+
+        A ticket works once. Removing it on first use means a copy taken from a URL, a
+        log or a proxy cannot open a second stream. The browser reconnects with a fresh
+        ticket, which the dashboards request themselves.
+        """
+        entry = self._tickets.pop(ticket, None)
         if entry is None:
             return None
         subject, expires = entry
         if self._clock() >= expires:
-            self._tickets.pop(ticket, None)
             return None
         return subject
 
@@ -356,6 +361,37 @@ class StreamTicketStore:
 def is_stream_path(path: str) -> bool:
     """Return ``True`` for ``/projects/{id}/events/stream``."""
     return bool(_STREAM_PATH.match(path))
+
+
+_TICKET_IN_QUERY = re.compile(r"ticket=[^&\s\"']+")
+
+
+class StreamTicketRedactor(logging.Filter):
+    """Blank stream tickets out of access-log lines before they are written.
+
+    Uvicorn's access log records the full request path, query string included. A
+    ticket there would be copied into any log that is kept or shipped.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Redact the record in place and always let it through."""
+        if isinstance(record.msg, str) and "ticket=" in record.msg:
+            record.msg = _TICKET_IN_QUERY.sub("ticket=REDACTED", record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _TICKET_IN_QUERY.sub("ticket=REDACTED", arg)
+                if isinstance(arg, str) and "ticket=" in arg
+                else arg
+                for arg in record.args
+            )
+        return True
+
+
+def install_ticket_redaction() -> None:
+    """Attach :class:`StreamTicketRedactor` to the uvicorn access log once."""
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(item, StreamTicketRedactor) for item in access.filters):
+        access.addFilter(StreamTicketRedactor())
 
 
 def bearer_token(request: Request) -> str:

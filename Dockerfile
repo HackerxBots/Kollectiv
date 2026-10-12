@@ -4,8 +4,9 @@
 #
 #   docker build -t kollektiv .
 #   docker run --env-file .env -p 8000:8000 kollektiv                 # API
-#   docker run --env-file .env -p 8001:8001 kollektiv \
-#       python -m src.api.mcp_server --transport sse --host 0.0.0.0 # MCP
+#   docker run --env-file .env -p 127.0.0.1:8001:8001 -e MCP_ALLOW_UNAUTHENTICATED_REMOTE=true \
+#       kollektiv python -m src.api.mcp_server --transport sse --host 0.0.0.0   # MCP, no auth:
+#       publish the port on 127.0.0.1 only. The server refuses a non-loopback bind without the opt-in.
 #
 # The SQLite database and the agent workspace both live under /app/data, which
 # docker-compose mounts as a shared volume so the API and the MCP server see the

@@ -30,8 +30,7 @@ The shim speaks two dialects:
 
 Security: it executes a command with your prompt as an argument, so it is meant
 for ``127.0.0.1`` or a private network, guarded by ``WORKER_TOKEN``. Prompts are
-passed as a single argv element (never through a shell) unless
-``WORKER_SHELL=1`` is set, which is only for trusted, local experiments.
+passed as a single argv element. There is no shell mode.
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
-#: Command template. ``{prompt}`` is replaced by the prompt (quoted for argv).
+#: Command template. ``{prompt}`` becomes one argv element holding the whole prompt.
 COMMAND = os.environ.get("WORKER_COMMAND", "aider --yes --no-auto-commits --message {prompt}")
 #: Optional bearer token clients must present (empty disables the check).
 TOKEN = os.environ.get("WORKER_TOKEN", "")
@@ -53,8 +52,6 @@ TOKEN = os.environ.get("WORKER_TOKEN", "")
 WORKDIR = os.environ.get("WORKER_WORKDIR", "") or None
 #: Seconds before a run is killed.
 TIMEOUT = float(os.environ.get("WORKER_TIMEOUT", "900"))
-#: Set to 1 to run through the shell (only for commands that need pipes).
-USE_SHELL = os.environ.get("WORKER_SHELL", "") == "1"
 
 app = FastAPI(title="Kollektiv CLI worker shim", version="0.1.0")
 
@@ -95,24 +92,24 @@ def _prompt_from(body: ChatRequest) -> str:
 
 
 async def _run(command: str, prompt: str) -> Dict[str, Any]:
-    """Execute the CLI agent with ``prompt`` and capture its output."""
-    argv = shlex.split(command.replace("{prompt}", prompt))
+    """Execute the CLI agent with ``prompt`` as a single argument and capture its output.
+
+    The template is split into arguments *before* the prompt is substituted, so the
+    prompt is always one argument: it is never split on spaces, never parsed by a
+    shell, and cannot add options. There is deliberately no shell mode. A command that
+    needs pipes should be a small wrapper script that the operator controls.
+    """
+    argv = [part.replace("{prompt}", prompt) for part in shlex.split(command)]
+    if not argv:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="WORKER_COMMAND is empty")
     started = time.perf_counter()
     try:
-        if USE_SHELL:
-            process = await asyncio.create_subprocess_shell(
-                command.replace("{prompt}", shlex.quote(prompt)),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=WORKDIR,
-            )
-        else:
-            process = await asyncio.create_subprocess_exec(
-                *argv,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=WORKDIR,
-            )
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=WORKDIR,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

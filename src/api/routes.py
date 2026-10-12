@@ -45,6 +45,7 @@ from src.api.auth import (
     admin_dependency,
     auth_dependency,
     install_auth,
+    install_ticket_redaction,
     parse_svix_headers,
     verify_svix_signature,
 )
@@ -243,6 +244,7 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
     # Clerk: attaches identity to every request and, when AUTH_REQUIRED=true,
     # rejects anonymous calls (webhooks and /health stay public).
     application.state.clerk_verifier_handle = install_auth(application, resolved)
+    install_ticket_redaction()
 
     @application.exception_handler(ValueError)
     async def invalid_input_handler(request: Request, exc: ValueError) -> JSONResponse:

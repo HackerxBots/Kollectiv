@@ -7,7 +7,27 @@ on GitHub links to the section below for its version.
 
 ## [Unreleased]
 
+### Security
+
+- Gateway: a damaged policy (malformed JSON, a non-object, invalid fields, or a missing or unreadable `GATEWAY_POLICY_PATH`) now denies every tool instead of allowing all of them. Patterns must be lists of strings.
+- Gateway: a `client` role, or any unknown role, gets the `read-only` preset instead of `dashboard`.
+- MCP server: refuses a non-loopback bind without authentication. `MCP_HOST` defaults to `127.0.0.1`. `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true` is the explicit opt-in.
+- Live project streams: tickets work once and are redacted from the uvicorn access log.
+- `examples/aider_shim.py`: the shell mode is removed, and the prompt is passed as one argument.
+- CI: a TruffleHog secret scan runs on every push and pull request, limited to verified secrets.
+
+### Added
+
+- `ADMIN_USER_IDS`: admin-only routes for `/sync`, link writes, connector call and probe, agent status and health, `/budget` and `/storage/status`. An empty list denies everyone when auth is on.
+- `RATE_LIMIT_WRITES_PER_MINUTE` (default 60): per-client limit on write requests, answered with 429 and `Retry-After`.
+- `MAX_UPLOAD_MB` (default 100): uploads above the limit are refused with 413.
+- `PUT`/`GET`/`DELETE /me/keys/{provider}`: a signed-in user stores an API key, encrypted and write-only.
+- `POST /auth/stream-ticket`: a 60-second ticket that lets a browser open a live project stream.
+
 ### Changed
+
+- The `__session` cookie is no longer accepted as a credential. Clients must send `Authorization: Bearer`. This is breaking for cookie-only clients.
+- `MCP_HOST` defaults to `127.0.0.1` (was `0.0.0.0`).
 
 - **Bring your own key (breaking).** API workers are reached with a key you hold,
   through an OpenAI-compatible API. Arena.ai session workers are the exception. Workers take `provider`, `model`, `base_url`

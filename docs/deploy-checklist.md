@@ -201,3 +201,44 @@ machine.
 - **Watch the first week** through `GET /health`, the `events` table and
   `kollektiv logs`-style tailing: the storage watermark and the worker failure
   counters are the two numbers that move first.
+
+---
+
+## 9. Going public
+
+Do this before you point a public address, a domain or a shared team at a
+Kollektiv server. Kollektiv is an alpha. Its local defaults are for one trusted
+user on one machine, and they are open on purpose.
+
+- [ ] **Turn on auth.** `AUTH_REQUIRED=true` with your Clerk keys.
+      `CLERK_AUTHORIZED_PARTIES` should list your dashboard origin.
+- [ ] **Set the admin list.** `ADMIN_USER_IDS` is your Clerk user id. An empty
+      list means admin routes are closed to everyone, which is safe but leaves
+      you unable to run `/sync` or the connectors.
+- [ ] **Set explicit CORS origins.** `CORS_ORIGINS` must not be `*` when auth is on.
+- [ ] **Set a real `SECRET_KEY`.** Without it the app uses an insecure development
+      key, and `kollektiv check` warns about it.
+- [ ] **Terminate TLS at a proxy** and enable HSTS there. The app does not serve HTTPS.
+- [ ] **Forward client addresses.** The write limiter keys on the address the app
+      sees. Behind a proxy, every user shares one bucket until you configure
+      forwarded headers (uvicorn `--proxy-headers --forwarded-allow-ips=<proxy>`).
+      With several replicas, add a shared limit at the proxy too.
+- [ ] **Keep the MCP server private.** Leave `MCP_HOST=127.0.0.1`. Never set
+      `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true` on a host that the internet can reach.
+      Remote MCP clients should use the [gateway](gateway.md), which needs a token.
+- [ ] **Keep the gateway on.** `GATEWAY_REQUIRE_TOKENS=true` (the default). A broken
+      `GATEWAY_POLICY_PATH` file denies everyone, and the error is in the logs.
+- [ ] **Cap the spend.** Set `BUDGET_MAX_USD`, and set spend caps in each provider
+      dashboard too. The app cannot see provider-side charges.
+- [ ] **Limit uploads.** `MAX_UPLOAD_MB` (default 100) and `RATE_LIMIT_WRITES_PER_MINUTE`
+      (default 60).
+- [ ] **Back up the data.** The SQLite file and the workspace under `/app/data`,
+      or your Postgres database. Test a restore once.
+- [ ] **Keep secrets out of git.** `.env` is ignored. CI scans for verified
+      secrets, but do not rely on that alone.
+- [ ] **Prove it.** Run `python scripts/smoke.py --base-url https://your-host` and
+      `kollektiv check` after every deploy.
+
+Known limits that remain: there is no single fail-closed production profile yet,
+TeraBox and the connectors are experimental (see the status table in the README),
+and the standalone MCP server has no auth of its own.

@@ -435,7 +435,10 @@ class Settings(BaseSettings):
     API_PORT: int = 8000
     API_HOST: str = "0.0.0.0"
     MCP_PORT: int = 8001
-    MCP_HOST: str = "0.0.0.0"
+    MCP_HOST: str = "127.0.0.1"
+    #: The standalone MCP server has no auth. A non-loopback bind is refused unless this is
+    #: true. Set it only where the port is reachable through a trusted, authenticated layer.
+    MCP_ALLOW_UNAUTHENTICATED_REMOTE: bool = False
     MCP_TRANSPORT: str = "sse"
 
     # ------------------------------------------------------------------

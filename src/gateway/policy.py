@@ -50,12 +50,26 @@ POLICY_PRESETS: Dict[str, Dict[str, Any]] = {
     "admin": {"allow": ["*"], "deny": [], "confirm": [], "read_only": False},
 }
 
+def _patterns(value: Any, field_name: str) -> Tuple[str, ...]:
+    """Return a list of glob strings, or raise ``ValueError`` for anything else.
+
+    A bare string or a nested list must not be silently reinterpreted: splitting a
+    string into characters, or stringifying a list, would give patterns the author
+    never wrote.
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field_name!r} must be a list of strings")
+    return tuple(value)
+
+
 @dataclass(frozen=True)
 class Policy:
     """A parsed, ready-to-check policy.
 
     Attributes:
-        allow: Patterns the client may call; empty means everything.
+        allow: Patterns the client may call; empty means nothing.
         deny: Patterns refused after ``allow`` is satisfied.
         confirm: Patterns that additionally require an explicit confirmation.
         read_only: When true, every dangerous tool is refused.
@@ -83,28 +97,40 @@ class Policy:
         """
         data = payload or {}
         return cls(
-            allow=tuple(str(item) for item in data.get("allow") or ()),
-            deny=tuple(str(item) for item in data.get("deny") or ()),
-            confirm=tuple(str(item) for item in data.get("confirm") or ()),
+            allow=_patterns(data.get("allow"), "allow"),
+            deny=_patterns(data.get("deny"), "deny"),
+            confirm=_patterns(data.get("confirm"), "confirm"),
             read_only=bool(data.get("read_only", False)),
             name=name,
         )
 
     @classmethod
     def from_json(cls, text: str, name: str = "custom") -> "Policy":
-        """Build a policy from a JSON string (a malformed one becomes the default)."""
+        """Build a policy from a JSON string.
+
+        A malformed or non-object policy becomes an **empty** policy, which allows
+        nothing. Damaged data must never widen what a client may call.
+        """
         try:
             payload = json.loads(text or "{}")
         except json.JSONDecodeError as exc:
-            LOGGER.warning("Gateway policy %s is not valid JSON (%s); falling back to allow-read", name, exc)
-            return cls(allow=("*",), name=f"{name} (unreadable)")
+            LOGGER.error("Gateway policy %s is not valid JSON (%s); denying all tools until it is fixed", name, exc)
+            return cls(name=f"{name} (unreadable: denies all)")
         if not isinstance(payload, dict):
-            return cls(allow=("*",), name=f"{name} (not an object)")
-        return cls.from_dict(payload, name=name)
+            LOGGER.error("Gateway policy %s is not a JSON object; denying all tools until it is fixed", name)
+            return cls(name=f"{name} (not an object: denies all)")
+        try:
+            return cls.from_dict(payload, name=name)
+        except (TypeError, ValueError, AttributeError) as exc:
+            LOGGER.error("Gateway policy %s has invalid fields (%s); denying all tools until it is fixed", name, exc)
+            return cls(name=f"{name} (invalid: denies all)")
 
     @classmethod
     def preset(cls, name: str) -> "Policy":
-        """Return a named preset, or the dashboard preset for an unknown name.
+        """Return a named preset, or the read-only preset for an unknown name.
+
+        An unknown name is a configuration error, so it gets the most restrictive
+        preset rather than a permissive one.
 
         Args:
             name: One of :data:`POLICY_PRESETS`.
@@ -114,9 +140,8 @@ class Policy:
         """
         chosen = POLICY_PRESETS.get(name)
         if chosen is None:
-            LOGGER.warning("Unknown gateway policy preset %r; using 'dashboard'", name)
-            chosen = POLICY_PRESETS["dashboard"]
-            return cls.from_dict(chosen, name="dashboard")
+            LOGGER.error("Unknown gateway policy preset %r; using 'read-only'", name)
+            return cls.from_dict(POLICY_PRESETS["read-only"], name="read-only")
         return cls.from_dict(chosen, name=name)
 
     # -- serialisation -------------------------------------------------
@@ -191,17 +216,20 @@ def load_policy_file(path: str) -> Dict[str, Dict[str, Any]]:
         falls back to the per-client policies).
     """
     target = Path(path).expanduser()
+    # A configured policy file that cannot be read is a broken policy source. Ignoring
+    # it would silently drop the operator's restrictions, so every client is denied.
+    deny_everyone: Dict[str, Dict[str, Any]] = {"*": {"allow": [], "deny": ["*"]}}
     try:
         payload = json.loads(target.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        LOGGER.warning("GATEWAY_POLICY_PATH %s does not exist", target)
-        return {}
+        LOGGER.error("GATEWAY_POLICY_PATH %s does not exist; denying all tools until it is fixed", target)
+        return deny_everyone
     except (OSError, json.JSONDecodeError) as exc:
-        LOGGER.error("Could not read the gateway policy file %s: %s", target, exc)
-        return {}
+        LOGGER.error("Could not read the gateway policy file %s (%s); denying all tools until it is fixed", target, exc)
+        return deny_everyone
     if not isinstance(payload, dict):
-        LOGGER.error("Gateway policy file %s must contain an object", target)
-        return {}
+        LOGGER.error("Gateway policy file %s must contain an object; denying all tools until it is fixed", target)
+        return deny_everyone
     return {str(key): value for key, value in payload.items() if isinstance(value, dict)}
 
 
@@ -232,7 +260,7 @@ def resolve_policy(
         return Policy.from_dict(from_file, name=f"file:{client_name}")
     if stored_json and stored_json not in ("", "{}"):
         return Policy.from_json(stored_json, name=f"client:{client_name}")
-    return Policy.preset(role if role in POLICY_PRESETS else "dashboard")
+    return Policy.preset(role if role in POLICY_PRESETS else "read-only")
 
 
 __all__ = [

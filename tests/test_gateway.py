@@ -235,10 +235,15 @@ def test_policy_worker_is_scoped_to_its_namespaces() -> None:
 
 
 def test_policy_handles_junk_without_crashing() -> None:
-    """Malformed stored policies degrade to permissive reads, loudly but safely."""
-    assert Policy.from_json("{not json").allow == ("*",)
-    assert Policy.from_json("[1, 2]").name.endswith("(not an object)")
-    assert Policy.preset("no-such-preset").name == "dashboard"
+    """Damaged stored policies deny everything: broken data must never widen access."""
+    for junk in ("{not json", "[1, 2]", '{"allow": 7}', '{"allow": [["x"]]}'):
+        policy = Policy.from_json(junk)
+        assert policy.allow == (), junk
+        for tool, dangerous in (("projects.list", False), ("connectors.slack.post_message", True)):
+            assert policy.decision(tool, dangerous=dangerous, confirm=True)[0] is False, (junk, tool)
+    assert "denies all" in Policy.from_json("[1, 2]").name
+    # An unknown preset is a configuration error: it gets the most restrictive preset.
+    assert Policy.preset("no-such-preset").name == "read-only"
     # An empty allow list denies everything: a policy that fails open is not one.
     assert Policy().decision("projects.list")[0] is False
 
@@ -250,20 +255,28 @@ def test_resolve_policy_prefers_file_then_client_then_role() -> None:
     assert resolve_policy("dash", stored, file_policies={"*": {"deny": ["x"]}}, role="worker").deny == ("x",)
     assert resolve_policy("dash", stored, role="worker").allow == ("projects.*",)
     assert resolve_policy("dash", "", role="worker").name == "worker"
-    assert resolve_policy("dash", "", role="nonsense").name == "dashboard"
+    assert resolve_policy("dash", "", role="nonsense").name == "read-only"
+    assert resolve_policy("dash", "", role="client").name == "read-only"
+    assert resolve_policy("dash", "{not json", role="worker").decision("projects.list")[0] is False
 
 
-def test_policy_file_is_read_leniently(tmp_path: Path) -> None:
-    """A missing, empty or broken policy file never stops the gateway."""
-    assert load_policy_file(str(tmp_path / "nope.json")) == {}
+def test_broken_policy_file_denies_everyone(tmp_path: Path) -> None:
+    """A configured policy file that is missing or broken must not drop the operator's rules."""
+    for target in (tmp_path / "nope.json",):
+        assert resolve_policy("alice", "", file_policies=load_policy_file(str(target)), role="admin").decision(
+            "projects.list"
+        )[0] is False
 
     broken = tmp_path / "broken.json"
     broken.write_text("{ not json", encoding="utf-8")
-    assert load_policy_file(str(broken)) == {}
+    denied = resolve_policy("alice", "", file_policies=load_policy_file(str(broken)), role="admin")
+    assert denied.decision("projects.list")[0] is False
 
     not_an_object = tmp_path / "list.json"
     not_an_object.write_text("[1, 2, 3]", encoding="utf-8")
-    assert load_policy_file(str(not_an_object)) == {}
+    assert resolve_policy("alice", "", file_policies=load_policy_file(str(not_an_object)), role="admin").decision(
+        "projects.list"
+    )[0] is False
 
     good = tmp_path / "policies.json"
     good.write_text(

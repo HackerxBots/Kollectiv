@@ -74,7 +74,18 @@ services:
       - "8001"
     ports:
       - "127.0.0.1:${MCP_PORT:-8001}:8001"   # the MCP server has no auth; keep it local
-    <<: *kollektiv-env
+    # The container binds 0.0.0.0 so Docker can reach it, which the MCP server refuses
+    # unless this is set. The published port above stays on 127.0.0.1 of the host.
+    env_file:
+      - .env
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: sqlite:////app/data/kollektiv.db
+      WORKSPACE_DIR: /app/data/workspace
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MCP_ALLOW_UNAUTHENTICATED_REMOTE: "true"
+    volumes:
+      - kollektiv-data:/app/data
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8001), timeout=5).close()"]
       interval: 30s

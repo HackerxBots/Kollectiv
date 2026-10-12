@@ -100,15 +100,16 @@ use *"Mitigated: validated by `src/utils/paths.py`"*)
   manager's local and remote paths, artifact uploads, and the project id *and*
   file path of `GET /projects/{id}/files/{path}/url`. The API answers the
   resulting `ValueError` with `400` (see the handler in `src/api/routes.py`).
+- *Gateway fails open on a damaged policy* — a malformed stored policy, or a missing or unreadable `GATEWAY_POLICY_PATH`, now denies every tool. A `client` or unknown role gets the read-only preset. Tested.
+- *Standalone MCP server reachable without auth* — it binds to `127.0.0.1` by default and refuses a non-loopback bind unless `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true`. Tested.
+- *Command injection in `examples/aider_shim.py`* (`py/command-line-injection`) — the shim has no shell mode now. The prompt is one argv element. Tested.
+- *Live-stream tickets reusable and logged* — a ticket works once, and access-log lines have it redacted. Tested.
 - *Stack-trace exposure* (`py/stack-trace-exposure`) on `GET /health`, the
   project event stream and the presigned-URL route — failures are logged with
   `exc_info=True` and the client receives a generic message plus the exception
   *class* name, never the internal message.
 - *Open storage-client findings remain:* the alerts against
-  `src/storage/r2_pool.py`, `src/storage/pool_manager.py` and
-  `examples/aider_shim.py` are the same query and the same reasoning (the storage
-  API takes the remote key it is given, and the shim runs the command the
-  operator configured).
+  `src/storage/r2_pool.py` and `src/storage/pool_manager.py` are the same query and the same reasoning (the storage API takes the remote key it is given).
 
 **Accepted by design** (dismissed with a reason in the Security tab)
 
@@ -118,8 +119,6 @@ use *"Mitigated: validated by `src/utils/paths.py`"*)
   operator's own terminal. Showing the value once is the entire purpose of those
   commands; the real token is stored encrypted through `TokenStore` and never
   printed.
-- `py/command-line-injection` in `examples/aider_shim.py` — the shim runs the
-  command the *operator* set in `AIDER_COMMAND`, by design, exactly like a shell.
 - `py/path-injection` in the storage clients (`src/storage/r2_pool.py`,
   `src/storage/pool_manager.py`) — those are the storage layer's public API:
   callers pass the remote key they want, like a filesystem API. Every call site

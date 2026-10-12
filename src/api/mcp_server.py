@@ -418,6 +418,21 @@ def create_server(orchestrator: Optional[Orchestrator] = None, settings: Optiona
     return server
 
 
+#: Hosts that only this machine can reach.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def remote_exposure_refused(transport: str, host: str, allow_unauthenticated: bool) -> bool:
+    """Return ``True`` when the server would be reachable from other machines without auth.
+
+    stdio never opens a network port, so it is always allowed. A network transport on
+    a non-loopback address is refused unless the operator has explicitly accepted that.
+    """
+    if transport == "stdio":
+        return False
+    return host not in LOOPBACK_HOSTS and not allow_unauthenticated
+
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     """Parse command line arguments for the MCP server."""
     settings = get_settings()
@@ -442,6 +457,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     """
     args = parse_args(argv)
     configure_logging(args.log_level)
+    settings = get_settings()
+    if remote_exposure_refused(args.transport, args.host, settings.MCP_ALLOW_UNAUTHENTICATED_REMOTE):
+        LOGGER.error(
+            "Refusing to serve MCP on %s:%s without authentication. Bind to 127.0.0.1, put the "
+            "gateway in front (docs/gateway.md), or set MCP_ALLOW_UNAUTHENTICATED_REMOTE=true "
+            "where the port is reachable only through a trusted layer.",
+            args.host,
+            args.port,
+        )
+        return 2
     server = create_server()
     if args.transport == "stdio":
         LOGGER.info("Starting the Kollektiv MCP server (%s transport)", args.transport)

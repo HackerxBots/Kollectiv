@@ -191,7 +191,8 @@ provider's current pricing page and override them.
 | Key | Default | Purpose |
 | --- | --- | --- |
 | `API_HOST` / `API_PORT` | `0.0.0.0` / `8000` | HTTP API bind address |
-| `MCP_HOST` / `MCP_PORT` | `0.0.0.0` / `8001` | MCP bind address |
+| `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8001` | MCP bind address. A non-loopback host is refused unless `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true` (the MCP server has no auth) |
+| `MCP_ALLOW_UNAUTHENTICATED_REMOTE` | `false` | Accept a non-loopback MCP bind with no auth. Only where the port is reachable through a trusted layer |
 | `MCP_TRANSPORT` | `sse` | `stdio`, `sse` or `streamable-http` |
 | `CRON_INTERVAL_MINUTES` | `15` | Sync pass cadence |
 | `CRON_ENABLED` | `true` | Turn the scheduler off for one-shot runs |

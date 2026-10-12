@@ -101,6 +101,21 @@ jobs:
           test -f web/index.html
           ! grep -q '<script src=' web/index.html
 
+  secrets:
+    # Fails the build on a live credential in the history of the pull request or
+    # push. --only-verified keeps it to secrets that still work when checked, so a
+    # documented example key (such as AWS's AKIAIOSFODNN7EXAMPLE) does not block merges.
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for verified secrets
+        uses: trufflesecurity/trufflehog@v3.99.2
+        with:
+          extra_args: --only-verified --fail
+
   package:
     name: Build the distribution
     runs-on: ubuntu-latest

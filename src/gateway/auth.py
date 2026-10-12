@@ -97,7 +97,7 @@ class GatewayAuth:
         if role not in ROLES:
             raise ConfigurationError(f"unknown gateway role {role!r}; choose one of {', '.join(ROLES)}")
         token = f"{TOKEN_PREFIX}{secrets.token_urlsafe(32)}"
-        chosen = policy or Policy.preset(role if role in POLICY_PRESETS else "dashboard")
+        chosen = policy or Policy.preset(role if role in POLICY_PRESETS else "read-only")
 
         with session_scope() as session:
             row = session.get(GatewayClientRecord, clean)

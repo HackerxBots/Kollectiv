@@ -69,3 +69,63 @@ def test_stream_path_matcher_is_strict() -> None:
     assert is_stream_path("/projects/prj_1/events/stream")
     assert not is_stream_path("/projects/prj_1/status")
     assert not is_stream_path("/projects//events/stream/extra")
+
+
+def test_stream_ticket_works_only_once() -> None:
+    """A copied ticket cannot open a second stream."""
+    from src.api.auth import StreamTicketStore
+
+    store = StreamTicketStore(ttl=60, clock=_Clock())
+    ticket = store.issue("user_alice")
+    assert store.redeem(ticket) == "user_alice"
+    assert store.redeem(ticket) is None
+
+
+def test_access_log_lines_never_keep_a_stream_ticket() -> None:
+    """The uvicorn access log is redacted before it is written."""
+    import logging
+
+    from src.api.auth import StreamTicketRedactor
+
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:5000", "GET", "/projects/prj_1/events/stream?ticket=abc123&x=1", "1.1", 200),
+        None,
+    )
+    assert StreamTicketRedactor().filter(record) is True
+    line = record.getMessage()
+    assert "abc123" not in line
+    assert "ticket=REDACTED&x=1" in line
+
+
+def test_mcp_refuses_unauthenticated_remote_binds() -> None:
+    """The standalone MCP server has no auth, so it only listens on loopback unless told otherwise."""
+    from src.api.mcp_server import remote_exposure_refused
+
+    assert remote_exposure_refused("sse", "0.0.0.0", False) is True
+    assert remote_exposure_refused("streamable-http", "10.0.0.5", False) is True
+    assert remote_exposure_refused("sse", "0.0.0.0", True) is False
+    assert remote_exposure_refused("sse", "127.0.0.1", False) is False
+    assert remote_exposure_refused("sse", "localhost", False) is False
+    assert remote_exposure_refused("stdio", "0.0.0.0", False) is False
+
+
+def test_mcp_main_exits_before_serving_a_remote_bind(monkeypatch: Any) -> None:
+    """main() returns 2 without building the server when the bind is refused."""
+    from src.api import mcp_server
+
+    built: list[bool] = []
+    monkeypatch.setattr(mcp_server, "create_server", lambda *a, **k: built.append(True))
+    monkeypatch.setattr(mcp_server, "get_settings", lambda: _settings_with(MCP_ALLOW_UNAUTHENTICATED_REMOTE=False))
+    assert mcp_server.main(["--transport", "sse", "--host", "0.0.0.0"]) == 2
+    assert built == []
+
+
+def _settings_with(**overrides: Any) -> Any:
+    from config.settings import Settings
+
+    return Settings(**overrides)
