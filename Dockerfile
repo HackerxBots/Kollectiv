@@ -24,7 +24,7 @@ WORKDIR /app
 
 # setuptools resolves the packages listed in pyproject.toml, so the sources have
 # to be present for the install. The pip cache mount keeps rebuilds fast.
-COPY pyproject.toml README.md CHANGELOG.md ./
+COPY pyproject.toml README.md CHANGELOG.md LICENSE ./
 COPY config ./config
 COPY src ./src
 # The dashboard. It is also inside the wheel, but the image runs uvicorn from
