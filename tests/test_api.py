@@ -607,3 +607,35 @@ async def test_stream_ticket_is_needed_and_only_opens_a_project_stream(api_app: 
     # A good ticket authenticates the stream; the owner check then answers 404 for a project
     # that does not exist, which returns at once instead of holding the stream open.
     assert (await api_client.get(f"/projects/prj_missing/events/stream?ticket={ticket}")).status_code == 404
+
+
+async def test_hsts_is_sent_only_in_production(settings: Any) -> None:
+    """HSTS tells browsers to stay on HTTPS; it belongs in production only."""
+    prod = settings.model_copy(update={"AUTO_INIT_DB": True, "ENVIRONMENT": "production", "SECRET_KEY": "x" * 40}, deep=True)
+    app = create_app(settings=prod, orchestrator=cast(Any, StubOrchestrator(prod)))
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.headers["strict-transport-security"].startswith("max-age=")
+
+    response = await api_client_dev_health(settings)
+    assert "strict-transport-security" not in response.headers
+
+
+async def api_client_dev_health(settings: Any) -> Any:
+    dev = settings.model_copy(update={"AUTO_INIT_DB": True, "ENVIRONMENT": "development"}, deep=True)
+    app = create_app(settings=dev, orchestrator=cast(Any, StubOrchestrator(dev)))
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return await client.get("/health")
+
+
+def test_production_refuses_to_start_without_a_secret_key(settings: Any) -> None:
+    """A production app must not fall back to the public development key."""
+    import pytest as _pytest
+
+    from src.utils.errors import ConfigurationError
+
+    prod = settings.model_copy(update={"AUTO_INIT_DB": True, "ENVIRONMENT": "production", "SECRET_KEY": ""}, deep=True)
+    with _pytest.raises(ConfigurationError, match="SECRET_KEY"):
+        create_app(settings=prod, orchestrator=cast(Any, StubOrchestrator(prod)))

@@ -164,6 +164,9 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
         A configured :class:`fastapi.FastAPI` instance.
     """
     resolved = settings or get_settings()
+    if resolved.ENVIRONMENT == "production" and not resolved.SECRET_KEY:
+        # Refuse to start rather than sign tokens and encrypt credentials with a public key.
+        raise ConfigurationError("ENVIRONMENT=production requires SECRET_KEY to be set")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -237,6 +240,8 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        if resolved.ENVIRONMENT == "production":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
     application.include_router(webhook_router)

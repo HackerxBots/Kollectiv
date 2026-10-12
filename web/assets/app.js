@@ -239,7 +239,7 @@ function renderConnectors() {
         ? pill("ready", { tip: "Configured and ready to call" })
         : `${pill("setup", { tip: esc(connector.detail || "missing credentials") })}<div class="kv-muted" style="margin-top:4px">${esc(connector.detail || "")}</div>`}</td>
       <td data-label="Actions" class="kv-muted kv-mono">${actions.map((a) => esc(a)).join(", ") || "—"}</td>
-      <td data-label="Run" class="kv-nowrap">
+      <td data-label="Run" class="kv-run">
         <select class="kv-select" style="max-width:190px" data-action-select="${esc(connector.name)}"
                 ${connector.configured ? "" : "disabled"}>
           ${actions.map((a) => `<option value="${esc(a)}">${esc(a)}${dangerous.has(a) ? " ⚠" : ""}</option>`).join("")}
@@ -623,6 +623,9 @@ async function probeConnector(name) {
     toast(`Probe failed: ${error.message}`, "bad");
   }
 }
+
+// Keep the footer year current without a build step or a remote clock.
+(() => { const year = document.getElementById("kv-year"); if (year) year.textContent = String(new Date().getFullYear()); })();
 
 async function probeAll() {
   const configured = (store.connectors || []).filter((c) => c.configured);

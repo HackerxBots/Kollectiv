@@ -58,6 +58,13 @@ on GitHub links to the section below for its version.
   database is left alone, and nothing reads it.
 
 ### Fixed
+- Connectors: the Run cell (action select, Call, Probe) wraps instead of pushing the
+  buttons past the table edge at desktop and phone widths.
+- The footer year is filled from the browser clock, so it cannot go stale.
+- `web/404.html`: a branded not-found page for the dashboard host.
+- `Strict-Transport-Security` is sent in production only.
+- `ENVIRONMENT=production` refuses to start without `SECRET_KEY`, instead of falling
+  back to the public development key.
 - The secret scan no longer fails on a clean tree. It matches on file and hash
   (`scripts/secret_scan.py`), not on line number, because `detect-secrets-hook`
   rewrote the baseline when line numbers moved.

@@ -272,3 +272,28 @@ def test_dashboard_shows_the_worker_health_bar() -> None:
     # The CSP is style-src 'self': widths must be set through the CSSOM, not style attributes.
     block = js[js.index("const HEALTH_TONE"): js.index("function renderAgentsAndStorage")]
     assert 'style="' not in block, "the health bar must not use inline style attributes"
+
+
+def test_dashboard_ships_a_branded_404_page() -> None:
+    """Cloudflare Pages serves web/404.html for unknown paths; it must be a real page."""
+    page = (WEB / "404.html").read_text(encoding="utf-8")
+    assert 'name="robots" content="noindex"' in page
+    assert "/assets/styles.css" in page
+    assert 'href="/#/overview"' in page
+    assert "<title>" in page and "404" in page
+
+
+def test_footer_year_is_set_from_the_clock_not_hardcoded() -> None:
+    """The copyright year must not go stale; it is filled from the browser clock."""
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    js = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
+    assert 'id="kv-year"' in html
+    assert 'getElementById("kv-year")' in js and "getFullYear()" in js
+
+
+def test_connector_run_cell_wraps_instead_of_overflowing() -> None:
+    """The Run cell (select + Call + Probe) must wrap; the no-wrap class pushed the buttons off the card."""
+    js = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "assets" / "styles.css").read_text(encoding="utf-8")
+    assert 'data-label="Run" class="kv-run"' in js
+    assert ".kv-run {" in css and "flex-wrap: wrap" in css

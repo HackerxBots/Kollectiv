@@ -626,6 +626,9 @@ a:hover { color: var(--kv-text); }
 .kv-table tbody tr:hover td:first-child { box-shadow: inset 4px 0 0 var(--kv-accent); }
 .kv-table tbody tr:last-child td { border-bottom: 0; }
 .kv-table .kv-muted { color: var(--kv-text-dim); }
+/* Run cell: the select and its buttons wrap instead of pushing the table wider than the card. */
+.kv-run { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.kv-run .kv-select { max-width: 100%; min-width: 0; }
 
 /* --- Pills & tooltips --------------------------------------------------- */
 .kv-pill {
