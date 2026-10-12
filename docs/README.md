@@ -11,6 +11,7 @@ then come here for depth. Every page is self-contained and links back.
 | [Configuration](configuration.md) | Every setting: workers, storage, GitHub, brain, runtime, with examples. |
 | [Budgets and `.kollektiv.yml`](budget.md) | Cost estimates before a run, per-project caps, and the local ledger of tokens and dollars. |
 | [Deployment and the free stack](deployment.md) | Docker Compose, bare metal, the free-hosted path (R2 + Neon + Clerk + Resend + Pages) and the self-hosting checklist. |
+| [TeraBox shared storage](terabox.md) | Setting up TeraBox accounts, checking them, and what is not verified yet. |
 | [Deploy checklist](deploy-checklist.md) | The order of operations: which accounts to create (and which have a CLI), which host actually fits in 2026, the first real project, and `scripts/smoke.py`. |
 | [Agent runtimes](agent-runtimes.md) | Arena.ai session workers on your own account, API keys, local models, and the optional CLI-agent menu, with how to wire one in. |
 | [Bring your own key](byok.md) | How workers reach models with your own key, what needs the internet, the provider list, and the rules. |

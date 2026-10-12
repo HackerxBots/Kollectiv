@@ -30,6 +30,10 @@ on GitHub links to the section below for its version.
 
 ### Changed
 
+- Brain: Groq's free tier is the default (`BRAIN_PROVIDER=groq`). DeepSeek is an optional fallback that runs only when `BRAIN_FALLBACK_API_KEY` is set.
+- Docker Compose: `ENVIRONMENT` defaults to `development`. A `.env` without that line no longer crash-loops the containers. Set `ENVIRONMENT=production` for a public deploy.
+- TeraBox: the `.env.example` template holds tokens only, with no password field. Setup is in `docs/terabox.md`.
+
 - The `__session` cookie is no longer accepted as a credential. Clients must send `Authorization: Bearer`. This is breaking for cookie-only clients.
 - `MCP_HOST` defaults to `127.0.0.1` (was `0.0.0.0`).
 
@@ -418,6 +422,7 @@ on GitHub links to the section below for its version.
 
 ### Fixed
 
+- Dashboard: the Actions buttons on a mobile project card stay inside the card.
 - Broken links: 14 files pointed at `github.com/HackerxBots/Kollektiv` (404). They now point at `Kollectiv`.
 - **`pip install kollektiv` installed a broken package.** `src/connectors` was
   missing from `[tool.setuptools] packages`, so the wheel failed at import with
@@ -636,8 +641,8 @@ Initial public release: the orchestrator (brain, planner, dispatcher, collector,
 sync engine), the pooled worker agents, TeraBox shared storage, the FastAPI/MCP
 interfaces, the CLI, Docker Compose deployment and the hermetic test suite.
 
-[Unreleased]: https://github.com/HackerxBots/Kollectiv/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/HackerxBots/Kollectiv/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/HackerxBots/Kollectiv/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/HackerxBots/Kollectiv/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/HackerxBots/Kollectiv/releases/tag/v0.1.0
+[Unreleased]: https://github.com/HackerxBots/Kollectiv/compare/v0.3.0-beta.1...HEAD
+[0.4.0]: https://github.com/HackerxBots/Kollectiv/releases
+[0.3.0]: https://github.com/HackerxBots/Kollectiv/releases
+[0.2.0]: https://github.com/HackerxBots/Kollectiv/releases
+[0.1.0]: https://github.com/HackerxBots/Kollectiv/releases

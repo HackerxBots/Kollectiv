@@ -222,7 +222,7 @@ function renderProjects() {
       <td data-label="Progress" class="kv-meter-cell">
         <div class="kv-progress thin" data-tip="${percent}% complete"><span data-meter="${percent}"></span></div>
       </td>
-      <td data-label="Actions" class="kv-nowrap">
+      <td data-label="Actions" class="kv-nowrap kv-actions-cell">
         <button class="kv-btn ghost small" data-act="open" data-id="${esc(project.project_id)}">Open</button>
         <button class="kv-btn ghost small" data-act="run" data-id="${esc(project.project_id)}">Run</button>
         <button class="kv-btn ghost small" data-act="handoff" data-id="${esc(project.project_id)}">Handoff</button>

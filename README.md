@@ -18,7 +18,7 @@
   <a href="https://github.com/HackerxBots/Kollectiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollectiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
   <a href="https://github.com/HackerxBots/Kollectiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollectiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-494%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-499%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Documentation"></a>
 </div>
 
@@ -36,7 +36,7 @@
 </p>
 
 ```
-brief ─► brain (DeepSeek/Groq/local) ─► planner ─► N parallel worker agents ─► collector
+brief ─► brain (Groq/DeepSeek/local) ─► planner ─► N parallel worker agents ─► collector
                                                           │                        │
                                     Cloudflare R2 (one pooled drive) ◄── sync ── GitHub
                           optional free tiers: Neon (db) · Clerk (auth) · Resend (email) · Pages (UI)
@@ -136,7 +136,7 @@ own policy and its own audit trail ([gateway docs](docs/gateway.md)).
 | Capability | Variable(s) | Free source |
 | --- | --- | --- |
 | Worker agents | `ARENA_ACCOUNTS` (JSON list) + `kollektiv login` | Your Arena.ai account (session login), or your own API key per worker, or none for a local model |
-| Brain (planner/reviewer) | `BRAIN_API_KEY` (+ optional `BRAIN_BASE_URL`) | DeepSeek by default, Groq as a fallback; local models work |
+| Brain (planner/reviewer) | `BRAIN_API_KEY` (+ optional `BRAIN_BASE_URL`) | Groq's free tier by default, DeepSeek as an optional fallback; local models work |
 | Shared storage | `R2_*` or `TERABOX_ACCOUNTS` | Cloudflare R2 (10 GB, no egress) or TeraBox |
 | Database | `DATABASE_URL` | SQLite by default; Neon Postgres free tier for a server |
 | Auth | `CLERK_*` + `AUTH_REQUIRED` | Clerk free tier (optional; the API is open by default on localhost) |

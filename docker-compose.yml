@@ -22,7 +22,7 @@ x-kollektiv-env: &kollektiv-env
   env_file:
     - .env
   environment:
-    ENVIRONMENT: ${ENVIRONMENT:-production}
+    ENVIRONMENT: ${ENVIRONMENT:-development}
     DATABASE_URL: sqlite:////app/data/kollektiv.db
     WORKSPACE_DIR: /app/data/workspace
     LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -79,7 +79,7 @@ services:
     env_file:
       - .env
     environment:
-      ENVIRONMENT: ${ENVIRONMENT:-production}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: sqlite:////app/data/kollektiv.db
       WORKSPACE_DIR: /app/data/workspace
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

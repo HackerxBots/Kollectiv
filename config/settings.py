@@ -421,14 +421,14 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Brain (DeepSeek by default, Groq as fallback)
     # ------------------------------------------------------------------
-    BRAIN_PROVIDER: str = "deepseek"
+    BRAIN_PROVIDER: str = "groq"
     BRAIN_API_KEY: str = ""
-    BRAIN_BASE_URL: str = "https://api.deepseek.com"
-    BRAIN_MODEL: str = "deepseek-chat"
-    BRAIN_FALLBACK_PROVIDER: str = "groq"
+    BRAIN_BASE_URL: str = "https://api.groq.com/openai/v1"
+    BRAIN_MODEL: str = "llama-3.3-70b-versatile"
+    BRAIN_FALLBACK_PROVIDER: str = "deepseek"
     BRAIN_FALLBACK_API_KEY: str = ""
-    BRAIN_FALLBACK_BASE_URL: str = "https://api.groq.com/openai/v1"
-    BRAIN_FALLBACK_MODEL: str = "llama-3.3-70b-versatile"
+    BRAIN_FALLBACK_BASE_URL: str = "https://api.deepseek.com"
+    BRAIN_FALLBACK_MODEL: str = "deepseek-chat"
     BRAIN_TEMPERATURE: float = 0.2
     BRAIN_MAX_TOKENS: int = 4096
     BRAIN_TIMEOUT: float = 120.0

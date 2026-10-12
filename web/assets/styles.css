@@ -1039,6 +1039,11 @@ a:hover { color: var(--kv-text); }
     color: var(--kv-text-dim);
   }
   .kv-table tbody tr:hover { transform: translateY(-2px); }
+  /* The action buttons take the full card width and wrap, instead of spilling past the card edge. */
+  .kv-table td.kv-actions-cell { padding: 10px 14px 12px; white-space: normal; }
+  .kv-table td.kv-actions-cell::before { position: static; display: block; width: auto; margin-bottom: 6px; }
+  .kv-table td.kv-actions-cell .kv-btn { margin: 0 6px 6px 0; }
+  .kv-table td.kv-meter-cell { min-width: 0; }
   .kv-tabbar {
     display: grid; grid-template-columns: repeat(4, 1fr);
     position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 55;

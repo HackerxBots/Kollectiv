@@ -106,10 +106,10 @@ Related keys: `GITHUB_API_URL`, `GITHUB_DEFAULT_BRANCH`,
 ### 4. Brain (`BRAIN_*`)
 
 ```bash
-BRAIN_PROVIDER=deepseek                 # deepseek | groq | openai | …
+BRAIN_PROVIDER=groq                     # groq (default, free tier) | deepseek | openai | …
 BRAIN_API_KEY=sk-…
-BRAIN_MODEL=deepseek-chat
-BRAIN_BASE_URL=https://api.deepseek.com/v1
+BRAIN_MODEL=llama-3.3-70b-versatile
+BRAIN_BASE_URL=https://api.groq.com/openai/v1
 
 BRAIN_FALLBACK_PROVIDER=groq            # used when the primary errors
 BRAIN_FALLBACK_API_KEY=gsk_…
