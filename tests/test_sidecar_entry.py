@@ -61,8 +61,9 @@ def test_later_runs_reuse_the_same_secret(isolated_env: dict[str, str], tmp_path
 
 def test_an_operator_secret_always_wins(isolated_env: dict[str, str], tmp_path: Path) -> None:
     entry = _load_entry()
-    isolated_env["SECRET_KEY"] = "operator-chosen-secret-value-that-is-long-enough"
+    operator_value = "x" * 48  # a stand-in for an operator's own value
+    isolated_env["SECRET_KEY"] = operator_value
     data_dir = tmp_path / "data"
     entry.configure_environment(str(data_dir))
-    assert isolated_env["SECRET_KEY"] == "operator-chosen-secret-value-that-is-long-enough"
+    assert isolated_env["SECRET_KEY"] == operator_value
     assert not (data_dir / "secret.key").exists()
