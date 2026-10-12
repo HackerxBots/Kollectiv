@@ -3,10 +3,12 @@
 > Part of the [Kollektiv documentation](README.md) · back to the [README](../README.md)
 
 Kollectiv is free for everyone, with no paid tier. The sponsor line is how it pays for
-itself, the same way Freebuff's free tools are paid for by ads: one short, text-only,
+itself, the way ad-funded free tools do: one short, text-only,
 clearly labelled line from a sponsor, shown in the dashboard, and paid for each click.
 
 It is on by default, but it shows nothing until an operator adds at least one campaign.
+
+This is Kollektiv's own per-click model. It is not a copy of Freebuff's terms, which we have not seen.
 
 ## What the operator sets
 
@@ -83,12 +85,8 @@ from those totals. Kollectiv does not take payments.
 
 - **Payments.** There is no payment provider, invoice or payout. You invoice sponsors
   from the ledger yourself.
-- **Targeting from prompts.** Freebuff selects ads from prompts and messages. Kollectiv
-  does not: sending your prompts to an ad provider would break the no-tracking promise in
-  [Privacy](privacy.md). Choosing by prompt would need your written decision and a
-  privacy-policy change first.
-- **Revenue share to users.** Freebuff lets developers earn credits by viewing ads. There
-  is no paid tier to spend credits on, so this is not built.
+- **Targeting from prompts.** Planned as an opt-in only, and not built. Nothing is sent to any provider today. The rules are in [Privacy](privacy.md#prompt-based-sponsor-matching-planned-opt-in).
+- **Revenue share to users.** Not built. There is no paid tier to spend credits on.
 - **Ad-network delivery.** Campaigns are set by the operator in a file. Kollectiv does not
   connect to an ad network.
 

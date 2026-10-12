@@ -65,8 +65,13 @@ cd desktop && npm run build -- --config src-tauri/tauri.bundle.conf.json
 
 Installers for macOS (arm64 + x64), Windows and Linux are built by
 `.github/workflows/desktop.yml` — **Actions → Desktop installers → Run workflow**.
-Unsigned builds warn on first launch; the Apple/Windows/Azure secrets that fix
-that are listed in `desktop/README.md`. The engine itself stays Python: the shell
+Builds are unsigned, by owner decision, because signing costs money and the
+project is free. Users see a warning the first time they open the app:
+
+- **Windows:** SmartScreen says "Windows protected your PC". Click **More info**, then **Run anyway**.
+- **macOS:** Gatekeeper blocks the app. Right-click it and choose **Open**, then **Open** again. If macOS says the app is "damaged", run `xattr -dr com.apple.quarantine <path to the app>` once in Terminal.
+
+The Apple, Windows and Azure signing secrets that would remove these warnings are listed in `desktop/README.md`. The engine itself stays Python: the shell
 is a window, and `docs/performance.md` has the measurements behind that decision.
 
 ### One storage layer, two providers (and the 9Drive trick)

@@ -20,7 +20,8 @@ on GitHub links to the section below for its version.
 
 ### Added
 
-- **Sponsor line, Freebuff-style.** On by default. Sponsors pay per click, and each campaign has a click cap. Views and clicks are counted on the operator's own server with no identifier. Clicks go through `/sponsors/go/<id>` with `Referrer-Policy: no-referrer`. `kollektiv sponsors line` and `kollektiv sponsors ledger` show the live line and what each sponsor owes. The `sponsor_events` table holds only sponsor id, kind, price and time. Prompt-based targeting and a revenue share are not built. See `docs/sponsors.md`.
+- **Sponsor line (Kollektiv's own per-click model).** On by default. Sponsors pay per click, and each campaign has a click cap. Views and clicks are counted on the operator's own server with no identifier. Clicks go through `/sponsors/go/<id>` with `Referrer-Policy: no-referrer`. `kollektiv sponsors line` and `kollektiv sponsors ledger` show the live line and what each sponsor owes. The `sponsor_events` table holds only sponsor id, kind, price and time. Prompt-based targeting and a revenue share are not built. See `docs/sponsors.md`.
+- **CI builds and smoke-tests the Docker image** on every push and pull request.
 - **MCP bearer token.** Set `MCP_AUTH_TOKEN` and a network MCP server requires `Authorization: Bearer <token>`. Without it, a remote bind is still refused unless `MCP_ALLOW_UNAUTHENTICATED_REMOTE` is set.
 - **Opt-in sponsor line** (`SPONSORS_ENABLED`, off by default). One labelled "Sponsored" line in the dashboard footer, text only, from a local catalogue (`SPONSORS_FILE`). Rotates by the clock and tracks nothing. `GET /sponsors/line`. Covered in `docs/sponsors.md`. This reverses rule 39 on the owner's written instruction, 2026-10-12; no-tracking still applies.
 - **Arena.ai as the brain** (`BRAIN_PROVIDER=arena`), on a separate session under account `brain`, with the usual fallback. The endpoint paths are still placeholders.

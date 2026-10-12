@@ -48,7 +48,7 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 | 36 | Compatibility shim: import `kollektiv` alongside `src` | ✅ | Issue #26. |
 | 37 | Freebuff (free, ad-funded coding agent) as a worker | 🚀 | `examples/freebuff_shim.py`: strips ads/ANSI, converts its edits into the fenced-block contract, retries only git reads. Caveat shipped in the README: its terms expect a supervised session, so it is one worker you watch — not an unattended fleet. |
 | 38 | Use Freebuff to work on Kollektiv itself | ✅ | Free dev agent for contributors who cannot pay for one; it is just a CLI in your terminal, so nothing in the repository needs to change. |
-| 39 | Ad-supported "free" tools, Freebuff-style sponsor line | 🚀 | **Owner decision, 2026-10-12 (reverses the earlier ban).** Kollectiv is free for everyone and has no paid tier. One labelled "Sponsored" line in the dashboard, text only, from a local campaign file the operator curates. Sponsors pay per click, and each campaign has a click cap. Views and clicks are counted on the operator's own server, with no identifier. Clicks go through `/sponsors/go/<id>` with `Referrer-Policy: no-referrer`. Freebuff's prompt-based targeting is not built, and neither is a revenue share. See [sponsors.md](docs/sponsors.md). |
+| 39 | Ad-supported "free" tools, own sponsor line (not a copy of Freebuff) | 🚀 | **Owner decision, 2026-10-12 (reverses the earlier ban).** Kollectiv is free for everyone and has no paid tier. One labelled "Sponsored" line in the dashboard, text only, from a local campaign file the operator curates. Sponsors pay per click, and each campaign has a click cap. Views and clicks are counted on the operator's own server, with no identifier. Clicks go through `/sponsors/go/<id>` with `Referrer-Policy: no-referrer`. Freebuff's prompt-based targeting is not built, and neither is a revenue share. See [sponsors.md](docs/sponsors.md). |
 
 ## Non-negotiables (not up for a vote)
 
@@ -80,3 +80,4 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 Suggestions get a row here the moment they are decided (including rejections, so
 they are not re-litigated), and an issue when they are accepted but not done.
 Update the table in the same PR as the change.
+- **Owner decisions, 2026-10-12 (round 3):** Sponsor clicks and views are counted per sponsor with a price and time for each event, as built. Prompt-based sponsor matching is planned as an opt-in, with a named provider and its own privacy section; it is not built. Freebuff's publisher terms are not copied. Signing stays off; install steps for unsigned builds are in `docs/deployment.md`. The UI checklist is not scored until the owner sends the 45-item list. Docker is built and smoke-tested in CI.

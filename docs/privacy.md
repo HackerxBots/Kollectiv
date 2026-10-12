@@ -39,3 +39,19 @@ else:
   server that can see your activity.
 - Connectors, storage and the MCP gateway are optional. Each one is inert until
   you add its credentials.
+
+## Prompt-based sponsor matching (planned, opt-in)
+
+Some free ad-funded tools pick their ads from what you type. Kollectiv does not do this today,
+and nothing about your prompts leaves your machine.
+
+If this is ever added, the rules are:
+
+- **Off by default.** Each user switches it on themselves, in the dashboard, with a notice that
+  says what is sent and to whom.
+- **Named provider only.** Only the provider named in that notice receives anything, and only after
+  the user has switched it on.
+- **Minimum data.** Only the matching text is sent: no project name, file, account or identifier.
+- **Switch off any time.** Turning it off stops all sending at once.
+
+No provider is chosen, and no code path sends prompts anywhere.

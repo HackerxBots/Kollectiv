@@ -191,3 +191,38 @@ jobs:
           done
           python -m pip install --quiet httpx
           python scripts/smoke.py --base-url http://127.0.0.1:8123
+
+  docker:
+    # Builds the runtime image and starts it, so a broken Dockerfile or compose
+    # file fails here instead of on a user's machine. The smoke script is the same
+    # one the wheel job runs against the installed package.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate the compose file
+        run: docker compose config --quiet
+
+      - name: Build the image
+        run: docker build -t kollektiv:ci .
+
+      - name: Start the container and smoke-test it
+        run: |
+          docker run -d --name kv -e ENVIRONMENT=development -p 127.0.0.1:8000:8000 kollektiv:ci
+          healthy=0
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null; then healthy=1; break; fi
+            sleep 2
+          done
+          if [ "$healthy" != "1" ]; then
+            echo "::error::container never reported healthy"
+            docker logs kv
+            exit 1
+          fi
+          python -m pip install --quiet httpx
+          python scripts/smoke.py --base-url http://127.0.0.1:8000
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker logs kv || true
