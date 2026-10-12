@@ -41,6 +41,7 @@ release-notes.md
 
 # Local dashboard preview
 web/node_modules/
+frontend-dashboard-design-prompt/node_modules/
 
 # Desktop shell (Rust build output; the sidecar binaries are built per platform,
 # never committed: .github/workflows/desktop.yml produces them)
