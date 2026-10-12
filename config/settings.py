@@ -228,6 +228,10 @@ class Settings(BaseSettings):
     CLERK_AUTHORIZED_PARTIES: str = ""
     #: ``false`` keeps the API open (handy for local development and tests).
     AUTH_REQUIRED: bool = False
+    #: ``ENVIRONMENT=production`` refuses to start with auth off unless this is
+    #: true. Only the single-user desktop sidecar (localhost) sets it; a server
+    #: that is reachable from a network must run with ``AUTH_REQUIRED=true``.
+    ALLOW_OPEN_API: bool = False
     #: Clerk user ids allowed to run admin actions (comma-separated). With auth on,
     #: an empty list closes admin routes to everyone. With auth off (single-user
     #: local mode) every caller is the owner.

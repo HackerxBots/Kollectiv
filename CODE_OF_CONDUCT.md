@@ -54,7 +54,7 @@ officially representing the project in public spaces.
 
 Instances of abusive, harassing or otherwise unacceptable behaviour may be
 reported to the maintainers by opening a confidential report through GitHub's
-[private vulnerability reporting](https://github.com/HackerxBots/Kollektiv/security/advisories/new)
+[private vulnerability reporting](https://github.com/HackerxBots/Kollectiv/security/advisories/new)
 (marked "Code of Conduct") or by contacting a maintainer directly.
 
 All complaints will be reviewed and investigated promptly and fairly, and the

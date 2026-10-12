@@ -69,6 +69,14 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = (value) => (value === null || value === undefined ? "—" : String(value));
 
+/** Progress bars. Widths are set through the CSSOM, because the Pages CSP blocks inline style attributes. */
+function paintMeters(root = document) {
+  root.querySelectorAll("[data-meter]").forEach((el) => {
+    const pct = Math.min(100, Math.max(0, Number(el.dataset.meter) || 0));
+    el.style.width = `${pct}%`;
+  });
+}
+
 /** Status pill with a hover tooltip. */
 function pill(value, { tone = "", tip = "" } = {}) {
   const text = String(value ?? "unknown");
@@ -106,7 +114,7 @@ function toast(message, tone = "ok", { timeout = 5200 } = {}) {
 /** Replace a table body with a skeleton while loading. */
 function skeleton(tbody, cols, height = 16) {
   tbody.innerHTML = Array.from({ length: 3 }, () =>
-    `<tr><td colspan="${cols}"><div class="kv-skel" style="height:${height}px"></div></td></tr>`).join("");
+    `<tr><td colspan="${cols}"><div class="kv-skel h${height}"></div></td></tr>`).join("");
 }
 function empty(tbody, cols, title, detail = "") {
   tbody.innerHTML = `<tr><td colspan="${cols}"><div class="kv-empty"><strong>${esc(title)}</strong>${esc(detail)}</div></td></tr>`;
@@ -153,7 +161,7 @@ function renderBanner() {
     return;
   }
   if (!warnings.length) {
-    slot.innerHTML = `<div class="kv-banner" style="border-color:color-mix(in srgb, var(--kv-ok) 45%, var(--kv-line));background:color-mix(in srgb, var(--kv-ok) 8%, transparent)">
+    slot.innerHTML = `<div class="kv-banner kv-banner-ok">
       <div class="kv-banner-body"><strong>Every subsystem is configured.</strong></div></div>`;
     return;
   }
@@ -211,8 +219,8 @@ function renderProjects() {
           <div class="kv-muted kv-mono">${esc(project.project_id)}</div></td>
       <td data-label="Status">${pill(project.status, { tip: `Updated ${esc(project.updated_at || project.created_at || "unknown")}` })}</td>
       <td data-label="Tasks" class="kv-mono">${done === null ? num(total) : `${done}/${total}`}</td>
-      <td data-label="Progress" style="min-width:130px">
-        <div class="kv-progress thin" data-tip="${percent}% complete"><span style="width:${percent}%"></span></div>
+      <td data-label="Progress" class="kv-meter-cell">
+        <div class="kv-progress thin" data-tip="${percent}% complete"><span data-meter="${percent}"></span></div>
       </td>
       <td data-label="Actions" class="kv-nowrap">
         <button class="kv-btn ghost small" data-act="open" data-id="${esc(project.project_id)}">Open</button>
@@ -221,6 +229,7 @@ function renderProjects() {
       </td>
     </tr>`;
   }).join("");
+  paintMeters(tbody);
 }
 
 function renderConnectors() {
@@ -237,10 +246,10 @@ function renderConnectors() {
           <div class="kv-muted">${esc(connector.description || connector.category || "")}</div></td>
       <td data-label="Status">${connector.configured
         ? pill("ready", { tip: "Configured and ready to call" })
-        : `${pill("setup", { tip: esc(connector.detail || "missing credentials") })}<div class="kv-muted" style="margin-top:4px">${esc(connector.detail || "")}</div>`}</td>
+        : `${pill("setup", { tip: esc(connector.detail || "missing credentials") })}<div class="kv-muted kv-mt-4">${esc(connector.detail || "")}</div>`}</td>
       <td data-label="Actions" class="kv-muted kv-mono">${actions.map((a) => esc(a)).join(", ") || "—"}</td>
       <td data-label="Run" class="kv-run">
-        <select class="kv-select" style="max-width:190px" data-action-select="${esc(connector.name)}"
+        <select class="kv-select kv-narrow" data-action-select="${esc(connector.name)}"
                 ${connector.configured ? "" : "disabled"}>
           ${actions.map((a) => `<option value="${esc(a)}">${esc(a)}${dangerous.has(a) ? " ⚠" : ""}</option>`).join("")}
         </select>
@@ -359,14 +368,14 @@ function renderDrawer() {
 
   $("#drawer-body").innerHTML = `
     <p class="kv-soft">${esc(project.description || "No description recorded.")}</p>
-    <div class="kv-progress" data-tip="${percent}% complete"><span style="width:${percent}%"></span></div>
-    <div class="kv-grid cols-4" style="margin-top:14px">
+    <div class="kv-progress" data-tip="${percent}% complete"><span data-meter="${percent}"></span></div>
+    <div class="kv-grid cols-4 kv-mt-14">
       <div class="kv-card kv-stat"><div class="kv-label">Tasks</div>
         <div class="kv-value">${done}/${tasks.length}</div><div class="kv-sub">${num(project.queued_tasks ?? 0)} queued</div></div>
       <div class="kv-card kv-stat"><div class="kv-label">Files</div>
         <div class="kv-value">${num((project.files || []).length)}</div><div class="kv-sub">collected artifacts</div></div>
       <div class="kv-card kv-stat"><div class="kv-label">Last commit</div>
-        <div class="kv-value kv-mono" style="font-size:15px">${esc(project.last_commit || "—")}</div>
+        <div class="kv-value kv-mono kv-value-sm">${esc(project.last_commit || "—")}</div>
         <div class="kv-sub">GitHub sync</div></div>
       <div class="kv-card kv-stat"><div class="kv-label">Pool</div>
         <div class="kv-value">${num((project.pool && project.pool.agents) || store.agents.length)}</div>
@@ -400,6 +409,7 @@ function renderDrawer() {
         ? esc(history.map((e) => `${e.timestamp || ""}  ${e.agent_id || "?"}  ${e.action || ""}  ${e.result || ""}`).join("\n"))
         : "—"}</pre>
     </div>`;
+  paintMeters($("#drawer-body"));
 }
 
 /* ------------------------------------------------------------------ *
@@ -1191,6 +1201,19 @@ function reportConnection(state) {
 /* ------------------------------------------------------------------ *
  * Boot
  * ------------------------------------------------------------------ */
+/** Back-to-top: appears after a short scroll, never animates for reduced-motion users. */
+function initScrollTop() {
+  const button = document.getElementById("kv-totop");
+  if (!button) return;
+  const sync = () => { button.hidden = window.scrollY < 480; };
+  window.addEventListener("scroll", sync, { passive: true });
+  button.addEventListener("click", () => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  });
+  sync();
+}
+
 function boot() {
   if (STORAGE.theme) document.documentElement.dataset.theme = STORAGE.theme;
   store.base = guessBase();
@@ -1201,6 +1224,7 @@ function boot() {
   initOnboarding();
   initPwa();
   initShell();
+  initScrollTop();
   navigate((location.hash || "#/overview").replace("#/", ""));
   refreshAll();
 

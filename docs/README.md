@@ -33,7 +33,7 @@ then come here for depth. Every page is self-contained and links back.
 **Conventions.** Docs are written for the person who has 10 minutes, not 2 hours:
 the first paragraph of a page says what it is for, tables beat prose, and every
 command is copy-pasteable. If a page and the code disagree, the code is right —
-[open an issue](https://github.com/HackerxBots/Kollektiv/issues) so the page is
+[open an issue](https://github.com/HackerxBots/Kollectiv/issues) so the page is
 fixed.
 
 Screenshots and diagrams are text (code blocks) rather than images: they diff,

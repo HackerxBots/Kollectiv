@@ -6,11 +6,11 @@ hermetic tests and honest documentation over volume.
 ## Quick start
 
 ```bash
-git clone https://github.com/HackerxBots/Kollektiv.git
+git clone https://github.com/HackerxBots/Kollectiv.git
 cd Kollektiv
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -q                 # 489 hermetic tests, ~40 s
+pytest -q                 # 494 hermetic tests, ~40 s
 kollektiv bootstrap       # prepares the database/workspace, prints the checklist
 kollektiv serve-api       # dashboard at http://localhost:8000/ui
 ```

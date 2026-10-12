@@ -210,7 +210,9 @@ Do this before you point a public address, a domain or a shared team at a
 Kollektiv server. Kollektiv is in beta. Its local defaults are for one trusted
 user on one machine, and they are open on purpose.
 
-- [ ] **Turn on auth.** `AUTH_REQUIRED=true` with your Clerk keys.
+- [ ] **Turn on auth.** `AUTH_REQUIRED=true` with your Clerk keys. With
+  `ENVIRONMENT=production` the API refuses to start with auth off, unless
+  `ALLOW_OPEN_API=true` is set (only the localhost desktop app does this).
       `CLERK_AUTHORIZED_PARTIES` should list your dashboard origin.
 - [ ] **Set the admin list.** `ADMIN_USER_IDS` is your Clerk user id. An empty
       list means admin routes are closed to everyone, which is safe but leaves

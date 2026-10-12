@@ -159,7 +159,7 @@ class DiscordConnector(Connector):
         return {
             "Authorization": f"Bot {self.token}",
             "Content-Type": "application/json",
-            "User-Agent": "Kollektiv (https://github.com/HackerxBots/Kollektiv)",
+            "User-Agent": "Kollektiv (https://github.com/HackerxBots/Kollectiv)",
         }
 
     @async_retry(max_retries=3, retry_on=(ConnectorTransientError, httpx.TransportError, httpx.TimeoutException))

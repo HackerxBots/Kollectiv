@@ -61,6 +61,14 @@ Legend: ✅ accepted · ❌ rejected · 🟡 debating (needs an explanation firs
 - **Credential handling**: encrypted at rest, masked in logs, never in `.env`
   when `kollektiv login` can hold it.
 
+## Recorded 2026-10-12 (owner answers)
+
+- **Hosting:** Neon (Postgres), Cloudflare R2 (storage), Cloudflare Pages (dashboard), Clerk (auth) and Resend (email). Nothing else is required.
+- **Code signing:** unsigned. Windows and macOS builds ship without a paid certificate. The docs explain the SmartScreen and Gatekeeper steps. No paid signing is planned.
+- **Tracking:** none. Feedback is an opt-in link that opens GitHub in the browser. The app sends nothing.
+- **Production auth:** `ENVIRONMENT=production` refuses to start with `AUTH_REQUIRED=false` unless `ALLOW_OPEN_API=true` (localhost desktop only).
+- **Merging:** the PR is not merged until the owner says "merge it".
+
 ## How to change this file
 
 Suggestions get a row here the moment they are decided (including rejections, so

@@ -167,6 +167,12 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
     if resolved.ENVIRONMENT == "production" and not resolved.SECRET_KEY:
         # Refuse to start rather than sign tokens and encrypt credentials with a public key.
         raise ConfigurationError("ENVIRONMENT=production requires SECRET_KEY to be set")
+    if resolved.ENVIRONMENT == "production" and not resolved.AUTH_REQUIRED and not resolved.ALLOW_OPEN_API:
+        # An open API on a server is every project, key and connector for anyone who can reach it.
+        raise ConfigurationError(
+            "ENVIRONMENT=production requires AUTH_REQUIRED=true (Clerk). For a single-user install "
+            "on localhost only, set ALLOW_OPEN_API=true or use ENVIRONMENT=development."
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

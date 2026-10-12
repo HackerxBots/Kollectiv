@@ -36,7 +36,7 @@ LOGGER = get_logger(__name__)
 CA_BUNDLE_ENV_VARS = ("KOLLEKTIV_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
 
 #: Default User-Agent sent by every Kollektiv HTTP client.
-USER_AGENT = "Kollektiv/0.1 (+https://github.com/HackerxBots/Kollektiv)"
+USER_AGENT = "Kollektiv/0.1 (+https://github.com/HackerxBots/Kollectiv)"
 
 
 def resolve_ca_bundle(explicit: str = "") -> str:

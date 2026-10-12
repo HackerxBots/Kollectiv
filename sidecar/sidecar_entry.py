@@ -46,11 +46,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def configure_environment(data_dir: str = "") -> Path:
+LOOPBACK_BINDS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def configure_environment(data_dir: str = "", host: str = "127.0.0.1") -> Path:
     """Set the defaults the packaged app needs, without clobbering real settings.
 
     Args:
         data_dir: Explicit data directory; defaults to ``~/.kollektiv``.
+        host: The address the sidecar will bind. The open-API opt-in is only
+            granted for loopback, so a sidecar exposed to the network still
+            refuses to start without auth.
 
     Returns:
         The data directory in use (created when missing).
@@ -65,6 +71,9 @@ def configure_environment(data_dir: str = "") -> Path:
     os.environ.setdefault("WORKSPACE_DIR", str(workspace))
     os.environ.setdefault("AUTO_INIT_DB", "true")
     os.environ.setdefault("ENVIRONMENT", "production")
+    if host in LOOPBACK_BINDS:
+        # Desktop install: one user, no sign-in, reachable only from this machine.
+        os.environ.setdefault("ALLOW_OPEN_API", "true")
 
     # The sidecar is launched by the desktop shell (or by the user), so it reads
     # the same .env file every other entry point reads.
@@ -119,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         ``0`` on a clean shutdown; uvicorn's error surface otherwise.
     """
     args = parse_args(argv)
-    root = configure_environment(args.data_dir)
+    root = configure_environment(args.data_dir, host=args.host)
     try:
         import uvicorn
     except Exception as exc:  # noqa: BLE001 - a packaged app must say what is wrong

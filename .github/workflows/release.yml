@@ -82,7 +82,7 @@ jobs:
           pattern = re.compile(rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|\Z)", re.M | re.S)
           match = pattern.search(text)
           body = match.group(1).strip() if match else ""
-          repo = os.environ.get("GITHUB_REPOSITORY", "HackerxBots/Kollektiv")
+          repo = os.environ.get("GITHUB_REPOSITORY", "HackerxBots/Kollectiv")
           server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           policy = f"{server}/{repo}/blob/main/docs/operations.md#releases-versioning-and-the-readme"
           beta = (

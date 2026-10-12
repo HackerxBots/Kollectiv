@@ -17,7 +17,7 @@ release line only.
 Use GitHub's private vulnerability reporting:
 
 1. Go to the repository's **Security** tab → **Advisories** → **Report a vulnerability**.
-2. Or open <https://github.com/HackerxBots/Kollektiv/security/advisories/new> directly.
+2. Or open <https://github.com/HackerxBots/Kollectiv/security/advisories/new> directly.
 
 That channel is encrypted, visible only to the maintainers, and gives us a
 private fork to develop and test a fix before anything is public.

@@ -67,3 +67,19 @@ def test_an_operator_secret_always_wins(isolated_env: dict[str, str], tmp_path: 
     entry.configure_environment(str(data_dir))
     assert isolated_env["SECRET_KEY"] == operator_value
     assert not (data_dir / "secret.key").exists()
+
+
+def test_loopback_sidecar_may_run_without_sign_in(isolated_env: dict[str, str], tmp_path: Path) -> None:
+    """The desktop app is one user on this machine, so it opts in to an open API."""
+    entry = _load_entry()
+    isolated_env.pop("ALLOW_OPEN_API", None)
+    entry.configure_environment(str(tmp_path / "data"), host="127.0.0.1")
+    assert isolated_env["ALLOW_OPEN_API"] == "true"
+
+
+def test_network_bound_sidecar_does_not_get_the_open_api_opt_in(isolated_env: dict[str, str], tmp_path: Path) -> None:
+    """Binding beyond localhost must still require sign-in: the opt-in is loopback only."""
+    entry = _load_entry()
+    isolated_env.pop("ALLOW_OPEN_API", None)
+    entry.configure_environment(str(tmp_path / "data"), host="0.0.0.0")
+    assert "ALLOW_OPEN_API" not in isolated_env

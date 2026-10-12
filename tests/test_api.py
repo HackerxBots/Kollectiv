@@ -611,7 +611,10 @@ async def test_stream_ticket_is_needed_and_only_opens_a_project_stream(api_app: 
 
 async def test_hsts_is_sent_only_in_production(settings: Any) -> None:
     """HSTS tells browsers to stay on HTTPS; it belongs in production only."""
-    prod = settings.model_copy(update={"AUTO_INIT_DB": True, "ENVIRONMENT": "production", "SECRET_KEY": "x" * 40}, deep=True)
+    prod = settings.model_copy(
+        update={"AUTO_INIT_DB": True, "ENVIRONMENT": "production", "SECRET_KEY": "x" * 40, "ALLOW_OPEN_API": True},
+        deep=True,
+    )
     app = create_app(settings=prod, orchestrator=cast(Any, StubOrchestrator(prod)))
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -628,6 +631,28 @@ async def api_client_dev_health(settings: Any) -> Any:
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         return await client.get("/health")
+
+
+def test_production_refuses_an_open_api_unless_opted_in(settings: Any) -> None:
+    """Production with auth off is every project and key for anyone who can reach it.
+
+    It is refused unless the operator opts in (the localhost desktop sidecar does).
+    Turning auth on is always accepted.
+    """
+    import pytest as _pytest
+
+    from src.utils.errors import ConfigurationError
+
+    base = {"AUTO_INIT_DB": True, "ENVIRONMENT": "production", "SECRET_KEY": "x" * 40}
+    closed = settings.model_copy(update={**base, "AUTH_REQUIRED": False, "ALLOW_OPEN_API": False}, deep=True)
+    with _pytest.raises(ConfigurationError, match="AUTH_REQUIRED=true"):
+        create_app(settings=closed, orchestrator=cast(Any, StubOrchestrator(closed)))
+
+    opted_in = settings.model_copy(update={**base, "AUTH_REQUIRED": False, "ALLOW_OPEN_API": True}, deep=True)
+    assert create_app(settings=opted_in, orchestrator=cast(Any, StubOrchestrator(opted_in))) is not None
+
+    authed = settings.model_copy(update={**base, "AUTH_REQUIRED": True, "ALLOW_OPEN_API": False}, deep=True)
+    assert create_app(settings=authed, orchestrator=cast(Any, StubOrchestrator(authed))) is not None
 
 
 def test_production_refuses_to_start_without_a_secret_key(settings: Any) -> None:

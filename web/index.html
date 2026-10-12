@@ -88,37 +88,37 @@
         </header>
 
         <div class="kv-grid cols-4">
-          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-cyan)">
+          <div class="kv-card kv-stat" data-tint="cyan">
             <div class="kv-spark">◎</div>
             <div class="kv-label">API</div>
             <div class="kv-value" id="stat-api">—</div>
             <div class="kv-sub" id="stat-api-sub">connecting…</div>
           </div>
-          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-lime)">
+          <div class="kv-card kv-stat" data-tint="lime">
             <div class="kv-spark">▤</div>
             <div class="kv-label">Storage</div>
             <div class="kv-value" id="stat-storage">—</div>
             <div class="kv-sub" id="stat-storage-sub">—</div>
           </div>
-          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-grape)">
+          <div class="kv-card kv-stat" data-tint="grape">
             <div class="kv-spark">◈</div>
             <div class="kv-label">Agents</div>
             <div class="kv-value" id="stat-agents">—</div>
             <div class="kv-sub" id="stat-agents-sub">—</div>
           </div>
-          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-pink)">
+          <div class="kv-card kv-stat" data-tint="pink">
             <div class="kv-spark">✷</div>
             <div class="kv-label">Brain</div>
             <div class="kv-value" id="stat-brain">—</div>
             <div class="kv-sub" id="stat-brain-sub">—</div>
           </div>
-          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-peach)">
+          <div class="kv-card kv-stat" data-tint="peach">
             <div class="kv-spark">⌥</div>
             <div class="kv-label">GitHub</div>
             <div class="kv-value" id="stat-github">—</div>
             <div class="kv-sub" id="stat-github-sub">—</div>
           </div>
-          <div class="kv-card kv-stat" style="--kv-tint: var(--kv-sky)">
+          <div class="kv-card kv-stat" data-tint="sky">
             <div class="kv-spark">◍</div>
             <div class="kv-label">Connectors</div>
             <div class="kv-value" id="stat-connectors">—</div>
@@ -136,7 +136,7 @@
           <span class="kv-hint">A brief becomes a dependency-ordered plan, then parallel work.</span>
         </header>
 
-        <form class="kv-card kv-stack" id="project-form" style="--kv-tint: var(--kv-accent)">
+        <form class="kv-card kv-stack" id="project-form" data-tint="accent">
           <div class="kv-grid cols-3">
             <div class="kv-field">
               <label for="p-name">Name (optional)</label>
@@ -168,7 +168,7 @@
           </div>
         </form>
 
-        <header style="margin-top:26px">
+        <header class="kv-mt-26">
           <h2>Projects</h2>
           <span class="kv-hint" id="projects-hint">—</span>
           <div class="kv-spacer"></div>
@@ -181,7 +181,7 @@
               <tr><th>Project</th><th>Status</th><th>Tasks</th><th>Progress</th><th class="kv-nowrap">Actions</th></tr>
             </thead>
             <tbody id="projects-body">
-              <tr><td colspan="5"><div class="kv-skel" style="height:16px"></div></td></tr>
+              <tr><td colspan="5"><div class="kv-skel h16"></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -204,7 +204,7 @@
               <tr><th>Service</th><th>Status</th><th>Actions</th><th class="kv-nowrap">Run</th></tr>
             </thead>
             <tbody id="connectors-body">
-              <tr><td colspan="4"><div class="kv-skel" style="height:16px"></div></td></tr>
+              <tr><td colspan="4"><div class="kv-skel h16"></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -228,7 +228,7 @@
           </table>
         </div>
 
-        <header style="margin-top:26px">
+        <header class="kv-mt-26">
           <h2>Shared drive</h2>
           <span class="kv-hint">One logical drive: R2 buckets or TeraBox accounts pooled, routed by free space.</span>
         </header>
@@ -242,8 +242,10 @@
 
       <footer class="kv-section">
         <p class="kv-hint">
-          © <span id="kv-year">2026</span> Kollektiv is MIT licensed · <a href="https://github.com/HackerxBots/Kollektiv" rel="noreferrer">source</a> ·
-          docs at <span class="kv-mono">/docs</span> · deploy this folder free on Cloudflare Pages.
+          © <span id="kv-year">2026</span> Kollektiv is MIT licensed · <a href="https://github.com/HackerxBots/Kollectiv" rel="noreferrer">source</a> ·
+          docs at <span class="kv-mono">/docs</span> · deploy this folder free on Cloudflare Pages ·
+          <a href="https://github.com/HackerxBots/Kollectiv/issues/new/choose" target="_blank" rel="noopener noreferrer">send feedback</a>
+          (opens GitHub; nothing is sent from here).
           <br />
           <strong>No telemetry, no analytics, no tracking</strong> — this page talks only to your API; nothing is
           collected, sold or phoned home.
@@ -274,7 +276,7 @@
       <button class="kv-btn ghost small icon" id="drawer-close" type="button" aria-label="Close">✕</button>
     </header>
     <div class="kv-drawer-body" id="drawer-body">
-      <div class="kv-skel" style="height:80px"></div>
+      <div class="kv-skel h80"></div>
     </div>
   </aside>
 
@@ -330,7 +332,7 @@
           <label for="onboard-api">API base URL</label>
           <input class="kv-input" id="onboard-api" placeholder="http://localhost:8000" spellcheck="false" />
         </div>
-        <p class="kv-hint" style="margin-top:12px">No telemetry, no analytics: the only requests this page makes
+        <p class="kv-hint kv-mt-12">No telemetry, no analytics: the only requests this page makes
           are to that address.</p>
       </div>
 
@@ -362,6 +364,7 @@
   </div>
 
   <div class="kv-toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+  <button class="kv-totop" id="kv-totop" type="button" aria-label="Back to top" hidden>↑<span class="kv-sr">Top</span></button>
 
   <script type="module" src="assets/app.js"></script>
 </body>

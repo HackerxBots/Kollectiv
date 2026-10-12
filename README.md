@@ -14,11 +14,11 @@
 </div>
 
 <div align="center">
-  <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/status-beta-orange?style=for-the-badge" alt="Project status beta"></a>
-  <a href="https://github.com/HackerxBots/Kollektiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollektiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
-  <a href="https://github.com/HackerxBots/Kollektiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollektiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
+  <a href="https://github.com/HackerxBots/Kollectiv/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/status-beta-orange?style=for-the-badge" alt="Project status beta"></a>
+  <a href="https://github.com/HackerxBots/Kollectiv/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackerxBots/Kollectiv/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
+  <a href="https://github.com/HackerxBots/Kollectiv/releases"><img src="https://img.shields.io/github/v/release/HackerxBots/Kollectiv?include_prereleases&style=for-the-badge" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License MIT"></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-489%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-494%20passing-brightgreen?style=for-the-badge" alt="Tests"></a>
   <a href="docs/README.md"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Documentation"></a>
 </div>
 
@@ -103,7 +103,7 @@ kollektiv serve-api          # dashboard at http://localhost:8000/ui, docs at /d
 **Option 2 — clone** (recommended for the dashboard, docs and hacking on it):
 
 ```bash
-git clone https://github.com/HackerxBots/Kollektiv.git
+git clone https://github.com/HackerxBots/Kollectiv.git
 cd Kollectiv
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"

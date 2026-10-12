@@ -9,6 +9,8 @@ on GitHub links to the section below for its version.
 
 ### Security
 
+- Production refuses to start with `AUTH_REQUIRED=false` unless `ALLOW_OPEN_API=true`. The desktop sidecar sets it only on loopback.
+- Dashboard: inline `style=""` attributes removed, because the Cloudflare Pages CSP blocks them. A test keeps them out.
 - Gateway: a damaged policy (malformed JSON, a non-object, invalid fields, or a missing or unreadable `GATEWAY_POLICY_PATH`) now denies every tool instead of allowing all of them. Patterns must be lists of strings.
 - Gateway: a `client` role, or any unknown role, gets the `read-only` preset instead of `dashboard`.
 - MCP server: refuses a non-loopback bind without authentication. `MCP_HOST` defaults to `127.0.0.1`. `MCP_ALLOW_UNAUTHENTICATED_REMOTE=true` is the explicit opt-in.
@@ -18,6 +20,8 @@ on GitHub links to the section below for its version.
 
 ### Added
 
+- `ALLOW_OPEN_API` (default false): explicit opt-in for an open API in production. Only the localhost desktop sidecar sets it.
+- Dashboard: back-to-top button, and a "send feedback" footer link that opens GitHub. Nothing is sent from the app.
 - `ADMIN_USER_IDS`: admin-only routes for `/sync`, link writes, connector call and probe, agent status and health, `/budget` and `/storage/status`. An empty list denies everyone when auth is on.
 - `RATE_LIMIT_WRITES_PER_MINUTE` (default 60): per-client limit on write requests, answered with 429 and `Retry-After`.
 - `MAX_UPLOAD_MB` (default 100): uploads above the limit are refused with 413.
@@ -414,6 +418,7 @@ on GitHub links to the section below for its version.
 
 ### Fixed
 
+- Broken links: 14 files pointed at `github.com/HackerxBots/Kollektiv` (404). They now point at `Kollectiv`.
 - **`pip install kollektiv` installed a broken package.** `src/connectors` was
   missing from `[tool.setuptools] packages`, so the wheel failed at import with
   `ModuleNotFoundError` — invisible in CI because the test job uses an editable
@@ -631,8 +636,8 @@ Initial public release: the orchestrator (brain, planner, dispatcher, collector,
 sync engine), the pooled worker agents, TeraBox shared storage, the FastAPI/MCP
 interfaces, the CLI, Docker Compose deployment and the hermetic test suite.
 
-[Unreleased]: https://github.com/HackerxBots/Kollektiv/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/HackerxBots/Kollektiv/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/HackerxBots/Kollektiv/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/HackerxBots/Kollektiv/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/HackerxBots/Kollektiv/releases/tag/v0.1.0
+[Unreleased]: https://github.com/HackerxBots/Kollectiv/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/HackerxBots/Kollectiv/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/HackerxBots/Kollectiv/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/HackerxBots/Kollectiv/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/HackerxBots/Kollectiv/releases/tag/v0.1.0

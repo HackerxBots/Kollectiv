@@ -235,7 +235,9 @@ because the heavy lifting happens at the LLM endpoints, not here.
 
 Security defaults worth knowing:
 
-- `AUTH_REQUIRED=false` is the default so a fresh clone works locally. Turn it
+- `AUTH_REQUIRED=false` is the default so a fresh clone works locally. With
+  `ENVIRONMENT=production` the API refuses to start with auth off (the failure
+  says what to set), so a public deploy cannot run open by accident. Turn it
   on (`AUTH_REQUIRED=true` + Clerk keys) before exposing the API; `/health`,
   `/docs` and `/webhooks/*` stay public by design (they verify their own
   signatures).

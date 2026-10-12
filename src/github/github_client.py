@@ -77,7 +77,7 @@ class GitHubClient:
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": GITHUB_API_VERSION,
-            "User-Agent": "Kollektiv/0.1 (+https://github.com/HackerxBots/Kollektiv)",
+            "User-Agent": "Kollektiv/0.1 (+https://github.com/HackerxBots/Kollectiv)",
         }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"

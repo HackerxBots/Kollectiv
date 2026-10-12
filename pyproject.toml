@@ -57,9 +57,9 @@ dev = [
 postgres = ["psycopg[binary]>=3.1"]
 
 [project.urls]
-Homepage = "https://github.com/HackerxBots/Kollektiv"
-Repository = "https://github.com/HackerxBots/Kollektiv"
-Issues = "https://github.com/HackerxBots/Kollektiv/issues"
+Homepage = "https://github.com/HackerxBots/Kollectiv"
+Repository = "https://github.com/HackerxBots/Kollectiv"
+Issues = "https://github.com/HackerxBots/Kollectiv/issues"
 
 [project.scripts]
 kollektiv = "src.api.cli:main"

@@ -297,3 +297,26 @@ def test_connector_run_cell_wraps_instead_of_overflowing() -> None:
     css = (WEB / "assets" / "styles.css").read_text(encoding="utf-8")
     assert 'data-label="Run" class="kv-run"' in js
     assert ".kv-run {" in css and "flex-wrap: wrap" in css
+
+
+def test_no_inline_style_attributes_under_the_pages_csp() -> None:
+    """``web/_headers`` sets ``style-src 'self'``, which blocks every ``style=""`` attribute.
+
+    Shipping one would silently drop the layout it sets on Cloudflare Pages, while
+    local runs (which send no CSP) still look right. Use a class, or set the value
+    through the CSSOM from app.js.
+    """
+    pattern = re.compile(r"""style\s*=\s*\\?["']""")
+    offenders = []
+    for name in ("index.html", "404.html", "assets/app.js"):
+        for number, line in enumerate((WEB / name).read_text(encoding="utf-8").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{number}")
+    assert offenders == [], f"inline style attributes would be blocked by the CSP: {offenders}"
+
+
+def test_pages_csp_still_forbids_inline_styles() -> None:
+    """If someone loosens style-src, the test above is no longer the only guard. Make that a conscious change."""
+    headers = (WEB / "_headers").read_text(encoding="utf-8")
+    assert "style-src 'self';" in headers
+    assert "unsafe-inline" not in headers
