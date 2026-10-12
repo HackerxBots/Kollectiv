@@ -52,7 +52,6 @@ from src.storage.factory import build_storage
 from src.storage.state_manager import StateManager
 from src.utils.errors import BudgetError, ConfigurationError
 from src.utils.logger import get_logger
-from src.utils.paths import safe_path_segment
 from src.utils.project_config import ProjectConfig, load_project_config
 from src.utils.token_store import TokenStore
 
@@ -706,11 +705,10 @@ class Orchestrator:
         limit_bytes = int(self.settings.MAX_UPLOAD_MB) * 1024 * 1024
         if os.path.getsize(local_path) > limit_bytes:
             raise ValueError(f"file is larger than MAX_UPLOAD_MB ({self.settings.MAX_UPLOAD_MB} MB)")
-        project_segment = safe_path_segment(project_id, label="project id")
-        remote = (
-            f"{self.pool.remote_root.rstrip('/')}/"
-            f"{project_segment}/uploads/{os.path.basename(local_path)}"
-        )
+        from src.storage.user_paths import owner_of_project, project_remote_base
+
+        base = project_remote_base(self.pool.remote_root, project_id, owner_of_project(project_id))
+        remote = f"{base}/uploads/{os.path.basename(local_path)}"
         result = await self.pool.upload_file(local_path, remote)
         with session_scope() as session:
             session.add(

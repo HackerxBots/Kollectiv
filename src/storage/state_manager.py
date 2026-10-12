@@ -48,6 +48,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from config.settings import PROJECT_STATE_FILENAME, Settings, get_settings
+from src.storage.user_paths import owner_of_project, project_remote_base
 from src.utils.logger import get_logger
 from src.utils.paths import safe_path_segment
 
@@ -122,9 +123,15 @@ class StateManager:
         root = getattr(self.pool, "remote_root", self.settings.TERABOX_REMOTE_ROOT).rstrip("/")
         target = project_id if project_id is not None else self.project_id
         if target:
-            safe = safe_path_segment(target, label="project id")
-            return f"{root}/{safe}/{self.filename}"
+            base = project_remote_base(root, target, owner_of_project(target))
+            return f"{base}/{self.filename}"
         return f"{root}/{self.filename}"
+
+    def project_folder(self, project_id: Optional[str] = None) -> str:
+        """Return the remote folder of a project (per-user layout, see ``user_paths``)."""
+        root = getattr(self.pool, "remote_root", self.settings.TERABOX_REMOTE_ROOT).rstrip("/")
+        target = project_id if project_id is not None else self.project_id
+        return project_remote_base(root, target or "global", owner_of_project(target))
 
     def local_path(self, project_id: Optional[str] = None) -> str:
         """Return the local cache path of the state document."""
@@ -567,10 +574,8 @@ class StateManager:
         Returns:
             The pooled upload result.
         """
-        root = getattr(self.pool, "remote_root", self.settings.TERABOX_REMOTE_ROOT).rstrip("/")
-        project = self.project_id or "global"
         name = os.path.basename(local_path)
-        remote = f"{root}/{project}/{remote_subdir}/{name}"
+        remote = f"{self.project_folder()}/{remote_subdir}/{name}"
         result = await self.pool.upload_file(local_path, remote)
         state = await self.read_state()
         files = [entry for entry in (state.get("files") or []) if isinstance(entry, dict)]

@@ -423,6 +423,7 @@ on GitHub links to the section below for its version.
 ### Fixed
 
 - Dashboard: the Actions buttons on a mobile project card stay inside the card.
+- Storage: remote files are kept per user: `{root}/users/{owner}/{project}/...`. Projects without an owner keep the flat `{root}/{project}` layout. Files uploaded before this change stay where they are.
 - Docker: `docker compose up --build` works on a first run. A missing `.env` no longer stops compose, the MCP service builds on its own, and the image includes `LICENSE`.
 - Dashboard: the connector Run select is wide enough for the longest action name, and its disabled state is visible.
 - Broken links: 14 files pointed at `github.com/HackerxBots/Kollektiv` (404). They now point at `Kollectiv`.

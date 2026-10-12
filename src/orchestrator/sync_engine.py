@@ -477,10 +477,7 @@ class SyncEngine:
             if len(content.encode("utf-8", errors="replace")) > MAX_ARCHIVE_BYTES:
                 LOGGER.warning("Skipping %s: larger than the archive limit", path)
                 continue
-            remote = (
-                f"{getattr(self.pool, 'remote_root', self.settings.TERABOX_REMOTE_ROOT).rstrip('/')}/"
-                f"{self.state.project_id or 'global'}/github/{ref[:7] or 'head'}/{path}"
-            )
+            remote = f"{self.state.project_folder()}/github/{ref[:7] or 'head'}/{path}"
             try:
                 result = await self.pool.write_text(remote, content)
                 archived.append({"path": remote, "source": path, "size": result.get("size", 0)})
@@ -518,10 +515,7 @@ class SyncEngine:
                 continue
             relative = str(path.relative_to(workspace))
             size = path.stat().st_size
-            remote = (
-                f"{getattr(self.pool, 'remote_root', self.settings.TERABOX_REMOTE_ROOT).rstrip('/')}/"
-                f"{self.state.project_id or 'global'}/artifacts/{relative}"
-            )
+            remote = f"{self.state.project_folder()}/artifacts/{relative}"
             if (remote, size) in known:
                 continue
             try:

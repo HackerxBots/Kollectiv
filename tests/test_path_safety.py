@@ -197,7 +197,7 @@ def test_helpers_are_used_by_the_storage_layer() -> None:
     root = Path(__file__).resolve().parents[1] / "src"
     for relative, needle in (
         ("storage/state_manager.py", "safe_path_segment"),
-        ("orchestrator/app.py", "safe_path_segment"),
+        ("orchestrator/app.py", "project_remote_base"),
         ("api/routes.py", "safe_relative_path"),
     ):
         assert needle in (root / relative).read_text(encoding="utf-8"), f"{relative} stopped validating paths"
