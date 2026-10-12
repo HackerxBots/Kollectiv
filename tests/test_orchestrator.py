@@ -584,7 +584,8 @@ async def test_orchestrator_rejects_empty_description(settings: Any) -> None:
 async def test_orchestrator_upload_and_sync(settings: Any, tmp_path: Path) -> None:
     """Files can be archived and the sync pass runs without errors."""
     orchestrator = build_fake_orchestrator(settings)
-    local = tmp_path / "artifact.txt"
+    # Uploads are limited to the workspace, so the artifact lives there.
+    local = settings.workspace_path / "artifact.txt"
     local.write_text("payload", encoding="utf-8")
 
     result = await orchestrator.upload_project_file("prj_x", str(local))

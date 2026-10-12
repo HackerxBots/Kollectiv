@@ -240,7 +240,7 @@ class Orchestrator:
     # Projects
     # ------------------------------------------------------------------
     async def create_project(
-        self, name: str, description: str, n_agents: int = 3
+        self, name: str, description: str, n_agents: int = 3, owner_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create a project and generate its plan.
 
@@ -266,6 +266,7 @@ class Orchestrator:
             description=description,
             n_agents=count,
             status="planned",
+            owner_id=owner_id,
         )
         with session_scope() as session:
             session.add(project)
@@ -434,6 +435,18 @@ class Orchestrator:
         await self._notify_run(project_id, record.get("name", ""), summary)
         return summary
 
+    async def project_owner(self, project_id: str) -> Dict[str, Any]:
+        """Return whether a project exists in the database and who owns it.
+
+        Returns:
+            ``{"exists": bool, "owner_id": str | None}``.
+        """
+        with session_scope() as session:
+            project = session.get(Project, project_id)
+            if project is None:
+                return {"exists": False, "owner_id": None}
+            return {"exists": True, "owner_id": project.owner_id}
+
     async def get_project(self, project_id: str) -> Optional[Dict[str, Any]]:
         """Return a project record (cache first, then SQLite).
 
@@ -472,10 +485,19 @@ class Orchestrator:
         self._projects[project_id] = record
         return record
 
-    async def list_projects(self) -> List[Dict[str, Any]]:
-        """List every known project, newest first."""
+    async def list_projects(self, owner_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List the projects a caller may see, newest first.
+
+        Args:
+            owner_id: When given, only projects owned by this identity are
+                returned, and the unowned in-memory fallback is skipped. ``None``
+                lists everything (single-user local mode).
+        """
         with session_scope() as session:
-            projects = list(session.exec(select(Project).order_by(col(Project.created_at).desc())).all())
+            statement = select(Project).order_by(col(Project.created_at).desc())
+            if owner_id is not None:
+                statement = statement.where(Project.owner_id == owner_id)
+            projects = list(session.exec(statement).all())
             records = [
                 {
                     "project_id": project.id,
@@ -486,7 +508,7 @@ class Orchestrator:
                 }
                 for project in projects
             ]
-        if not records:
+        if not records and owner_id is None:
             records = [
                 {
                     "project_id": record["project_id"],
@@ -669,7 +691,16 @@ class Orchestrator:
             The upload result ``{account_id, path, url, size}``.
         """
         import os
+        from pathlib import Path
 
+        # Only files inside the workspace may leave the machine. Without this,
+        # any caller (the API, the MCP server, a gateway tool) could archive any
+        # file the server can read, such as .env. The check runs before the
+        # existence test so the response does not reveal files outside it.
+        workspace = self.settings.workspace_path.resolve()
+        target = Path(local_path).resolve()
+        if not target.is_relative_to(workspace):
+            raise PermissionError("uploads are limited to files inside the project workspace")
         if not os.path.isfile(local_path):
             raise FileNotFoundError(f"Local file not found: {local_path}")
         project_segment = safe_path_segment(project_id, label="project id")

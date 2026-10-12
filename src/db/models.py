@@ -88,6 +88,8 @@ class Project(SQLModel, table=True):
     plan: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     created_at: datetime = Field(default_factory=utcnow, index=True)
     updated_at: datetime = Field(default_factory=utcnow)
+    #: Clerk user id of the owner. ``None`` for projects made in single-user mode.
+    owner_id: Optional[str] = Field(default=None, index=True, max_length=128)
 
     def plan_dict(self) -> Dict[str, Any]:
         """Return the stored plan as a dict."""
@@ -482,6 +484,27 @@ def bind_engine(settings: Any = None):
     return engine
 
 
+def _add_missing_columns(target: Any) -> None:
+    """Add columns that newer releases need on tables created by older ones.
+
+    ``create_all`` makes missing tables but never alters existing ones, so a
+    database created before a column existed would fail on first use. Only the
+    additions shipped so far are listed here; Alembic replaces this later.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(target)
+    if "projects" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("projects")}
+    if "owner_id" in columns:
+        return
+    with target.begin() as connection:
+        connection.execute(text("ALTER TABLE projects ADD COLUMN owner_id VARCHAR(128)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_projects_owner_id ON projects (owner_id)"))
+    LOGGER.info("Added projects.owner_id to an existing database")
+
+
 def init_db(engine: Any = None) -> None:
     """Create all tables if they do not exist yet.
 
@@ -490,6 +513,7 @@ def init_db(engine: Any = None) -> None:
     """
     target = engine or get_engine()
     SQLModel.metadata.create_all(target)
+    _add_missing_columns(target)
     LOGGER.debug("Database schema ensured")
 
 

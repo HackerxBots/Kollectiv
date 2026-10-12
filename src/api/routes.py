@@ -189,10 +189,20 @@ def create_app(settings: Optional[Settings] = None, orchestrator: Optional[Orche
     application.add_middleware(
         CORSMiddleware,
         allow_origins=resolved.cors_origin_list,
-        allow_credentials=True,
+        allow_credentials=resolved.cors_origin_list != ["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    @application.middleware("http")
+    async def _security_headers(request: Request, call_next: Any) -> Any:
+        """Send baseline security headers on every response."""
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        return response
+
     application.include_router(webhook_router)
     application.include_router(build_router(resolved, serve_dashboard=dashboard_available))
     # Clerk: attaches identity to every request and, when AUTH_REQUIRED=true,
@@ -232,6 +242,26 @@ def get_orchestrator(request: Request) -> Orchestrator:
             detail="Orchestrator is not running",
         )
     return orchestrator
+
+
+async def project_access(
+    project_id: str,
+    user: Any = Depends(auth_dependency),
+    orchestrator: Orchestrator = Depends(get_orchestrator),
+) -> None:
+    """Let a project route run only for the project's owner.
+
+    With no signed-in user (``AUTH_REQUIRED=false``, single-user local mode)
+    every project is open. With a user, anyone who does not own the project gets
+    404, so the response does not reveal that the project exists. A project with
+    no owner (created before sign-in was on) is therefore visible to no one
+    while a user is signed in.
+    """
+    if user is None:
+        return
+    found = await orchestrator.project_owner(project_id)
+    if not found["exists"] or found["owner_id"] != user.subject:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
 
 # ----------------------------------------------------------------------
@@ -288,7 +318,9 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
 
     @router.post("/projects", response_model=ProjectCreateResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
     async def create_project(
-        body: ProjectCreateRequest, orchestrator: Orchestrator = Depends(get_orchestrator)
+        body: ProjectCreateRequest,
+        orchestrator: Orchestrator = Depends(get_orchestrator),
+        user: Any = Depends(auth_dependency),
     ) -> ProjectCreateResponse:
         """Create a project and generate its plan.
 
@@ -298,7 +330,9 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         if not body.description.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="description must not be empty")
         try:
-            record = await orchestrator.create_project(body.name, body.description, body.n_agents)
+            record = await orchestrator.create_project(
+                body.name, body.description, body.n_agents, owner_id=user.subject if user else None
+            )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except KollektivError as exc:
@@ -313,12 +347,15 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         )
 
     @router.get("/projects", tags=["projects"])
-    async def list_projects(orchestrator: Orchestrator = Depends(get_orchestrator)) -> Dict[str, Any]:
-        """List every project."""
-        projects = await orchestrator.list_projects()
+    async def list_projects(
+        orchestrator: Orchestrator = Depends(get_orchestrator),
+        user: Any = Depends(auth_dependency),
+    ) -> Dict[str, Any]:
+        """List the projects the caller owns (every project in single-user mode)."""
+        projects = await orchestrator.list_projects(owner_id=user.subject if user else None)
         return {"count": len(projects), "projects": projects}
 
-    @router.post("/projects/{project_id}/run", response_model=RunResponse, tags=["projects"])
+    @router.post("/projects/{project_id}/run", response_model=RunResponse, tags=["projects"], dependencies=[Depends(project_access)])
     async def run_project(
         project_id: str,
         background: bool = Query(default=False, description="Return immediately and run in the background"),
@@ -377,7 +414,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         return RunResponse(**summary)
 
-    @router.get("/projects/{project_id}/estimate", tags=["projects"])
+    @router.get("/projects/{project_id}/estimate", tags=["projects"], dependencies=[Depends(project_access)])
     async def estimate_project(
         project_id: str,
         n_agents: Optional[int] = Query(default=None, ge=1, le=64, description="Estimate a different agent count"),
@@ -400,7 +437,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         """Return the local spend ledger, today's position and the caps in force."""
         return await orchestrator.budget_report()
 
-    @router.post("/projects/{project_id}/replan", tags=["projects"])
+    @router.post("/projects/{project_id}/replan", tags=["projects"], dependencies=[Depends(project_access)])
     async def replan_project(
         project_id: str,
         dispatch: bool = Query(default=False, description="Run the corrective tasks immediately"),
@@ -424,7 +461,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             LOGGER.error("Replan failed for %s: %s", project_id, exc)
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    @router.get("/projects/{project_id}/status", tags=["projects"])
+    @router.get("/projects/{project_id}/status", tags=["projects"], dependencies=[Depends(project_access)])
     async def project_status(
         project_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)
     ) -> Dict[str, Any]:
@@ -438,7 +475,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         except KollektivError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    @router.get("/projects/{project_id}/events/stream", tags=["projects"])
+    @router.get("/projects/{project_id}/events/stream", tags=["projects"], dependencies=[Depends(project_access)])
     async def project_event_stream(
         project_id: str,
         request: Request,
@@ -487,7 +524,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    @router.get("/projects/{project_id}/handoff", tags=["projects"])
+    @router.get("/projects/{project_id}/handoff", tags=["projects"], dependencies=[Depends(project_access)])
     async def project_handoff(
         project_id: str,
         markdown: bool = Query(False, description="Return the rendered briefing instead of JSON"),
@@ -506,7 +543,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             return Response(content=handoff["markdown"], media_type="text/markdown")
         return {key: value for key, value in handoff.items() if key != "markdown"}
 
-    @router.get("/projects/{project_id}/files", tags=["projects"])
+    @router.get("/projects/{project_id}/files", tags=["projects"], dependencies=[Depends(project_access)])
     async def project_files(
         project_id: str, orchestrator: Orchestrator = Depends(get_orchestrator)
     ) -> Dict[str, Any]:
@@ -514,7 +551,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         files = await orchestrator.get_project_files(project_id)
         return {"project_id": project_id, "count": len(files), "files": files}
 
-    @router.post("/projects/{project_id}/upload", status_code=status.HTTP_201_CREATED, tags=["projects"])
+    @router.post("/projects/{project_id}/upload", status_code=status.HTTP_201_CREATED, tags=["projects"], dependencies=[Depends(project_access)])
     async def upload_project_file(
         project_id: str,
         body: UploadRequest,
@@ -523,6 +560,8 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         """Archive a local file into the project's TeraBox folder."""
         try:
             result = await orchestrator.upload_project_file(project_id, body.file_path)
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
         except FileNotFoundError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 - storage failures are 502s
@@ -666,7 +705,7 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
             return {"authenticated": False, "auth_required": request_auth_required()}
         return {"authenticated": True, "user": user.to_dict()}
 
-    @router.get("/projects/{project_id}/files/{file_path:path}/url", tags=["storage"])
+    @router.get("/projects/{project_id}/files/{file_path:path}/url", tags=["storage"], dependencies=[Depends(project_access)])
     async def file_url(
         project_id: str,
         file_path: str,

@@ -21,6 +21,7 @@ then come here for depth. Every page is self-contained and links back.
 | [Extending Kollektiv](extending.md) | New worker shapes, brain providers, storage backends and tools. |
 | [Development](development.md) | Dev setup, design decisions and testing notes. |
 | [Troubleshooting and FAQ](faq.md) | Symptom → cause → fix, and the answers to the questions people actually ask. |
+| [Security audit](security-audit.md) | The 20-point review: what was fixed, what is open, and why. |
 | [Performance and roadmap](roadmap.md) | The honest bottlenecks and what ships next. |
 | [Support](support.md) | Donations and sponsorship, and nothing else. No ads, no paid tier, no data collection. |
 | [Privacy](privacy.md) | No telemetry, no accounts, no data collection — and how to verify it. |

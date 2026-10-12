@@ -47,7 +47,7 @@ services:
       - --port
       - "8000"
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"   # local only; front it with TLS to publish
     <<: *kollektiv-env
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
@@ -73,7 +73,7 @@ services:
       - --port
       - "8001"
     ports:
-      - "${MCP_PORT:-8001}:8001"
+      - "127.0.0.1:${MCP_PORT:-8001}:8001"   # the MCP server has no auth; keep it local
     <<: *kollektiv-env
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8001), timeout=5).close()"]

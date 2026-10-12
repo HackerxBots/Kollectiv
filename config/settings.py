@@ -756,6 +756,8 @@ class Settings(BaseSettings):
             )
         elif self.storage_backend == "terabox" and not self.is_terabox_configured:
             warnings.append("STORAGE_BACKEND=terabox but no usable TERABOX_ACCOUNTS are configured.")
+        if self.AUTH_REQUIRED and self.CORS_ORIGINS.strip() == "*":
+            warnings.append("CORS_ORIGINS is '*' while AUTH_REQUIRED is true; list your dashboard origin.")
         if self.AUTH_REQUIRED and not self.is_clerk_configured:
             warnings.append("AUTH_REQUIRED is true but Clerk is not configured; the API will reject requests.")
         if not self.NOTIFY_EMAILS:

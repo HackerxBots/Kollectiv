@@ -14,6 +14,7 @@ import httpx
 import pytest
 from starlette.requests import Request as StarletteRequest
 
+from src.api.auth import ClerkUser, auth_dependency
 from src.api.mcp_server import create_server
 from src.api.routes import create_app
 from src.orchestrator.brain import OrchestratorBrain
@@ -42,7 +43,9 @@ class StubOrchestrator:
         self._counter = 0
 
     # -- projects ------------------------------------------------------
-    async def create_project(self, name: str, description: str, n_agents: int = 3) -> Dict[str, Any]:
+    async def create_project(
+        self, name: str, description: str, n_agents: int = 3, owner_id: str | None = None
+    ) -> Dict[str, Any]:
         """Plan a project and remember it."""
         if not description.strip():
             raise ValueError("description must not be empty")
@@ -56,6 +59,7 @@ class StubOrchestrator:
             "n_agents": n_agents,
             "plan": plan,
             "status": "planned",
+            "owner_id": owner_id,
         }
         self.projects[project_id] = record
         return record
@@ -64,12 +68,20 @@ class StubOrchestrator:
         """Look up a project."""
         return self.projects.get(project_id)
 
-    async def list_projects(self) -> List[Dict[str, Any]]:
-        """List the stub projects."""
+    async def list_projects(self, owner_id: str | None = None) -> List[Dict[str, Any]]:
+        """List the stub projects, filtered to one owner when given."""
         return [
             {"project_id": record["project_id"], "name": record["name"], "status": record["status"]}
             for record in self.projects.values()
+            if owner_id is None or record.get("owner_id") == owner_id
         ]
+
+    async def project_owner(self, project_id: str) -> Dict[str, Any]:
+        """Return existence and owner for a stub project."""
+        record = self.projects.get(project_id)
+        if record is None:
+            return {"exists": False, "owner_id": None}
+        return {"exists": True, "owner_id": record.get("owner_id")}
 
     async def run_project(
         self, project_id: str, max_concurrency: int | None = None, *, allow_over_budget: bool = False
@@ -451,3 +463,56 @@ async def test_project_event_stream_reports_missing_projects(api_client: Any) ->
 
     assert "event: error" in frames
     assert "prj_missing" in frames
+
+
+def _as_user(api_app: Any, subject: str) -> None:
+    """Make every request in this test come from ``subject``."""
+    api_app.dependency_overrides[auth_dependency] = lambda: ClerkUser(subject=subject)
+
+
+async def test_projects_are_visible_only_to_their_owner(api_app: Any, api_client: Any) -> None:
+    """Alice's project is hidden from Bob, and Bob cannot run it."""
+    _as_user(api_app, "user_alice")
+    created = await api_client.post(
+        "/projects", json={"name": "Alice app", "description": "Build a todo app", "n_agents": 1}
+    )
+    assert created.status_code == 201
+    project_id = created.json()["project_id"]
+    listed = (await api_client.get("/projects")).json()["projects"]
+    assert [item["project_id"] for item in listed] == [project_id]
+    assert (await api_client.get(f"/projects/{project_id}/status")).status_code == 200
+
+    _as_user(api_app, "user_bob")
+    assert (await api_client.get("/projects")).json()["count"] == 0
+    assert (await api_client.get(f"/projects/{project_id}/status")).status_code == 404
+    assert (await api_client.post(f"/projects/{project_id}/run")).status_code == 404
+    assert (await api_client.get(f"/projects/{project_id}/files")).status_code == 404
+
+    api_app.dependency_overrides.clear()
+    assert (await api_client.get(f"/projects/{project_id}/status")).status_code == 200
+
+
+async def test_single_user_mode_still_sees_every_project(api_app: Any, api_client: Any) -> None:
+    """With no signed-in user, the local behaviour is unchanged."""
+    api_app.dependency_overrides.clear()
+    created = await api_client.post(
+        "/projects", json={"name": "Local app", "description": "Build a cli", "n_agents": 1}
+    )
+    assert created.status_code == 201
+    listed = (await api_client.get("/projects")).json()
+    assert listed["count"] >= 1
+    assert (await api_client.get(f"/projects/{created.json()['project_id']}/status")).status_code == 200
+
+
+async def test_cors_wildcard_never_allows_credentials(api_client: Any) -> None:
+    """``CORS_ORIGINS=*`` must not let other sites send credentialed requests."""
+    response = await api_client.get("/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-credentials" not in response.headers
+
+
+async def test_responses_carry_baseline_security_headers(api_client: Any) -> None:
+    """Every response sends nosniff, no-referrer and frame denial."""
+    response = await api_client.get("/health")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-frame-options"] == "DENY"
