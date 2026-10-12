@@ -13,8 +13,10 @@ Four hard requirements, learned the hard way:
    favicon + web manifest). A single 2 000-line HTML file is not maintainable and
    cannot be cached or diffed properly.
 2. **Hover states are part of the design, not a garnish.** Every interactive
-   element needs a defined default, hover, active, focus-visible and disabled
-   state, with real transitions (and `prefers-reduced-motion` respected).
+   element (buttons, links, inputs, selects, textareas) needs a defined default,
+   hover, active, focus-visible and disabled state, with real transitions (and
+   `prefers-reduced-motion` respected). Form controls use `:disabled`; buttons
+   use `[disabled]`.
 3. **Not plain.** Neutral grey dashboards are the thing this page must not be.
    Colour, depth, glass and glow are the design — see the visual language below.
 4. **Everything is still zero-dependency.** No CDN, no npm, no build step, no

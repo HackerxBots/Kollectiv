@@ -578,6 +578,9 @@ a:hover { color: var(--kv-text); }
   box-shadow: var(--kv-ring);
   border-color: color-mix(in srgb, var(--kv-accent) 70%, transparent);
 }
+.kv-input:disabled, .kv-select:disabled, .kv-textarea:disabled {
+  opacity: 0.55; cursor: not-allowed; border-color: var(--kv-line); background: transparent;
+}
 .kv-input::placeholder, .kv-textarea::placeholder { color: var(--kv-text-dim); }
 .kv-textarea { min-height: 96px; resize: vertical; }
 .kv-field { display: grid; gap: 7px; }
