@@ -15,7 +15,6 @@ docs
 web/node_modules
 .wrangler
 dist
-CHANGELOG.md
-LICENSE
 *.md
+!CHANGELOG.md
 !README.md

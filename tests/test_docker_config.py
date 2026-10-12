@@ -7,6 +7,7 @@ MCP service having no build of its own, and a missing LICENSE in the image.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from pathlib import Path
 
@@ -43,3 +44,37 @@ def test_compose_defaults_to_development_for_local_use() -> None:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "ENVIRONMENT: ${ENVIRONMENT:-development}" in compose
     assert "ENVIRONMENT: ${ENVIRONMENT:-production}" not in compose
+
+
+def _dockerignore_excludes(path: str, patterns: list[str]) -> bool:
+    """Approximate Docker's rule: the last matching pattern wins, and a match on a directory covers its files.
+
+    Matching uses fnmatch, which is close enough for the simple patterns this repo uses.
+    """
+    parts = path.split("/")
+    excluded = False
+    for raw in patterns:
+        negated = raw.startswith("!")
+        pattern = (raw[1:] if negated else raw).strip("/")
+        if any(fnmatch.fnmatch("/".join(parts[: i + 1]), pattern) for i in range(len(parts))):
+            excluded = not negated
+    return excluded
+
+
+def test_every_file_the_dockerfile_copies_survives_dockerignore() -> None:
+    """A COPY source that .dockerignore removes fails `docker build` with "not found"."""
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    ignore = [
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    sources: list[str] = []
+    for line in dockerfile.splitlines():
+        if line.startswith("COPY "):
+            args = [arg for arg in line.split()[1:] if not arg.startswith("--")]
+            sources.extend(args[:-1])  # the last argument is the destination
+    assert sources, "no COPY sources found"
+    for source in sources:
+        assert (ROOT / source).exists(), f"COPY source missing from the repo: {source}"
+        assert not _dockerignore_excludes(source, ignore), f".dockerignore removes COPY source {source}"
