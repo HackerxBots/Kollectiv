@@ -144,7 +144,7 @@ def compute_delay(
         return min(suggested, max_delay)
     delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
     if jitter:
-        delay *= 1.0 + random.uniform(0.0, 0.25)
+        delay *= 1.0 + random.uniform(0.0, 0.25)  # nosec B311 - retry jitter, not security
     return min(delay, max_delay)
 
 

@@ -19,7 +19,7 @@ old fixtures whose hashes the current baseline does not list. Lockfiles
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 - fixed local tool calls
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -29,7 +29,7 @@ BASELINE = Path(".secrets.baseline")
 
 def tracked_files() -> List[str]:
     """Return the files Git tracks, NUL-separated so odd names are safe."""
-    listing = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout
+    listing = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout  # nosec B603 B607 - fixed git arguments, no shell
     return [name for name in listing.decode("utf-8", "replace").split("\0") if name]
 
 
@@ -49,10 +49,10 @@ HISTORY_SKIP_NAMES = {"package-lock.json", ".secrets.baseline"}
 def history_blobs() -> Dict[str, str]:
     """Map every blob reachable from any ref to a path it was stored under."""
     git = ["git"]
-    commits = subprocess.run([*git, "rev-list", "--all"], capture_output=True, check=True, text=True).stdout.split()
+    commits = subprocess.run([*git, "rev-list", "--all"], capture_output=True, check=True, text=True).stdout.split()  # nosec B603 - fixed arguments, no shell
     blobs: Dict[str, str] = {}
     for commit in commits:
-        listing = subprocess.run(
+        listing = subprocess.run(  # nosec B603 - fixed arguments, no shell
             [*git, "ls-tree", "-r", "-z", "--full-tree", commit], capture_output=True, check=True
         ).stdout.decode("utf-8", "replace")
         for entry in filter(None, listing.split("\0")):
@@ -73,7 +73,7 @@ def scan_history(reviewed: Set[Tuple[str, str]]) -> List[str]:
     unreviewed: List[str] = []
     with tempfile.TemporaryDirectory() as scratch, default_settings():
         for sha, name in history_blobs().items():
-            content = subprocess.run(["git", "cat-file", "-p", sha], capture_output=True, check=True).stdout
+            content = subprocess.run(["git", "cat-file", "-p", sha], capture_output=True, check=True).stdout  # nosec B603 B607 - fixed git arguments, no shell
             if b"\0" in content[:8000]:
                 continue  # binary
             path = Path(scratch) / sha

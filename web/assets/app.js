@@ -1236,6 +1236,24 @@ function loadSponsorLine() {
     .catch(() => {});
 }
 
+/**
+ * Support link: shown only when the operator sets SUPPORT_URL (https only, checked by the
+ * API). It is a plain link that opens in a new tab; nothing is sent from here.
+ */
+function loadSupportLink() {
+  const wrap = document.getElementById("kv-support-wrap");
+  const link = document.getElementById("kv-support");
+  if (!wrap || !link) return;
+  fetch(`${store.base}/support`, { cache: "no-store", credentials: "omit" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data || !data.url) return;
+      link.href = data.url;
+      wrap.hidden = false;
+    })
+    .catch(() => {});
+}
+
 function boot() {
   if (STORAGE.theme) document.documentElement.dataset.theme = STORAGE.theme;
   store.base = guessBase();
@@ -1248,6 +1266,7 @@ function boot() {
   initShell();
   initScrollTop();
   loadSponsorLine();
+  loadSupportLink();
   navigate((location.hash || "#/overview").replace("#/", ""));
   refreshAll();
 

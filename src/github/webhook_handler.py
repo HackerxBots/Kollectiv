@@ -195,7 +195,7 @@ async def github_webhook(
     """
     raw = await request.body()
     orchestrator = get_orchestrator(request)
-    secret = ""
+    secret = ""  # nosec B105 - empty default, not a credential
     if orchestrator is not None:
         secret = getattr(orchestrator.settings, "GITHUB_WEBHOOK_SECRET", "") or ""
 

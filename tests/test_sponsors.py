@@ -200,3 +200,9 @@ async def test_route_serves_the_line_counts_the_view_and_redirects_clicks(settin
         assert (await c.get("/sponsors/go/nobody")).status_code == 404
     row = ledger.summary([validate_entry(GOOD)[0]])[0]  # type: ignore[list-item]
     assert (row["views"], row["clicks"], row["owed_cents"]) == (1, 1, 25)
+
+
+def test_the_sponsor_line_is_off_until_the_operator_turns_it_on() -> None:
+    from config.settings import Settings
+
+    assert Settings.model_fields["SPONSORS_ENABLED"].default is False

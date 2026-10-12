@@ -6,7 +6,7 @@ Kollectiv is free for everyone, with no paid tier. The sponsor line is how it pa
 itself, the way ad-funded free tools do: one short, text-only,
 clearly labelled line from a sponsor, shown in the dashboard, and paid for each click.
 
-It is on by default, but it shows nothing until an operator adds at least one campaign.
+It is off until the operator adds at least one real campaign and sets `SPONSORS_ENABLED=true`.
 
 This is Kollektiv's own per-click model. It is not a copy of Freebuff's terms, which we have not seen.
 
@@ -14,7 +14,7 @@ This is Kollektiv's own per-click model. It is not a copy of Freebuff's terms, w
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SPONSORS_ENABLED` | `true` | Turn the line on or off. |
+| `SPONSORS_ENABLED` | `false` | Turn the line on. Keep it off until you have a real sponsor. |
 | `SPONSORS_FILE` | empty | Path to the campaign file (JSON, see below). Empty means no line. |
 | `SPONSOR_ROTATE_SECONDS` | `300` | How often the line changes. The minimum is 30. |
 
@@ -90,10 +90,11 @@ from those totals. Kollectiv does not take payments.
 - **Ad-network delivery.** Campaigns are set by the operator in a file. Kollectiv does not
   connect to an ad network.
 
-## Turning it off
+## Turning it on
 
 ```bash
-SPONSORS_ENABLED=false
+SPONSORS_ENABLED=true
+SPONSORS_FILE=/path/to/sponsors.json
 ```
 
-Restart the API. `GET /sponsors/line` then returns `{"line": null}`.
+Restart the API. Until both are set, `GET /sponsors/line` returns `{"line": null}` and nothing shows.

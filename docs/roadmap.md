@@ -78,3 +78,12 @@ hand-rolled SigV4 signer and `kollektiv bootstrap`.
 - [ ] Signed Python wheels + SBOM attached to each release
 
 ---
+
+### Later (owner decisions, 2026-10-12)
+
+- [ ] Per-user keys for the remote MCP server (today: one shared `MCP_AUTH_TOKEN`)
+- [ ] Clerk login for the remote MCP server
+- [ ] Prompt-based sponsor matching, opt-in only, once a provider is chosen (see [Privacy](privacy.md#prompt-based-sponsor-matching-planned-opt-in))
+- [ ] Move existing flat-layout TeraBox/R2 files into per-user folders, only if the owner asks (today they stay put)
+
+---

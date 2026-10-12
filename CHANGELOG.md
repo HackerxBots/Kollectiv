@@ -20,8 +20,10 @@ on GitHub links to the section below for its version.
 
 ### Added
 
-- **Sponsor line (Kollektiv's own per-click model).** On by default. Sponsors pay per click, and each campaign has a click cap. Views and clicks are counted on the operator's own server with no identifier. Clicks go through `/sponsors/go/<id>` with `Referrer-Policy: no-referrer`. `kollektiv sponsors line` and `kollektiv sponsors ledger` show the live line and what each sponsor owes. The `sponsor_events` table holds only sponsor id, kind, price and time. Prompt-based targeting and a revenue share are not built. See `docs/sponsors.md`.
+- **Sponsor line (Kollektiv's own per-click model).** Off until you add a real campaign and set `SPONSORS_ENABLED=true`. Sponsors pay per click, and each campaign has a click cap. Views and clicks are counted on the operator's own server with no identifier. Clicks go through `/sponsors/go/<id>` with `Referrer-Policy: no-referrer`. `kollektiv sponsors line` and `kollektiv sponsors ledger` show the live line and what each sponsor owes. The `sponsor_events` table holds only sponsor id, kind, price and time. Prompt-based targeting and a revenue share are not built. See `docs/sponsors.md`.
 - **CI builds and smoke-tests the Docker image** on every push and pull request.
+- **Optional support link.** `SUPPORT_URL` (https only) adds a "support Kollektiv" link to the dashboard footer. Empty means no link. Kollektiv does not load or track it.
+- **Storage selection tests** (`tests/test_storage_factory.py`): TeraBox, R2, degraded mode and explicit backend choice, all from environment variables.
 - **MCP bearer token.** Set `MCP_AUTH_TOKEN` and a network MCP server requires `Authorization: Bearer <token>`. Without it, a remote bind is still refused unless `MCP_ALLOW_UNAUTHENTICATED_REMOTE` is set.
 - **Opt-in sponsor line** (`SPONSORS_ENABLED`, off by default). One labelled "Sponsored" line in the dashboard footer, text only, from a local catalogue (`SPONSORS_FILE`). Rotates by the clock and tracks nothing. `GET /sponsors/line`. Covered in `docs/sponsors.md`. This reverses rule 39 on the owner's written instruction, 2026-10-12; no-tracking still applies.
 - **Arena.ai as the brain** (`BRAIN_PROVIDER=arena`), on a separate session under account `brain`, with the usual fallback. The endpoint paths are still placeholders.
@@ -36,6 +38,8 @@ on GitHub links to the section below for its version.
 
 ### Changed
 
+- **TeraBox accounts are OAuth-only.** The unused `password` field is gone from the account model and the docs. No password login exists.
+- **Sponsor line is off by default** (`SPONSORS_ENABLED=false`).
 - Brain: Groq's free tier is the default (`BRAIN_PROVIDER=groq`). DeepSeek is an optional fallback that runs only when `BRAIN_FALLBACK_API_KEY` is set.
 - Docker Compose: `ENVIRONMENT` defaults to `development`. A `.env` without that line no longer crash-loops the containers. Set `ENVIRONMENT=production` for a public deploy.
 - TeraBox: the `.env.example` template holds tokens only, with no password field. Setup is in `docs/terabox.md`.

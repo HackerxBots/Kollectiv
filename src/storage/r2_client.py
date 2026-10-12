@@ -221,7 +221,7 @@ class R2Client:
             "key": key,
             "path": self.path(key),
             "size": len(data),
-            "md5": hashlib.md5(data).hexdigest(),  # noqa: S324 - S3 ETag compatibility
+            "md5": hashlib.md5(data, usedforsecurity=False).hexdigest(),  # noqa: S324 - S3 ETag compatibility
             "etag": response.headers.get("etag", "").strip('"'),
             "url": self.public_url(key) or self._object_url(key),
         }
@@ -248,7 +248,7 @@ class R2Client:
             "content-length": str(size),
         }
         signed = self._signed_headers("PUT", url, headers=headers, payload_hash=UNSIGNED_PAYLOAD)
-        digest = hashlib.md5()  # noqa: S324 - S3 ETag compatibility
+        digest = hashlib.md5(usedforsecurity=False)  # noqa: S324 - S3 ETag compatibility
 
         async def _stream() -> Any:
             """Yield the file in chunks while computing its digest."""
@@ -366,7 +366,7 @@ class R2Client:
         if key_prefix and not key_prefix.endswith("/"):
             key_prefix += "/"
         collected: List[Dict[str, Any]] = []
-        token = ""
+        token = ""  # nosec B105 - empty placeholder, not a credential
         while True:
             params: Dict[str, Any] = {"list-type": "2", "max-keys": _LIST_PAGE_SIZE}
             if key_prefix:

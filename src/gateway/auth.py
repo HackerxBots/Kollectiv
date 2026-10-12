@@ -35,9 +35,9 @@ from src.utils.token_store import TokenStore
 LOGGER = get_logger(__name__)
 
 #: Token prefix, so a stray token is identifiable at a glance.
-TOKEN_PREFIX = "kgw_"
+TOKEN_PREFIX = "kgw_"  # nosec B105 - token prefix label, not a credential
 #: Service name used in the encrypted token store.
-TOKEN_SERVICE = "gateway"
+TOKEN_SERVICE = "gateway"  # nosec B105 - token service label, not a credential
 #: Roles a client can have. Each maps to the policy preset of the same name;
 #: ``client`` is the friendly alias for the dashboard preset. Preset names are
 #: valid roles on purpose: ``kollektiv gateway init --role read-only`` should

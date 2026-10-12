@@ -126,7 +126,7 @@ class TeraBoxClient:
     """An async client bound to a single TeraBox account.
 
     Args:
-        account: Account dict with ``email``, ``password``, ``access_token``,
+        account: Account dict with ``email``, ``access_token``,
             ``refresh_token`` (and optionally ``app_id``/``app_key``).
         settings: Settings override (handy in tests).
         token_store: Encrypted token store override.
@@ -425,7 +425,7 @@ class TeraBoxClient:
             errno = data.get("errno")
             message = self._error_hint(data)
             if errno in AUTH_ERROR_CODES:
-                self.access_token = ""
+                self.access_token = ""  # nosec B105 - clears a token; not a credential
                 self.token_expires_at = 0.0
                 raise AuthenticationError(f"TeraBox auth error during {context}: {message}", errno=errno)
             raise TeraBoxError(f"TeraBox error during {context}: {message}", errno=errno)
@@ -484,7 +484,7 @@ class TeraBoxClient:
             if not retry_on_auth:
                 raise
             LOGGER.info("TeraBox token rejected during %s; refreshing once", context)
-            self.access_token = ""
+            self.access_token = ""  # nosec B105 - clears a token; not a credential
             self.token_expires_at = 0.0
             await self.authenticate()
             headers.update(self._token_headers())
@@ -727,7 +727,7 @@ class TeraBoxClient:
                 chunk = handle.read(block_size)
                 if not chunk:
                     break
-                digests.append(hashlib.md5(chunk).hexdigest())
+                digests.append(hashlib.md5(chunk, usedforsecurity=False).hexdigest())
         return digests
 
     @staticmethod

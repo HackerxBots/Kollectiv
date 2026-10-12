@@ -5,7 +5,7 @@ and/or a ``.env`` file (see ``.env.example``). Two fields deserve special
 attention because they hold JSON encoded lists:
 
 ``TERABOX_ACCOUNTS``
-    JSON list of ``{"email", "password", "access_token", "refresh_token"}``.
+    JSON list of ``{"email", "access_token", "refresh_token"}``. OAuth tokens only; there is no password login.
 
 ``ARENA_ACCOUNTS``
     JSON list of ``{"name", "provider", "model"}``. Keys are never in here: `kollektiv login` keeps them encrypted (docs/byok.md).
@@ -72,8 +72,6 @@ class TeraBoxAccount(BaseModel):
 
     Attributes:
         email: Account login (used for display and as an identifier).
-        password: Account password. Only needed for interactive flows --
-            the API itself authenticates with OAuth tokens.
         access_token: OAuth access token, valid for roughly two days.
         refresh_token: Long lived OAuth refresh token.
         name: Optional friendly label; falls back to the email.
@@ -83,7 +81,6 @@ class TeraBoxAccount(BaseModel):
     """
 
     email: str = ""
-    password: str = ""
     access_token: str = ""
     refresh_token: str = ""
     name: str = ""
@@ -355,7 +352,7 @@ class Settings(BaseSettings):
     #: Serve the gateway. Off by default: the plain MCP server and the HTTP API
     #: stay first-class and the gateway is an addition, never a requirement.
     GATEWAY_ENABLED: bool = False
-    GATEWAY_HOST: str = "0.0.0.0"
+    GATEWAY_HOST: str = "0.0.0.0"  # nosec B104 - gateway binds all interfaces on purpose; it needs its token
     GATEWAY_PORT: int = 8010
     #: Path the MCP endpoint is mounted on (Claude Code, Codex, Cursor, ...).
     GATEWAY_MCP_PATH: str = "/mcp"
@@ -432,11 +429,14 @@ class Settings(BaseSettings):
     BRAIN_TEMPERATURE: float = 0.2
     BRAIN_MAX_TOKENS: int = 4096
     BRAIN_TIMEOUT: float = 120.0
-    # Sponsor line, on by default and funded per click (Freebuff-style). It shows
-    # nothing until SPONSORS_FILE holds at least one campaign. Counts stay on this server.
-    SPONSORS_ENABLED: bool = True
+    # Sponsor line, off until the operator adds a real campaign to SPONSORS_FILE and
+    # turns this on. Sponsors pay per click; counts stay on this server.
+    SPONSORS_ENABLED: bool = False
     SPONSORS_FILE: str = ""
     SPONSOR_ROTATE_SECONDS: int = 300
+    #: Optional https link (for example a donation page) shown in the dashboard footer.
+    #: Kollektiv does not load, track or send anything to it. Empty means no link.
+    SUPPORT_URL: str = ""
 
     # ------------------------------------------------------------------
     # Scheduling / servers
@@ -444,7 +444,7 @@ class Settings(BaseSettings):
     CRON_INTERVAL_MINUTES: int = 15
     CRON_ENABLED: bool = True
     API_PORT: int = 8000
-    API_HOST: str = "0.0.0.0"
+    API_HOST: str = "0.0.0.0"  # nosec B104 - API binds all interfaces so containers and LAN deploys work
     MCP_PORT: int = 8001
     MCP_HOST: str = "127.0.0.1"
     #: The standalone MCP server has no auth. A non-loopback bind is refused unless this is

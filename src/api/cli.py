@@ -1327,7 +1327,7 @@ async def cmd_keys(args: argparse.Namespace) -> int:
                 return bool(stripped.split("=", 1)[1].strip())
         return False
 
-    secret = ""
+    secret = ""  # nosec B105 - empty default, not a credential
     if args.rotate or not present("SECRET_KEY"):
         secret = Fernet.generate_key().decode("utf-8")
         set_env_value(str(env_path), "SECRET_KEY", secret)
@@ -1343,7 +1343,7 @@ async def cmd_keys(args: argparse.Namespace) -> int:
     else:
         kept.append("SESSION_TOKEN")
 
-    gateway_token = ""
+    gateway_token = ""  # nosec B105 - empty default, not a credential
     if args.rotate or not present("GATEWAY_ADMIN_TOKEN"):
         settings = get_settings()
         auth = GatewayAuth(settings)

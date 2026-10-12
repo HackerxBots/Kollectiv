@@ -144,7 +144,7 @@ class GoogleWorkspaceConnector(Connector):
                 "No Google refresh token: set GOOGLE_REFRESH_TOKEN or store one via the token store "
                 "(service='google', account='default', key='refresh_token')"
             )
-        payload = {"client_id": "", "client_secret": "", "refresh_token": refresh_token, "grant_type": "refresh_token"}
+        payload = {"client_id": "", "client_secret": "", "refresh_token": refresh_token, "grant_type": "refresh_token"}  # nosec B105 - public token-exchange shape; values are empty
         payload.update(self._credentials())
         response = await self._client.post(self.settings.GOOGLE_TOKEN_URL, data=payload)
         if response.status_code in (400, 401, 403):

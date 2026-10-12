@@ -55,3 +55,7 @@ If this is ever added, the rules are:
 - **Switch off any time.** Turning it off stops all sending at once.
 
 No provider is chosen, and no code path sends prompts anywhere.
+
+## Support link
+
+If the operator sets `SUPPORT_URL`, the dashboard footer shows a plain link that opens in a new tab. Kollektiv does not load it, track it or send anything to it.

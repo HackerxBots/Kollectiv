@@ -55,6 +55,7 @@ PUBLIC_PATHS = (
     "/webhooks/",
     "/sponsors/line",
     "/sponsors/go",
+    "/support",
     "/",
 )
 

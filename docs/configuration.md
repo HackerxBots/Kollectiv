@@ -212,3 +212,14 @@ provider's current pricing page and override them.
 | `MAX_RETRIES`, `RETRY_BASE_DELAY` | `3`, `1.0` | Retry policy for external calls |
 
 ---
+
+## Sponsor line and support link
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SPONSORS_ENABLED` | `false` | Show the sponsor line. Turn on only after a real campaign is in `SPONSORS_FILE`. See [Sponsors](sponsors.md). |
+| `SPONSORS_FILE` | empty | JSON campaign file. Empty means no line. |
+| `SPONSOR_ROTATE_SECONDS` | `300` | How often the line changes (minimum 30). |
+| `SUPPORT_URL` | empty | Optional https link (for example a donation page) in the dashboard footer. Kollektiv does not load or track it. |
+
+---

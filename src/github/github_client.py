@@ -45,7 +45,7 @@ class GitHubClient:
         client: Pre-built :class:`httpx.AsyncClient` (used in tests).
     """
 
-    def __init__(
+    def __init__(  # nosec B107 - empty default; the real secret is set by config
         self,
         token: str = "",
         repo: str = "",

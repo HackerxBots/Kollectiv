@@ -344,6 +344,21 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         """Return ``AUTH_REQUIRED`` for this app instance."""
         return bool(resolved.AUTH_REQUIRED)
 
+    @router.get("/support", tags=["system"])
+    async def support_link(response: Response) -> Dict[str, Any]:
+        """Return the operator's support link, or ``{"url": null}``.
+
+        Only an https link without credentials is returned. The dashboard shows it as
+        a plain link that opens in a new tab; nothing is sent to it from Kollektiv.
+        """
+        from urllib.parse import urlsplit
+
+        response.headers["Cache-Control"] = "no-store"
+        url = (resolved.SUPPORT_URL or "").strip()
+        parts = urlsplit(url)
+        valid = bool(url) and len(url) <= 300 and parts.scheme == "https" and bool(parts.netloc) and "@" not in parts.netloc
+        return {"url": url if valid else None}
+
     @router.get("/sponsors/line", tags=["sponsors"])
     async def sponsor_line(response: Response) -> Dict[str, Any]:
         """Return the sponsor line for this moment (or ``{"line": null}``) and count the view.

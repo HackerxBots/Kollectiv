@@ -46,7 +46,7 @@ import json
 import logging
 import os
 import statistics
-import subprocess
+import subprocess  # nosec B404 - fixed local tool calls
 import sys
 import tempfile
 import time
@@ -163,7 +163,7 @@ def benchmark(quick: bool = False, repeat: int = 3) -> Tuple[List[Result], Dict[
         workdir = Path(tmp)
         settings = Settings(  # type: ignore[call-arg]
             _env_file=None,
-            SECRET_KEY="benchmark-secret",
+            SECRET_KEY="benchmark-secret",  # nosec B106 - throwaway benchmark secret
             ENVIRONMENT="development",
             DATABASE_URL=f"sqlite:///{workdir / 'bench.db'}",
             WORKSPACE_DIR=str(workdir / "workspace"),
@@ -280,7 +280,7 @@ def benchmark(quick: bool = False, repeat: int = 3) -> Tuple[List[Result], Dict[
     env = dict(os.environ)
     env.setdefault("SECRET_KEY", "benchmark-secret")
     started = time.perf_counter()
-    subprocess.run(
+    subprocess.run(  # nosec B603 - fixed arguments, no shell
         [sys.executable, "-m", "src.api.cli", "--help"],
         cwd=str(ROOT),
         env=env,
