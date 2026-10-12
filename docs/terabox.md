@@ -45,10 +45,5 @@ option (see [deployment](deployment.md)).
 - **Live behaviour.** The automated tests use a mock TeraBox server. The CI and
   development sandbox cannot reach the TeraBox API, so the first live run is
   yours. Run the check above before you rely on it.
-- **Terms of service.** Pooling several free accounts may be against TeraBox's
-  terms. Read the Open Platform terms before you use more than one account. This
-  is a decision for the owner, not a default.
-- **Per-user folders.** All projects share one root. Project ids are random and
-  every project route checks the owner, but the remote folder is not split per
-  user yet. That is a planned change, and it moves existing paths, so it needs a
-  migration.
+- **Terms of service.** The owner checked the TeraBox Open Platform terms on 2026-10-12 and confirmed that pooling several accounts is valid. Keep to those terms if they change.
+- **Per-user folders.** Each project's files go under `users/<owner>/<project>/` in the remote root. Projects made without an owner keep the flat `<project>/` layout. Files uploaded before this change stay where they were.

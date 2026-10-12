@@ -26,8 +26,7 @@ documentation and dashboard preview. Nothing else.
 
 - **No feature is paid for.** The self-hosted product is complete, and it stays
   complete.
-- **No ads, sponsor lines or placements** inside the software, the dashboard,
-  generated code, prompts or answers.
+- **Sponsor line only.** The software may show one labelled "Sponsored" line, off by default, text only, with no tracking. See [Sponsors](sponsors.md). Generated code, prompts and answers are never touched.
 - **No data collection.** Kollectiv has no telemetry and no analytics, and a
   donation does not add any.
 

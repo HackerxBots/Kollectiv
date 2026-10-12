@@ -116,3 +116,20 @@ Ollama model, a cheap DeepSeek key) cost nothing to start and are enough to see
 the whole pipeline work end to end; add accounts as you hit rate limits.
 
 ---
+
+### Arena.ai as the brain (your own account)
+
+The orchestrator brain can run on your Arena.ai session instead of a key:
+
+```bash
+kollektiv login --provider arena --account brain   # once; the password is never stored
+BRAIN_PROVIDER=arena
+```
+
+The brain keeps its own session under account `brain`, separate from every worker.
+If the session is missing or expires, the brain uses `BRAIN_FALLBACK_*` when that is
+set, and otherwise reports it. The endpoint paths (`ARENA_BASE_URL`,
+`ARENA_LOGIN_PATH`, `ARENA_CHAT_PATH`) are still placeholders until they match the
+endpoint you use. Arena does not publish a public chat API, so check that your plan
+and terms allow this before you depend on it.
+

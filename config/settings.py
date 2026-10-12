@@ -432,6 +432,10 @@ class Settings(BaseSettings):
     BRAIN_TEMPERATURE: float = 0.2
     BRAIN_MAX_TOKENS: int = 4096
     BRAIN_TIMEOUT: float = 120.0
+    # Sponsor line (off by default). A local, operator-curated catalogue; no tracking.
+    SPONSORS_ENABLED: bool = False
+    SPONSORS_FILE: str = ""
+    SPONSOR_ROTATE_SECONDS: int = 300
 
     # ------------------------------------------------------------------
     # Scheduling / servers
@@ -767,7 +771,12 @@ class Settings(BaseSettings):
         warnings: List[str] = []
         if not self.SECRET_KEY:
             warnings.append("SECRET_KEY is unset; using the insecure development key.")
-        if not self.is_brain_configured:
+        if self.BRAIN_PROVIDER.lower() == "arena":
+            warnings.append(
+                "BRAIN_PROVIDER=arena: the brain uses your Arena session; "
+                "sign in with `kollektiv login --provider arena --account brain` if it reports no session."
+            )
+        elif not self.is_brain_configured:
             warnings.append("BRAIN_API_KEY is unset; the orchestrator brain is in heuristic mode.")
         if self.storage_backend == "none":
             warnings.append(

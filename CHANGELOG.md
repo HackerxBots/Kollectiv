@@ -20,6 +20,9 @@ on GitHub links to the section below for its version.
 
 ### Added
 
+- **Opt-in sponsor line** (`SPONSORS_ENABLED`, off by default). One labelled "Sponsored" line in the dashboard footer, text only, from a local catalogue (`SPONSORS_FILE`). Rotates by the clock and tracks nothing. `GET /sponsors/line`. Covered in `docs/sponsors.md`. This reverses rule 39 on the owner's written instruction, 2026-10-12; no-tracking still applies.
+- **Arena.ai as the brain** (`BRAIN_PROVIDER=arena`), on a separate session under account `brain`, with the usual fallback. The endpoint paths are still placeholders.
+- **Dashboard:** connector Run selects show the full action name.
 - `ALLOW_OPEN_API` (default false): explicit opt-in for an open API in production. Only the localhost desktop sidecar sets it.
 - Dashboard: back-to-top button, and a "send feedback" footer link that opens GitHub. Nothing is sent from the app.
 - `ADMIN_USER_IDS`: admin-only routes for `/sync`, link writes, connector call and probe, agent status and health, `/budget` and `/storage/status`. An empty list denies everyone when auth is on.

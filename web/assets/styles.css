@@ -1134,3 +1134,6 @@ a:hover { color: var(--kv-text); }
 [data-tint="pink"] { --kv-tint: var(--kv-pink); }
 [data-tint="peach"] { --kv-tint: var(--kv-peach); }
 [data-tint="sky"] { --kv-tint: var(--kv-sky); }
+
+/* Sponsor line (opt-in, text only). */
+.kv-sponsor-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-right: 6px; }

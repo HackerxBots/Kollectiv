@@ -24,7 +24,8 @@ then come here for depth. Every page is self-contained and links back.
 | [Troubleshooting and FAQ](faq.md) | Symptom → cause → fix, and the answers to the questions people actually ask. |
 | [Security audit](security-audit.md) | The 20-point review: what was fixed, what is open, and why. |
 | [Performance and roadmap](roadmap.md) | The honest bottlenecks and what ships next. |
-| [Support](support.md) | Donations and sponsorship, and nothing else. No ads, no paid tier, no data collection. |
+| [Support](support.md) | Donations and sponsorship. The optional sponsor line is covered in [Sponsors](sponsors.md). No paid tier, no data collection. |
+| [Sponsors](sponsors.md) | The opt-in, labelled sponsor line: the catalogue format, the no-tracking rules and how to turn it on. |
 | [Privacy](privacy.md) | No telemetry, no accounts, no data collection — and how to verify it. |
 | [Legal and responsible use](legal.md) | What Kollektiv deliberately does not do. |
 | [Repository settings](repo-settings.md) | Maintainer pass: description, topics, security toggles, rulesets. |

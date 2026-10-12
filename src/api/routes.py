@@ -344,6 +344,17 @@ def build_router(settings: Optional[Settings] = None, serve_dashboard: bool = Fa
         """Return ``AUTH_REQUIRED`` for this app instance."""
         return bool(resolved.AUTH_REQUIRED)
 
+    @router.get("/sponsors/line", tags=["sponsors"])
+    async def sponsor_line(response: Response) -> Dict[str, Any]:
+        """Return the one sponsor line for this moment, or ``{"line": null}``.
+
+        Takes no input, sets no cookie and stores nothing about the caller.
+        """
+        from src.sponsors.line import current_line
+
+        response.headers["Cache-Control"] = "no-store"
+        return {"line": current_line(resolved)}
+
     @router.get("/health", tags=["system"])
     async def health(request: Request) -> Dict[str, Any]:
         """Return liveness plus a per-subsystem health report."""

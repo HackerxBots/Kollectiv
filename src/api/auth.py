@@ -53,6 +53,7 @@ PUBLIC_PATHS = (
     "/openapi.json",
     "/favicon.ico",
     "/webhooks/",
+    "/sponsors/line",
     "/",
 )
 

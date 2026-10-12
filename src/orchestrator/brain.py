@@ -88,6 +88,7 @@ class OrchestratorBrain:
         self._client_factory = client_factory
         self._client: Optional[AsyncOpenAI] = None
         self._fallback_client: Optional[AsyncOpenAI] = None
+        self._arena_client: Optional[Any] = None
         self.calls = 0
         self.failures = 0
         self.last_error: str = ""
@@ -103,8 +104,81 @@ class OrchestratorBrain:
     # ------------------------------------------------------------------
     @property
     def is_configured(self) -> bool:
-        """Return ``True`` when an API key is available."""
+        """Return ``True`` when the brain can answer: a key, or an Arena session for ``arena``."""
+        if self.provider == "arena":
+            return bool(self._arena().is_authenticated)
         return bool(self.api_key)
+
+    def _arena(self) -> Any:
+        """The Arena session the brain uses when ``BRAIN_PROVIDER=arena``.
+
+        It is a session worker with its own stored login (account id ``brain``),
+        so it never shares a session with a worker. Sign in once with
+        ``kollektiv login --provider arena --account brain``.
+        """
+        if self._arena_client is None:
+            from src.agents.arena_client import ArenaClient
+
+            self._arena_client = ArenaClient(
+                {"name": "Brain", "provider": "arena", "account_id": "brain"},
+                settings=self.settings,
+            )
+        return self._arena_client
+
+    async def _complete_via_arena(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+    ) -> str:
+        """Answer with the Arena session, falling back to the OpenAI-style fallback if set."""
+        self.calls += 1
+        arena = self._arena()
+        try:
+            if not arena.is_authenticated:
+                raise ConfigurationError(
+                    "The Arena brain has no session. Run `kollektiv login --provider arena --account brain`, "
+                    "or choose another BRAIN_PROVIDER."
+                )
+            return str(
+                await arena.send_prompt(
+                    prompt,
+                    system_prompt=system_prompt,
+                    max_tokens=max_tokens or self.settings.BRAIN_MAX_TOKENS,
+                    temperature=self.settings.BRAIN_TEMPERATURE if temperature is None else temperature,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - the fallback decides what happens next
+            self.failures += 1
+            self.last_error = str(exc)
+            fallback = self.fallback_client
+            if fallback is None:
+                if isinstance(exc, (ConfigurationError, RateLimitError)):
+                    raise
+                raise _classify_brain_error(f"arena completion failed: {exc}", exc) from exc
+            LOGGER.warning(
+                "Arena brain failed (%s); retrying on the %s fallback", exc, self.fallback_provider
+            )
+            messages: List[Dict[str, str]] = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            kwargs: Dict[str, Any] = {
+                "model": self.fallback_model,
+                "messages": messages,
+                "temperature": self.settings.BRAIN_TEMPERATURE if temperature is None else temperature,
+                "max_tokens": max_tokens or self.settings.BRAIN_MAX_TOKENS,
+            }
+            try:
+                return await self._chat(fallback, kwargs)
+            except Exception as fallback_exc:  # noqa: BLE001 - report both failures
+                self.last_error = f"{exc} / fallback: {fallback_exc}"
+                raise _classify_brain_error(
+                    f"Both arena and {self.fallback_provider} failed",
+                    exc,
+                    str(fallback_exc),
+                ) from fallback_exc
 
     def _build_client(self, api_key: str, base_url: str) -> Any:
         """Create an OpenAI-compatible async client (or the test double)."""
@@ -180,6 +254,9 @@ class OrchestratorBrain:
             RateLimitError: When the provider rate limits the request.
             BrainError: For any other API failure.
         """
+        if self.provider == "arena":
+            return await self._complete_via_arena(prompt, system_prompt, temperature, max_tokens)
+
         messages: List[Dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})

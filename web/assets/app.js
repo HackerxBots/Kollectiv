@@ -1214,6 +1214,28 @@ function initScrollTop() {
   sync();
 }
 
+/**
+ * Sponsor line: one labelled line from the API, shown only when the operator has
+ * turned sponsors on. No cookie, no token, no identifier is sent, and the text is
+ * inserted as text, never as markup.
+ */
+function loadSponsorLine() {
+  const box = document.getElementById("kv-sponsor");
+  if (!box) return;
+  fetch(`${store.base}/sponsors/line`, { cache: "no-store", credentials: "omit" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      const line = data && data.line;
+      if (!line) return;
+      document.getElementById("kv-sponsor-text").textContent = ` ${line.text}`;
+      const link = document.getElementById("kv-sponsor-link");
+      link.textContent = line.sponsor;
+      link.href = line.url;
+      box.hidden = false;
+    })
+    .catch(() => {});
+}
+
 function boot() {
   if (STORAGE.theme) document.documentElement.dataset.theme = STORAGE.theme;
   store.base = guessBase();
@@ -1225,6 +1247,7 @@ function boot() {
   initPwa();
   initShell();
   initScrollTop();
+  loadSponsorLine();
   navigate((location.hash || "#/overview").replace("#/", ""));
   refreshAll();
 

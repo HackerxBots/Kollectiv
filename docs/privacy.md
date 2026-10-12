@@ -34,7 +34,7 @@ else:
   no Kollektiv server.
 - **Your code and prompts go only to the provider you chose**, and to GitHub if
   you configured it. A local model (Ollama, LM Studio) keeps them on your machine.
-- **No telemetry, no analytics, no usage reporting** and no advertising. The
+- **No telemetry, no analytics, no usage reporting** and no tracking. The sponsor line (opt-in) is a local file and a clock-based rotation; see [Sponsors](sponsors.md). The
   product has no account system, so there is nothing to sign in to and no
   server that can see your activity.
 - Connectors, storage and the MCP gateway are optional. Each one is inert until
